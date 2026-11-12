@@ -9,6 +9,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class UMegaJamCinemaHUD;
 
 /**
  * Owns the Enhanced Input mapping context and the pause action,
@@ -21,6 +22,8 @@ class MEGAJAM26_API AMegaJamPlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	AMegaJamPlayerController();
+
 	// ---- Enhanced Input assets (assign in a Blueprint subclass or class defaults) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -30,6 +33,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Input")
 	int32 MappingContextPriority = 0;
+
+	// ---- Cinema HUD ----
+	/** Widget class spawned automatically in BeginPlay. Defaults to pure-C++ UMegaJamCinemaHUD. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|UI")
+	TSubclassOf<UMegaJamCinemaHUD> CinemaHUDClass;
+
+	/** Active instance of the Cinema Letterbox HUD. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category="MegaJam|UI")
+	TObjectPtr<UMegaJamCinemaHUD> CinemaHUDInstance;
 
 	// ---- UI focus ----
 	/** Game only: hidden cursor, input goes to gameplay. */
