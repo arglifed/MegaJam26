@@ -43,4 +43,9 @@
 ## 5. Multi-Dev Co-Op Rules (Binary Asset Safety)
 - **Never Overwrite Binary Assets:** Do NOT overwrite, regenerate, delete, or rename any `.uasset` or `.umap` binary file unless the user has explicitly named that specific file. These files are Git LFS-tracked, cannot be merged, and are shared with other developers (e.g. Hendrixsan).
 - **Prefer Modular C++:** Implement gameplay logic in modular C++ classes and components (`UActorComponent` / `USceneComponent` subclasses, subsystems) rather than monolithic Blueprint graph logic. Keep Blueprints thin: data/tuning, asset references, and `BlueprintImplementableEvent` hooks only. This keeps changes diff-able and merge-friendly.
+- **No MCP/Python Asset Saves:** Never modify or save `.uasset` or `.umap` binary files via MCP or Python (e.g. Unreal MCP tools, `unreal` editor scripting, `Scripts/*.py`) unless the file is explicitly named in the prompt. Prefer modular C++ classes/components.
 - **Ask Before Touching Shared Assets:** If a task would require editing an existing `.uasset`/`.umap`, stop and ask which file may be modified, or create a new uniquely-named asset instead.
+
+## 6. Issue-Driven Workflow & Branching
+- **Branch Per Issue:** Always create and check out a dedicated feature branch named after the GitHub issue (e.g., `feature/issue-1-track-gen`) before writing any code.
+- **Issue Is the Spec:** Treat the GitHub issue text as the primary task specification. If the issue is ambiguous or conflicts with these rules, ask before proceeding.
