@@ -138,6 +138,7 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 
 	// ---- Boost (Hard Cut, Bool) ----
 	Context->MapKey(FlowPawn->BoostAction, EKeys::SpaceBar);
+	Context->MapKey(FlowPawn->BoostAction, EKeys::LeftShift);
 	Context->MapKey(FlowPawn->BoostAction, EKeys::Gamepad_FaceButton_Bottom);
 
 	// ---- Brake (Aspect Toggle, Bool) ----
@@ -145,7 +146,6 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::RightControl);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::C);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_FaceButton_Right);
-	Context->MapKey(FlowPawn->BrakeAction, EKeys::LeftShift);
 
 	// ---- Pause (Bool) ----
 	Context->MapKey(PauseAction, EKeys::Escape);

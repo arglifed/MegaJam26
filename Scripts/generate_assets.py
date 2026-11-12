@@ -149,13 +149,13 @@ def make_imc(steer, boost, brake, pause):
         new_mapping(imc, steer, "Gamepad_Left2D"),
         # Boost / Hard Cut (Bool)
         new_mapping(imc, boost, "SpaceBar"),
+        new_mapping(imc, boost, "LeftShift"),
         new_mapping(imc, boost, "Gamepad_FaceButton_Bottom"),
         # Brake / Aspect Toggle (Bool)
         new_mapping(imc, brake, "LeftControl"),
         new_mapping(imc, brake, "RightControl"),
         new_mapping(imc, brake, "C"),
         new_mapping(imc, brake, "Gamepad_FaceButton_Right"),
-        new_mapping(imc, brake, "LeftShift"),
         # Pause (Bool)
         new_mapping(imc, pause, "Escape"),
         new_mapping(imc, pause, "Gamepad_Special_Right"),
