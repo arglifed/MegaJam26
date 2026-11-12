@@ -26,7 +26,7 @@
 
 ## 4. C++ Architecture Rules (Audio-Kinetic Flow Template)
 - **No ACharacter:** Do NOT use `ACharacter` or `UCharacterMovementComponent`.
-- **Core Base Classes Only:** Generate ONLY these four foundational C++ classes:
+- **Core Base Classes (Pre-Jam Baseline):** The pre-jam template consists of these four foundational C++ classes. They are the baseline, not a ceiling: new modular C++ gameplay classes (e.g. `AMegaJamTrackGenerator`) are explicitly permitted when specified in `DESIGN.md` or a GitHub Issue. Do not add classes that neither document specifies. The four baseline classes:
   1. `AMegaJamGameMode`: Handles run state (PreRun, ActiveFlow, Crashed, Completed), run timer, and score/multiplier math.
   2. `AMegaJamPlayerController`: Manages Enhanced Input mapping contexts and UI focus switching (Game vs. Pause/Menu).
   3. `AMegaJamFlowPawn` (inherits from `APawn`): 
