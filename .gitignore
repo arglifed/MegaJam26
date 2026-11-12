@@ -1,0 +1,13 @@
+# Unreal Engine generated folders
+Intermediate/
+Saved/
+Binaries/
+DerivedDataCache/
+.vs/
+
+# Generated solution files
+*.sln
+
+# Local tooling clutter
+Backup/
+UpgradeLog.htm
