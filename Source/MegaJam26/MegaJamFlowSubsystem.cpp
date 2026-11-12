@@ -39,6 +39,16 @@ void UMegaJamFlowSubsystem::SetAudioEnvelopeValue(float NewEnvelopeValue)
 	AudioEnvelopeValue = NewEnvelopeValue;
 }
 
+void UMegaJamFlowSubsystem::SetActiveTake(float NewActiveTake)
+{
+	ActiveTake = FMath::Clamp(NewActiveTake, 0.0f, 1.0f);
+}
+
+void UMegaJamFlowSubsystem::SetAspectMode(float NewAspectMode)
+{
+	AspectMode = FMath::Clamp(NewAspectMode, 0.0f, 1.0f);
+}
+
 void UMegaJamFlowSubsystem::SetFlowMPC(UMaterialParameterCollection* InFlowMPC)
 {
 	FlowMPC = InFlowMPC;
@@ -61,4 +71,6 @@ void UMegaJamFlowSubsystem::PushToMaterialParameterCollection() const
 	Instance->SetScalarParameterValue(FlowRatioParameterName, FlowRatio);
 	Instance->SetScalarParameterValue(MultiplierParameterName, CurrentMultiplier);
 	Instance->SetScalarParameterValue(AudioEnvelopeParameterName, AudioEnvelopeValue);
+	Instance->SetScalarParameterValue(ActiveTakeParameterName, ActiveTake);
+	Instance->SetScalarParameterValue(AspectModeParameterName, AspectMode);
 }

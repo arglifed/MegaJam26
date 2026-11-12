@@ -7,6 +7,7 @@
 #include "MegaJamGameMode.generated.h"
 
 class UMaterialParameterCollection;
+class AMegaJamTrackGenerator;
 
 UENUM(BlueprintType)
 enum class EMegaJamRunState : uint8
@@ -38,6 +39,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void CompleteRun();
 
+	/**
+	 * Clapperboard rewind: bumps CurrentTakeNumber, resets the pawn and restarts the run.
+	 * Called automatically CrashRestartDelay seconds after a crash, or immediately by IA_Boost.
+	 */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void ResetRun();
+
+	/** Current run time as MM:SS:FF at 24 fps. */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	FString GetFormattedTimecode() const;
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	int32 GetCurrentTakeNumber() const { return CurrentTakeNumber; }
+
 	/** Called by the Pawn when it crashes. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void NotifyCrash(AActor* HitActor);
@@ -68,6 +83,10 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category="MegaJam|Flow")
 	void OnGrazeRegistered(AActor* GrazedActor, float NewMultiplier);
 
+	/** Blueprint hook for the clapperboard (title card, audio sting). Fired by ResetRun. */
+	UFUNCTION(BlueprintImplementableEvent, Category="MegaJam|Flow")
+	void OnClapperboard(int32 TakeNumber);
+
 	// ---- Shaders ----
 	/** Global MPC pushed to the Flow Subsystem in BeginPlay. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Shaders")
@@ -78,9 +97,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
 	bool bAutoStartRun = true;
 
-	/** Seconds until the run completes. 0 = endless. */
+	/** Seconds until the run completes. 0 = endless. Default 150 s = the four film scenes. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
-	float RunDuration = 0.0f;
+	float RunDuration = 150.0f;
+
+	/** Seconds after a crash before the run rewinds automatically. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
+	float CrashRestartDelay = 0.6f;
+
+	/** Spawn a track generator at the origin in StartRun when the level has none. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
+	bool bAutoSpawnTrackGenerator = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
+	TSubclassOf<AMegaJamTrackGenerator> TrackGeneratorClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Score")
 	float ScorePerSecond = 100.0f;
@@ -110,4 +140,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
 	float CurrentMultiplier = 1.0f;
+
+	/** Take counter for the film reel. Starts at 1, incremented by ResetRun. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	int32 CurrentTakeNumber = 1;
+
+	FTimerHandle CrashRestartTimer;
 };

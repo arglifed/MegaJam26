@@ -36,6 +36,9 @@ asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 
 failures = []
 
+# Optional selective run, e.g. $env:MEGAJAM_GEN_ONLY = "mpc,ghost" (steps: mpc, ghost). Empty = generate everything.
+ONLY = set(s.strip().lower() for s in os.environ.get("MEGAJAM_GEN_ONLY", "").split(",") if s.strip())
+
 
 def log(msg):
     unreal.log("[MegaJamGen] " + msg)
@@ -154,7 +157,8 @@ def make_mpc():
     mpc = get_or_create("MPC_FlowState", VFX, unreal.MaterialParameterCollection,
                         unreal.MaterialParameterCollectionFactoryNew())
     params = []
-    for pname, default in (("FlowRatio", 0.0), ("Multiplier", 1.0), ("AudioEnvelope", 0.0)):
+    for pname, default in (("FlowRatio", 0.0), ("Multiplier", 1.0), ("AudioEnvelope", 0.0),
+                           ("ActiveTake", 0.0), ("AspectMode", 0.0)):
         p = unreal.CollectionScalarParameter()
         p.set_editor_property("parameter_name", pname)
         p.set_editor_property("default_value", default)
@@ -162,6 +166,80 @@ def make_mpc():
     mpc.set_editor_property("scalar_parameters", params)
     save(mpc)
     return mpc
+
+
+# ----------------------------------------------------------------------------------------------
+# Take ghost material (Director's Cut obstacles)
+# ----------------------------------------------------------------------------------------------
+def make_ghost_material(mpc):
+    """
+    M_TakeGhost: translucent, unlit, emissive.
+    Parameters set per obstacle pool by AMegaJamTrackGenerator through a dynamic material instance:
+        TakeIndex (scalar): 0 = Take A (Studio), 1 = Take B (Director's)
+        TakeColor (vector): pool tint
+    Reads MPC_FlowState.ActiveTake: Active = 1 - |ActiveTake - TakeIndex|.
+    Active-take obstacles render solid/bright, inactive-take obstacles render faint/ghosted.
+    """
+    mel = unreal.MaterialEditingLibrary
+    path = VFX + "/M_TakeGhost"
+    existed = eal.does_asset_exist(path)
+    mat = get_or_create("M_TakeGhost", VFX, unreal.Material, unreal.MaterialFactoryNew())
+    if existed:
+        mel.delete_all_material_expressions(mat)
+
+    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
+    mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    try:
+        mat.set_editor_property("used_with_instanced_static_meshes", True)
+    except Exception as exc:
+        unreal.log_warning("[MegaJamGen] could not set used_with_instanced_static_meshes: %s" % exc)
+
+    def node(cls, x, y):
+        return mel.create_material_expression(mat, cls, x, y)
+
+    active_take = node(unreal.MaterialExpressionCollectionParameter, -1200, -200)
+    active_take.set_editor_property("collection", mpc)
+    active_take.set_editor_property("parameter_name", "ActiveTake")
+
+    take_index = node(unreal.MaterialExpressionScalarParameter, -1200, 0)
+    take_index.set_editor_property("parameter_name", "TakeIndex")
+    take_index.set_editor_property("default_value", 0.0)
+
+    diff = node(unreal.MaterialExpressionSubtract, -950, -100)
+    mel.connect_material_expressions(active_take, "", diff, "A")
+    mel.connect_material_expressions(take_index, "", diff, "B")
+
+    absolute = node(unreal.MaterialExpressionAbs, -750, -100)
+    mel.connect_material_expressions(diff, "", absolute, "")
+
+    active = node(unreal.MaterialExpressionOneMinus, -550, -100)
+    mel.connect_material_expressions(absolute, "", active, "")
+
+    # Opacity: 0.08 (ghost) .. 0.9 (solid)
+    opacity = node(unreal.MaterialExpressionLinearInterpolate, -300, 100)
+    opacity.set_editor_property("const_a", 0.08)
+    opacity.set_editor_property("const_b", 0.9)
+    mel.connect_material_expressions(active, "", opacity, "Alpha")
+    mel.connect_material_property(opacity, "", unreal.MaterialProperty.MP_OPACITY)
+
+    # Emissive: TakeColor * (0.4 ghost .. 5.0 bright)
+    glow = node(unreal.MaterialExpressionLinearInterpolate, -550, 250)
+    glow.set_editor_property("const_a", 0.4)
+    glow.set_editor_property("const_b", 5.0)
+    mel.connect_material_expressions(active, "", glow, "Alpha")
+
+    color = node(unreal.MaterialExpressionVectorParameter, -550, 400)
+    color.set_editor_property("parameter_name", "TakeColor")
+    color.set_editor_property("default_value", unreal.LinearColor(1.0, 0.5, 0.1, 1.0))
+
+    emissive = node(unreal.MaterialExpressionMultiply, -300, 300)
+    mel.connect_material_expressions(color, "", emissive, "A")
+    mel.connect_material_expressions(glow, "", emissive, "B")
+    mel.connect_material_property(emissive, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+
+    mel.recompile_material(mat)
+    save(mat)
+    return mat
 
 
 # ----------------------------------------------------------------------------------------------
@@ -307,9 +385,45 @@ def patch_engine_ini():
 # ----------------------------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------------------------
+def main_selected():
+    """Runs only the steps listed in MEGAJAM_GEN_ONLY (comma separated): mpc, ghost."""
+    unknown = ONLY - {"mpc", "ghost"}
+    if unknown:
+        raise RuntimeError("unknown MEGAJAM_GEN_ONLY step(s): " + ", ".join(sorted(unknown)))
+
+    mpc = None
+    try:
+        if "mpc" in ONLY:
+            mpc = make_mpc()
+        elif "ghost" in ONLY:
+            # The ghost material only references the MPC; load it, do not re-save it.
+            mpc = unreal.load_asset(VFX + "/MPC_FlowState")
+            if mpc is None:
+                raise RuntimeError("MPC_FlowState does not exist; run with mpc first")
+    except Exception as exc:
+        fail("MPC_FlowState", exc)
+
+    try:
+        if "ghost" in ONLY and mpc is not None:
+            make_ghost_material(mpc)
+    except Exception as exc:
+        fail("M_TakeGhost", exc)
+
+    if failures:
+        unreal.log_error("[MegaJamGen] DONE WITH FAILURES: " + ", ".join(failures))
+    else:
+        log("DONE: selected steps (%s) generated successfully" % ", ".join(sorted(ONLY)))
+
+
 def main():
     for folder in (CORE, VFX, BLUEPRINTS, MAPS):
         eal.make_directory(folder)
+
+    # Selective run: only touch the steps named in MEGAJAM_GEN_ONLY. Nothing else is loaded or re-saved,
+    # so unrelated binary assets stay untouched (AGENTS.md section 5).
+    if ONLY:
+        main_selected()
+        return
 
     steer = boost = brake = pause = imc = mpc = None
     try:
@@ -329,6 +443,12 @@ def main():
         mpc = make_mpc()
     except Exception as exc:
         fail("MPC_FlowState", exc)
+
+    try:
+        if mpc is not None:
+            make_ghost_material(mpc)
+    except Exception as exc:
+        fail("M_TakeGhost", exc)
 
     pawn_class = controller_class = mode_class = None
     try:
