@@ -11,3 +11,6 @@ DerivedDataCache/
 # Local tooling clutter
 Backup/
 UpgradeLog.htm
+
+# Raw asset source files (DAW projects, master .wavs, source .blend/.fbx)
+RawAssets/
