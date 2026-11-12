@@ -216,6 +216,24 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	StepPhysics(DeltaSeconds);
 
+	MatchCutFlashTimer = FMath::Max(0.0f, MatchCutFlashTimer - DeltaSeconds);
+	AspectHoldTimer += DeltaSeconds;
+	if (AspectHoldTimer > StaleShotThreshold)
+	{
+		bIsShotStale = true;
+		StaleDecayAccum += DeltaSeconds;
+		while (StaleDecayAccum >= StaleDecayInterval)
+		{
+			StaleDecayAccum -= StaleDecayInterval;
+			SpliceChain = FMath::Max(1, SpliceChain - 1);
+		}
+	}
+	else
+	{
+		bIsShotStale = false;
+		StaleDecayAccum = 0.0f;
+	}
+
 	// Normalized speed. Computed after StepPhysics so a crash leaves FlowRatio at 0.
 	FlowRatio = TerminalVelocity > KINDA_SMALL_NUMBER
 		? FMath::Clamp(Velocity.Size() / TerminalVelocity, 0.0f, 1.0f)
@@ -224,6 +242,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
+		FlowSubsystem->SetSpliceChain(SpliceChain);
+		FlowSubsystem->SetAspectHoldTimer(AspectHoldTimer);
+		FlowSubsystem->SetIsShotStale(bIsShotStale);
 	}
 
 	PushAudioParameters();
@@ -333,6 +354,8 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
 
+	TryTriggerMatchCut();
+
 	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
 	TriggerAudioEvent(TEXT("OnHardCut"));
@@ -344,6 +367,13 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 void AMegaJamFlowPawn::ToggleAspect()
 {
 	SetAspectMode(CurrentAspect == EMegaJamAspectMode::Wide_21_9 ? EMegaJamAspectMode::Box_4_3 : EMegaJamAspectMode::Wide_21_9);
+
+	AspectHoldTimer = 0.0f;
+	bIsShotStale = false;
+	StaleDecayAccum = 0.0f;
+
+	TryTriggerMatchCut();
+	PushTakeAndAspectToSubsystem();
 	TriggerAudioEvent(TEXT("OnAspectSwitch"));
 
 	if (GEngine)
@@ -374,7 +404,13 @@ void AMegaJamFlowPawn::ResetForRun()
 	SteerInput = FVector2D::ZeroVector;
 	CurrentFOVPunch = 0.0f;
 	CurrentCameraRoll = 0.0f;
+	SpliceChain = 1;
+	AspectHoldTimer = 0.0f;
+	bIsShotStale = false;
+	StaleDecayAccum = 0.0f;
+	MatchCutFlashTimer = 0.0f;
 	LastCutTime = -1000.0;
+	LastGrazeOrPickupTime = -1000.0;
 	GrazeTimes.Reset();
 
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
@@ -411,8 +447,81 @@ void AMegaJamFlowPawn::PushTakeAndAspectToSubsystem() const
 		{
 			FlowSubsystem->SetActiveTake(CurrentTake == EMegaJamTakeState::DirectorsTake ? 1.0f : 0.0f);
 			FlowSubsystem->SetAspectMode(CurrentAspect == EMegaJamAspectMode::Box_4_3 ? 1.0f : 0.0f);
+			FlowSubsystem->SetSpliceChain(SpliceChain);
+			FlowSubsystem->SetAspectHoldTimer(AspectHoldTimer);
+			FlowSubsystem->SetIsShotStale(bIsShotStale);
 		}
 	}
+}
+
+bool AMegaJamFlowPawn::TryTriggerMatchCut()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return false;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastGrazeOrPickupTime > MatchCutWindow)
+	{
+		return false;
+	}
+
+	// Consume the window so a single graze cannot be farmed repeatedly.
+	LastGrazeOrPickupTime = -1000.0;
+
+	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
+	MatchCutFlashTimer = 1.1f;
+
+	// Refill Flow and forward momentum on a successful Match Cut.
+	Velocity.X = FMath::Max(static_cast<float>(Velocity.X), TerminalVelocity * 0.95f);
+	FlowRatio = 1.0f;
+
+	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+	{
+		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain), true);
+	}
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetFlowRatio(FlowRatio);
+		FlowSubsystem->SetSpliceChain(SpliceChain);
+	}
+
+	TriggerAudioEvent(TEXT("OnGraze"));
+	return true;
+}
+
+void AMegaJamFlowPawn::NotifyFilmFrameCollected()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return;
+	}
+
+	LastGrazeOrPickupTime = World->GetTimeSeconds();
+	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
+	MatchCutFlashTimer = 0.9f;
+
+	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + CutSpeedImpulse * 0.75f, TerminalVelocity);
+	FlowRatio = TerminalVelocity > KINDA_SMALL_NUMBER
+		? FMath::Clamp(Velocity.Size() / TerminalVelocity, 0.0f, 1.0f)
+		: 0.0f;
+
+	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+	{
+		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain), true);
+	}
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetFlowRatio(FlowRatio);
+		FlowSubsystem->SetSpliceChain(SpliceChain);
+	}
+
+	TriggerAudioEvent(TEXT("OnGraze"));
 }
 
 void AMegaJamFlowPawn::PushAudioParameters() const
@@ -450,6 +559,13 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	bCrashed = true;
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
+	SpliceChain = 1;
+	AspectHoldTimer = 0.0f;
+	bIsShotStale = false;
+	StaleDecayAccum = 0.0f;
+	MatchCutFlashTimer = 0.0f;
+	LastGrazeOrPickupTime = -1000.0;
+	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
 	TriggerAudioEvent(TEXT("OnCrashed"));
 
@@ -532,6 +648,7 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		}
 	}
 	GrazeTimes.Add(Key, Now);
+	LastGrazeOrPickupTime = Now;
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{

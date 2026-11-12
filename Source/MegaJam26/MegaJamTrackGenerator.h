@@ -10,19 +10,59 @@
 
 class AMegaJamFlowPawn;
 class UInstancedStaticMeshComponent;
+class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USceneComponent;
 class UStaticMesh;
 
+/** Broadcast when the track generator transitions into a new film scene. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnFilmSceneChanged, EMegaJamFilmScene, NewScene);
+
+/** Runtime state for a pooled collectible Film Frame pickup instance. */
+USTRUCT()
+struct FMegaJamFilmFramePickup
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY()
+	FVector Scale = FVector(1.2f, 1.2f, 1.2f);
+
+	UPROPERTY()
+	EMegaJamTakeState RequiredTake = EMegaJamTakeState::StudioTake;
+
+	UPROPERTY()
+	int32 PoolIndex = 0;
+
+	UPROPERTY()
+	bool bActive = false;
+};
+
+/** Runtime state for a pooled set-piece instance (supports continuous rotation in Scene 3). */
+USTRUCT()
+struct FMegaJamSetPieceSlot
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FTransform BaseTransform = FTransform::Identity;
+
+	UPROPERTY()
+	bool bRotates = false;
+
+	UPROPERTY()
+	float RotationSpeedDeg = 45.0f;
+
+	UPROPERTY()
+	bool bActive = false;
+};
+
 /**
- * Procedural corridor. Four instanced mesh pools (floor, walls, Take A obstacles, Take B obstacles) are laid out
- * as a ring buffer of chunks along +X. Chunks behind the pawn are recycled ahead of it.
- *
- * Take handling: the pawn's OnTakeCut toggles collision between the two obstacle pools. The ghost material reads
- * MPC_FlowState.ActiveTake so the inactive pool renders faint.
- *
- * Passability: every chunk is split into RowsPerChunk rows and each row holds at most one obstacle (of either take),
- * so the two takes never block the same longitudinal slice.
+ * Procedural corridor for SPLICE // DIRECTOR'S CUT.
+ * Manages pooled InstancedStaticMeshComponents for Floor, Walls, Take A / Take B Obstacles (ground, air, and
+ * aspect-gated barriers), 4-Scene Set Pieces, and Aspect-Locked Collectible Film Frames.
  */
 UCLASS()
 class MEGAJAM26_API AMegaJamTrackGenerator : public AActor
@@ -52,6 +92,46 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> TakeB_ObstaclesISM;
 
+	/** Non-colliding 4-scene architectural set dressing pooled per chunk. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> SetPieceISM;
+
+	/** Non-colliding aspect-locked collectible Film Frames (Studio Take A). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> PickupISM;
+
+	/** Non-colliding aspect-locked collectible Film Frames (Director's Take B). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> PickupTakeB_ISM;
+
+	// ---- Modular Art Mesh Slots (fall back to Cube / Cylinder when null) ----
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> ObstacleTakeAMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> ObstacleTakeBMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> FloorTileMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> WallSegmentMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> SoundstageTrussMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> SkyscraperMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> FilmReelMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> ApertureRingMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> FilmFramePickupMesh;
+
 	// ---- Track tunables ----
 	/** Length of one chunk along +X (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
@@ -65,7 +145,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	int32 ChunksBehind = 1;
 
-	/** Obstacle rows per chunk. Each row holds at most one obstacle. */
+	/** Obstacle rows per chunk. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	int32 RowsPerChunk = 4;
 
@@ -83,7 +163,7 @@ public:
 
 	/** Probability that a row holds an obstacle at density scale 1 (scene 4, full flow). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
-	float MaxObstacleDensity = 0.75f;
+	float MaxObstacleDensity = 0.78f;
 
 	/** Obstacles are placed within +/- this lateral range (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
@@ -93,9 +173,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	float ObstacleSize = 200.0f;
 
-	/** Obstacle height range (cm), standing on the floor. */
+	/** Ground obstacle height range (cm), standing on the floor. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	FVector2D ObstacleHeightRange = FVector2D(150.0, 300.0);
+
+	/** High-altitude air obstacle Z center range (cm) to challenge Box_4_3 vertical flight. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
+	FVector2D AirObstacleZRange = FVector2D(320.0, 820.0);
+
+	/** Collection distance (cm) for Aspect-Locked Film Frame pickups. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
+	float PickupCollectionRadius = 190.0f;
 
 	/** Assumed speed (cm/s) when projecting when a chunk will be reached, to pick its scene. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
@@ -109,6 +197,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="MegaJam|Scenes")
 	EMegaJamFilmScene GetCurrentScene() const { return CurrentScene; }
 
+	/** Multicast delegate for C++ / HUD listeners when the run enters a new film scene. */
+	UPROPERTY(BlueprintAssignable, Category="MegaJam|Scenes")
+	FOnFilmSceneChanged OnFilmSceneChanged;
+
 	/** Blueprint hook (lighting, props, title card) when the run enters a new film scene. */
 	UFUNCTION(BlueprintImplementableEvent, Category="MegaJam|Scenes")
 	void OnSceneChanged(EMegaJamFilmScene NewScene);
@@ -116,6 +208,9 @@ public:
 	// ---- Visuals (soft defaults; override in a Blueprint subclass) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Visuals")
 	TObjectPtr<UStaticMesh> BlockMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Visuals")
+	TObjectPtr<UStaticMesh> CylinderMesh;
 
 	/** Defaults to /Game/MegaJam26/VFX/M_TakeGhost when that asset exists. Needs scalar TakeIndex and vector TakeColor. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Visuals")
@@ -147,6 +242,10 @@ protected:
 	void HandleRunStateChanged(EMegaJamRunState NewState, EMegaJamRunState OldState);
 
 private:
+	static constexpr int32 ObstaclesPerRow = 3;
+	static constexpr int32 SetPiecesPerChunk = 4;
+	static constexpr int32 PickupsPerChunk = 2;
+
 	int32 PoolSize() const { return FMath::Max(1, ChunksAhead + ChunksBehind); }
 	int32 SlotOf(int32 ChunkIndex) const;
 	int32 SceneIndexAtTime(float RunTimeSeconds) const;
@@ -156,6 +255,11 @@ private:
 	void BindToPawn();
 	void CreatePools();
 	void PopulateChunk(int32 ChunkIndex);
+	void PopulateSetPiecesForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
+	void PopulatePickupsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, FRandomStream& Stream);
+	void UpdateDynamicAnimationsAndPickups(float DeltaSeconds);
+	void UpdateSceneMaterials(float DeltaSeconds);
+	FLinearColor GetSceneAccentColor(EMegaJamFilmScene Scene) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamFlowPawn> BoundPawn;
@@ -163,10 +267,22 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamGameMode> BoundGameMode;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SetPieceMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> WallMID;
+
+	UPROPERTY(Transient)
+	TArray<FMegaJamSetPieceSlot> SetPieceSlots;
+
+	UPROPERTY(Transient)
+	TArray<FMegaJamFilmFramePickup> PickupSlots;
+
 	bool bPoolsCreated = false;
 	bool bBuilt = false;
 	int32 FirstChunkIndex = 0;
 	EMegaJamFilmScene CurrentScene = EMegaJamFilmScene::Soundstage;
 	int32 LastBroadcastScene = -1;
+	FLinearColor CurrentSceneColor = FLinearColor(1.0f, 0.72f, 0.35f, 1.0f);
 };
-

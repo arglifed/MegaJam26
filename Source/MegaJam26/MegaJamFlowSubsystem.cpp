@@ -49,6 +49,21 @@ void UMegaJamFlowSubsystem::SetAspectMode(float NewAspectMode)
 	AspectMode = FMath::Clamp(NewAspectMode, 0.0f, 1.0f);
 }
 
+void UMegaJamFlowSubsystem::SetSpliceChain(int32 NewSpliceChain)
+{
+	SpliceChain = FMath::Clamp(NewSpliceChain, 1, 8);
+}
+
+void UMegaJamFlowSubsystem::SetAspectHoldTimer(float NewHoldTimer)
+{
+	AspectHoldTimer = FMath::Max(0.0f, NewHoldTimer);
+}
+
+void UMegaJamFlowSubsystem::SetIsShotStale(bool bNewShotStale)
+{
+	bIsShotStale = bNewShotStale;
+}
+
 void UMegaJamFlowSubsystem::SetFlowMPC(UMaterialParameterCollection* InFlowMPC)
 {
 	FlowMPC = InFlowMPC;

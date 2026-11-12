@@ -113,6 +113,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float CutSpeedImpulse = 600.0f;
 
+	// ---- Match-Cut Chain & Stale-Shot Mechanics ----
+	/** Maximum time (s) after grazing an obstacle or collecting a Film Frame in which a Hard Cut or Aspect Switch triggers a Match Cut. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
+	float MatchCutWindow = 1.2f;
+
+	/** Maximum SpliceChain value. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
+	int32 MaxSpliceChain = 8;
+
+	/** Bonus score multiplied by SpliceChain when a Match Cut or Film Frame pickup triggers. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
+	float MatchCutBonusBase = 150.0f;
+
+	/** Seconds spent continuously in the same Aspect Mode before the shot becomes stale. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
+	float StaleShotThreshold = 5.5f;
+
+	/** Seconds between -1 SpliceChain decay ticks while bIsShotStale is true. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
+	float StaleDecayInterval = 2.0f;
+
 	// ---- Aspect ratio corridor (world space; +X is forward, Y lateral, Z vertical) ----
 	/** Wide_21_9: wide lateral bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
@@ -199,6 +220,22 @@ public:
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	EMegaJamAspectMode GetAspectMode() const { return CurrentAspect; }
 
+	UFUNCTION(BlueprintPure, Category="MegaJam|Chain")
+	int32 GetSpliceChain() const { return SpliceChain; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Chain")
+	float GetAspectHoldTimer() const { return AspectHoldTimer; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Chain")
+	bool IsShotStale() const { return bIsShotStale; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Chain")
+	float GetMatchCutFlashTimer() const { return MatchCutFlashTimer; }
+
+	/** Called by AMegaJamTrackGenerator when the pawn collects an active-take Film Frame pickup. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Chain")
+	void NotifyFilmFrameCollected();
+
 	// ---- Director's Cut actions ----
 	/** Toggles the take, adds CutSpeedImpulse and fires OnTakeCut. Returns false when on cooldown or not in a live run. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
@@ -252,6 +289,7 @@ protected:
 	void PushTakeAndAspectToSubsystem() const;
 	void PushAudioParameters() const;
 	void TriggerAudioEvent(FName ParameterName) const;
+	bool TryTriggerMatchCut();
 
 	// ---- Input hooks ----
 	virtual void Input_Steer(const FInputActionValue& Value);
@@ -280,6 +318,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	EMegaJamAspectMode CurrentAspect = EMegaJamAspectMode::Wide_21_9;
 
+	/** Active Match-Cut chain multiplier (1 to 8). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
+	int32 SpliceChain = 1;
+
+	/** Seconds spent continuously in the current EMegaJamAspectMode without switching. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
+	float AspectHoldTimer = 0.0f;
+
+	/** True when AspectHoldTimer exceeds StaleShotThreshold (5.5s). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
+	bool bIsShotStale = false;
+
 	FVector2D SteerInput = FVector2D::ZeroVector;
 
 	/** Current decaying additive FOV punch from TriggerHardCut. */
@@ -290,6 +340,15 @@ protected:
 
 	/** World time of the last hard cut. */
 	double LastCutTime = -1000.0;
+
+	/** World time of the most recent obstacle graze or Film Frame pickup. */
+	double LastGrazeOrPickupTime = -1000.0;
+
+	/** Accumulator for decaying SpliceChain every StaleDecayInterval seconds while stale. */
+	float StaleDecayAccum = 0.0f;
+
+	/** Remaining HUD flash timer after a Match Cut or Film Frame pickup. */
+	float MatchCutFlashTimer = 0.0f;
 
 	/** Transform captured in BeginPlay, restored by ResetForRun. */
 	FTransform SpawnTransform;

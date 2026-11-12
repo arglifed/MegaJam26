@@ -118,6 +118,9 @@ void AMegaJamGameMode::ResetRun()
 	{
 		FlowSubsystem->SetFlowRatio(0.0f);
 		FlowSubsystem->SetCurrentMultiplier(1.0f);
+		FlowSubsystem->SetSpliceChain(1);
+		FlowSubsystem->SetAspectHoldTimer(0.0f);
+		FlowSubsystem->SetIsShotStale(false);
 	}
 
 	OnClapperboard(CurrentTakeNumber);
@@ -172,6 +175,24 @@ void AMegaJamGameMode::RegisterGraze(AActor* GrazedActor)
 		FlowSubsystem->SetCurrentMultiplier(CurrentMultiplier);
 	}
 	OnGrazeRegistered(GrazedActor, CurrentMultiplier);
+}
+
+void AMegaJamGameMode::AddBonusScore(float BonusAmount, bool bBoostMultiplier)
+{
+	if (RunState != EMegaJamRunState::ActiveFlow)
+	{
+		return;
+	}
+
+	Score += FMath::Max(0.0f, BonusAmount);
+	if (bBoostMultiplier)
+	{
+		CurrentMultiplier = FMath::Min(CurrentMultiplier + GrazeMultiplierBoost, MaxMultiplier);
+		if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->SetCurrentMultiplier(CurrentMultiplier);
+		}
+	}
 }
 
 void AMegaJamGameMode::SetRunState(EMegaJamRunState NewState)

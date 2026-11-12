@@ -47,6 +47,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetAspectMode(float NewAspectMode);
 
+	/** Current Match-Cut splice chain (1..8). Written by the Pawn. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetSpliceChain(int32 NewSpliceChain);
+
+	/** Seconds spent continuously in the current Aspect Mode without switching. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetAspectHoldTimer(float NewHoldTimer);
+
+	/** True when the player has stayed in one Aspect Mode beyond the stale threshold. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetIsShotStale(bool bNewShotStale);
+
 	/** Assign the global Material Parameter Collection that receives the flow values each tick. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Shaders")
 	void SetFlowMPC(UMaterialParameterCollection* InFlowMPC);
@@ -69,6 +81,18 @@ public:
 	/** 0.0 (Wide_21_9) or 1.0 (Box_4_3). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float AspectMode = 0.0f;
+
+	/** Active Match-Cut chain multiplier (1 to 8). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	int32 SpliceChain = 1;
+
+	/** Seconds spent continuously in the current EMegaJamAspectMode. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float AspectHoldTimer = 0.0f;
+
+	/** True when AspectHoldTimer exceeds 5.5s and SpliceChain is decaying. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	bool bIsShotStale = false;
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;
