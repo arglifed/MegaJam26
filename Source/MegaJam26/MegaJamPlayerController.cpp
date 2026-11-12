@@ -4,7 +4,9 @@
 
 #include "MegaJamCinemaHUD.h"
 #include "MegaJamFlowPawn.h"
+#include "MegaJamGameMode.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/InputComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -77,6 +79,35 @@ void AMegaJamPlayerController::SetupInputComponent()
 	// Must fire while the game is paused so the same key can unpause.
 	PauseAction->bTriggerWhenPaused = true;
 	EnhancedInput->BindAction(PauseAction, ETriggerEvent::Started, this, &AMegaJamPlayerController::Input_Pause);
+
+	// Bind SpaceBar, Enter, and Gamepad_FaceButton_Bottom (non-consuming so gameplay IA_Boost still fires)
+	// to start from TitleScreen or restart from Completed Wrap-Up screen.
+	for (const FKey& StartKey : { EKeys::SpaceBar, EKeys::Enter, EKeys::Gamepad_FaceButton_Bottom })
+	{
+		FInputKeyBinding KeyBinding(FInputChord(StartKey), IE_Pressed);
+		KeyBinding.bConsumeInput = false;
+		KeyBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_StartOrConfirm);
+		InputComponent->KeyBindings.Add(KeyBinding);
+	}
+}
+
+void AMegaJamPlayerController::Input_StartOrConfirm()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+		{
+			const EMegaJamRunState State = GameMode->GetRunState();
+			if (State == EMegaJamRunState::TitleScreen)
+			{
+				GameMode->StartProductionFromTitle();
+			}
+			else if (State == EMegaJamRunState::Completed)
+			{
+				GameMode->RestartFullProduction();
+			}
+		}
+	}
 }
 
 void AMegaJamPlayerController::OnPossess(APawn* InPawn)

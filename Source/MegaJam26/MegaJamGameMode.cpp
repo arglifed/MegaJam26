@@ -27,7 +27,6 @@ void AMegaJamGameMode::BeginPlay()
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
-		// Fall back to the default MPC asset if one was not assigned in class defaults.
 		if (!DefaultFlowMPC && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/VFX/MPC_FlowState")))
 		{
 			DefaultFlowMPC = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/MegaJam26/VFX/MPC_FlowState.MPC_FlowState"));
@@ -35,11 +34,45 @@ void AMegaJamGameMode::BeginPlay()
 
 		FlowSubsystem->SetFlowMPC(DefaultFlowMPC);
 		FlowSubsystem->SetCurrentMultiplier(CurrentMultiplier);
+		FlowSubsystem->SetTotalFramesCollected(0);
+		FlowSubsystem->SetHighestSpliceChain(1);
+		FlowSubsystem->SetCurrentCheckpointTime(0.0f);
 	}
 
-	if (bAutoStartRun)
+	EnsureTrackGeneratorSpawned();
+
+	if (bStartOnTitleScreen)
 	{
-		StartRun();
+		RunTime = 0.0f;
+		Score = 0.0f;
+		CurrentMultiplier = 1.0f;
+		CurrentTakeNumber = 1;
+		TotalFramesCollected = 0;
+		HighestSpliceChain = 1;
+		CurrentCheckpointTime = 0.0f;
+		CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
+		SetRunState(EMegaJamRunState::TitleScreen);
+	}
+	else if (bAutoStartRun)
+	{
+		StartProductionFromTitle();
+	}
+}
+
+void AMegaJamGameMode::EnsureTrackGeneratorSpawned()
+{
+	UWorld* World = GetWorld();
+	if (World && bAutoSpawnTrackGenerator)
+	{
+		TArray<AActor*> Generators;
+		UGameplayStatics::GetAllActorsOfClass(World, AMegaJamTrackGenerator::StaticClass(), Generators);
+		if (Generators.IsEmpty())
+		{
+			UClass* GeneratorClass = TrackGeneratorClass ? TrackGeneratorClass.Get() : AMegaJamTrackGenerator::StaticClass();
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			World->SpawnActor<AMegaJamTrackGenerator>(GeneratorClass, FTransform::Identity, SpawnParams);
+		}
 	}
 }
 
@@ -47,7 +80,7 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (RunState != EMegaJamRunState::ActiveFlow)
+	if (!IsPlaying())
 	{
 		return;
 	}
@@ -56,6 +89,7 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 	const float FlowRatio = FlowSubsystem ? FlowSubsystem->FlowRatio : 0.0f;
 
 	RunTime += DeltaSeconds;
+	EvaluateSceneCheckpoints();
 
 	// Multiplier decays back toward 1 unless refreshed by grazes.
 	CurrentMultiplier = FMath::FInterpConstantTo(CurrentMultiplier, 1.0f, DeltaSeconds, MultiplierDecayPerSecond);
@@ -70,32 +104,98 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 
 	if (RunDuration > 0.0f && RunTime >= RunDuration)
 	{
+		RunTime = RunDuration;
 		CompleteRun();
 	}
 }
 
-void AMegaJamGameMode::StartRun()
+void AMegaJamGameMode::EvaluateSceneCheckpoints()
 {
-	RunTime = 0.0f;
+	if (RunTime >= 115.0f && CurrentCheckpointTime < 115.0f)
+	{
+		NotifyCheckpointReached(EMegaJamFilmScene::FinalCut, 115.0f);
+	}
+	else if (RunTime >= 75.0f && CurrentCheckpointTime < 75.0f)
+	{
+		NotifyCheckpointReached(EMegaJamFilmScene::CuttingRoom, 75.0f);
+	}
+	else if (RunTime >= 35.0f && CurrentCheckpointTime < 35.0f)
+	{
+		NotifyCheckpointReached(EMegaJamFilmScene::OverpassNight, 35.0f);
+	}
+}
+
+void AMegaJamGameMode::NotifyCheckpointReached(EMegaJamFilmScene NewScene, float CheckpointTime)
+{
+	if (CheckpointTime <= CurrentCheckpointTime && NewScene == CurrentCheckpointScene)
+	{
+		return;
+	}
+
+	CurrentCheckpointScene = NewScene;
+	CurrentCheckpointTime = FMath::Max(0.0f, CheckpointTime);
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetCurrentCheckpointTime(CurrentCheckpointTime);
+	}
+}
+
+void AMegaJamGameMode::StartProductionFromTitle()
+{
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(CrashRestartTimer);
+	}
+
+	CurrentTakeNumber = 1;
 	Score = 0.0f;
 	CurrentMultiplier = 1.0f;
+	TotalFramesCollected = 0;
+	HighestSpliceChain = 1;
+	CurrentCheckpointTime = 0.0f;
+	CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
+	RunTime = 0.0f;
 
-	// Make L_FlowTest work out of the box: spawn a track at the origin if the level has none.
-	UWorld* World = GetWorld();
-	if (World && bAutoSpawnTrackGenerator)
+	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
-		TArray<AActor*> Generators;
-		UGameplayStatics::GetAllActorsOfClass(World, AMegaJamTrackGenerator::StaticClass(), Generators);
-		if (Generators.IsEmpty())
+		FlowPawn->ResetForRun();
+	}
+
+	if (World)
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
-			UClass* GeneratorClass = TrackGeneratorClass ? TrackGeneratorClass.Get() : AMegaJamTrackGenerator::StaticClass();
-			FActorSpawnParameters SpawnParams;
-			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			World->SpawnActor<AMegaJamTrackGenerator>(GeneratorClass, FTransform::Identity, SpawnParams);
+			FlowSubsystem->SetFlowRatio(0.0f);
+			FlowSubsystem->SetCurrentMultiplier(1.0f);
+			FlowSubsystem->SetSpliceChain(1);
+			FlowSubsystem->SetAspectHoldTimer(0.0f);
+			FlowSubsystem->SetIsShotStale(false);
+			FlowSubsystem->SetTotalFramesCollected(0);
+			FlowSubsystem->SetHighestSpliceChain(1);
+			FlowSubsystem->SetCurrentCheckpointTime(0.0f);
 		}
 	}
 
-	SetRunState(EMegaJamRunState::ActiveFlow);
+	OnClapperboard(CurrentTakeNumber);
+	SetRunState(EMegaJamRunState::PreRun);
+	StartRun();
+}
+
+void AMegaJamGameMode::RestartFullProduction()
+{
+	StartProductionFromTitle();
+}
+
+void AMegaJamGameMode::StartRun()
+{
+	RunTime = CurrentCheckpointTime;
+	CurrentMultiplier = 1.0f;
+
+	EnsureTrackGeneratorSpawned();
+
+	SetRunState(EMegaJamRunState::Playing);
 }
 
 void AMegaJamGameMode::ResetRun()
@@ -108,6 +208,10 @@ void AMegaJamGameMode::ResetRun()
 
 	World->GetTimerManager().ClearTimer(CrashRestartTimer);
 	++CurrentTakeNumber;
+
+	// Rewind RunTime to CurrentCheckpointTime so the player resumes at the start of their current Act!
+	RunTime = CurrentCheckpointTime;
+	CurrentMultiplier = 1.0f;
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
@@ -125,8 +229,6 @@ void AMegaJamGameMode::ResetRun()
 
 	OnClapperboard(CurrentTakeNumber);
 
-	// Pass through PreRun so listeners (the track generator) always see a transition into ActiveFlow,
-	// even when ResetRun is called mid-run.
 	SetRunState(EMegaJamRunState::PreRun);
 	StartRun();
 }
@@ -142,7 +244,7 @@ FString AMegaJamGameMode::GetFormattedTimecode() const
 
 void AMegaJamGameMode::CompleteRun()
 {
-	if (RunState == EMegaJamRunState::ActiveFlow)
+	if (IsPlaying())
 	{
 		SetRunState(EMegaJamRunState::Completed);
 	}
@@ -150,7 +252,7 @@ void AMegaJamGameMode::CompleteRun()
 
 void AMegaJamGameMode::NotifyCrash(AActor* HitActor)
 {
-	if (RunState == EMegaJamRunState::ActiveFlow)
+	if (IsPlaying())
 	{
 		CurrentMultiplier = 1.0f;
 		if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -164,7 +266,7 @@ void AMegaJamGameMode::NotifyCrash(AActor* HitActor)
 
 void AMegaJamGameMode::RegisterGraze(AActor* GrazedActor)
 {
-	if (RunState != EMegaJamRunState::ActiveFlow)
+	if (!IsPlaying())
 	{
 		return;
 	}
@@ -179,7 +281,7 @@ void AMegaJamGameMode::RegisterGraze(AActor* GrazedActor)
 
 void AMegaJamGameMode::AddBonusScore(float BonusAmount, bool bBoostMultiplier)
 {
-	if (RunState != EMegaJamRunState::ActiveFlow)
+	if (!IsPlaying())
 	{
 		return;
 	}
@@ -195,6 +297,37 @@ void AMegaJamGameMode::AddBonusScore(float BonusAmount, bool bBoostMultiplier)
 	}
 }
 
+void AMegaJamGameMode::RegisterFilmFrameCollected(int32 CurrentChain)
+{
+	if (!IsPlaying())
+	{
+		return;
+	}
+
+	++TotalFramesCollected;
+	HighestSpliceChain = FMath::Max(HighestSpliceChain, FMath::Clamp(CurrentChain, 1, 8));
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetTotalFramesCollected(TotalFramesCollected);
+		FlowSubsystem->SetHighestSpliceChain(HighestSpliceChain);
+	}
+}
+
+void AMegaJamGameMode::NotifySpliceChainUpdated(int32 CurrentChain)
+{
+	if (!IsPlaying())
+	{
+		return;
+	}
+
+	HighestSpliceChain = FMath::Max(HighestSpliceChain, FMath::Clamp(CurrentChain, 1, 8));
+	if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetHighestSpliceChain(HighestSpliceChain);
+	}
+}
+
 void AMegaJamGameMode::SetRunState(EMegaJamRunState NewState)
 {
 	if (RunState == NewState)
@@ -205,7 +338,6 @@ void AMegaJamGameMode::SetRunState(EMegaJamRunState NewState)
 	const EMegaJamRunState OldState = RunState;
 	RunState = NewState;
 
-	// Clapperboard rewind: a crash automatically restarts the run after CrashRestartDelay.
 	if (UWorld* World = GetWorld())
 	{
 		FTimerManager& TimerManager = World->GetTimerManager();

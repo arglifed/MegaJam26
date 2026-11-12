@@ -59,6 +59,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetIsShotStale(bool bNewShotStale);
 
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetTotalFramesCollected(int32 NewTotalFrames);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetHighestSpliceChain(int32 NewHighestChain);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetCurrentCheckpointTime(float NewCheckpointTime);
+
 	/** Assign the global Material Parameter Collection that receives the flow values each tick. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Shaders")
 	void SetFlowMPC(UMaterialParameterCollection* InFlowMPC);
@@ -93,6 +102,18 @@ public:
 	/** True when AspectHoldTimer exceeds 5.5s and SpliceChain is decaying. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	bool bIsShotStale = false;
+
+	/** Total Film Frame pickups spliced during the current production run. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	int32 TotalFramesCollected = 0;
+
+	/** Highest Match-Cut SpliceChain achieved during the current production run. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	int32 HighestSpliceChain = 1;
+
+	/** Start time (s) of the latest reached Act/Scene checkpoint. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float CurrentCheckpointTime = 0.0f;
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;

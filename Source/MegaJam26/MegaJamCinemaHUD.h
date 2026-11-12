@@ -11,7 +11,9 @@
 class AMegaJamTrackGenerator;
 class UBorder;
 class UCanvasPanel;
+class UProgressBar;
 class UTextBlock;
+class UVerticalBox;
 
 /**
  * Pure C++ Cinema Letterbox HUD for SPLICE // DIRECTOR'S CUT.
@@ -19,12 +21,14 @@ class UTextBlock;
  * out of the box with zero Widget Blueprint (.uasset) dependencies.
  *
  * Features:
+ *   - Clapperboard Title Screen overlay (Attract Mode) with controls legend, objective, and pulsing start prompt.
  *   - Animated Top/Bottom letterbox matte bars in Wide_21_9 mode vs. Left/Right pillarbox matte bars in Box_4_3 mode.
  *   - Top-Left readout: REC ● TAKE XX and live 24fps SMPTE timecode MM:SS:FF.
+ *   - Top-Center Act Progress readout (ACT I / IV through ACT IV / IV) and progress bar filling toward 150s.
  *   - Top-Right readout: STUDIO CUT // TAKE A vs DIRECTOR'S CUT // TAKE B, framing badge, FLOW multiplier,
  *     and Match-Cut CHAIN x1-x8 badge (flashing gold on MATCH CUT! and pulsing amber on STALE SHOT).
  *   - Top-Center 2.5-second Scene Slugline clapperboard flash on scene transitions.
- *   - Center-screen Clapperboard flash overlay (ACTION!, CUT! // REWINDING..., FINAL CUT // WRAP).
+ *   - Final Cut Wrap-Up Scoreboard with 1-5 Critic Star Rating, cinema review quote, and replay prompt.
  */
 UCLASS()
 class MEGAJAM26_API UMegaJamCinemaHUD : public UUserWidget
@@ -65,6 +69,8 @@ protected:
 
 	void BindToTrackGenerator();
 	static FString GetSceneSluglineText(EMegaJamFilmScene Scene);
+	static FString GetActProgressLabel(EMegaJamFilmScene Scene);
+	static void ComputeCriticRating(int32 FinalScore, int32 MaxChain, int32 FramesSpliced, int32 TakesUsed, FString& OutStars, FString& OutQuote);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> RootCanvas;
@@ -90,17 +96,52 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ChainBadgeText;
 
+	// ---- Top-Center Act Progress Readout ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> ActProgressBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ActProgressText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UProgressBar> ActProgressBar;
+
+	// ---- Top-Center Scene Slugline Flash ----
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> SceneSluglineBorder;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> SceneSluglineText;
 
+	// ---- Center Clapperboard Flash (ACTION! / CUT!) ----
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> CenterBannerBorder;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> CenterBannerText;
+
+	// ---- Title Screen Card (RunState == TitleScreen) ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> TitleCardBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TitlePromptText;
+
+	// ---- Final Cut Wrap-Up Scoreboard (RunState == Completed) ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> WrapCardBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapStatsText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapStarsText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapQuoteText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapPromptText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamTrackGenerator> BoundTrackGenerator;

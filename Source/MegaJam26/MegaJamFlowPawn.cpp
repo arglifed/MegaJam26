@@ -206,14 +206,61 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// Hold still until the run is active (if a MegaJam game mode is in use).
+	// Hold still or run attract/victory cruise when not in active gameplay.
 	const AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>();
-	if (GameMode && GameMode->GetRunState() != EMegaJamRunState::ActiveFlow)
+	if (GameMode && !GameMode->IsPlaying())
 	{
+		const EMegaJamRunState State = GameMode->GetRunState();
+		const float TimeSeconds = static_cast<float>(GetWorld()->GetTimeSeconds());
+
+		if (State == EMegaJamRunState::TitleScreen)
+		{
+			bTriggeredVictorySting = false;
+			Velocity = FVector(AttractCruiseSpeed, 0.0f, 0.0f);
+			FlowRatio = 0.35f;
+
+			const FVector Loc = GetActorLocation();
+			const float TargetY = FMath::Sin(TimeSeconds * 0.85f) * 180.0f;
+			const float NewY = FMath::FInterpTo(static_cast<float>(Loc.Y), TargetY, DeltaSeconds, 4.0f);
+			const float NewZ = FMath::FInterpTo(static_cast<float>(Loc.Z), 130.0f, DeltaSeconds, 4.0f);
+			SetActorLocation(FVector(Loc.X + AttractCruiseSpeed * DeltaSeconds, NewY, NewZ), false);
+
+			if (Camera)
+			{
+				CurrentCameraRoll = FMath::Sin(TimeSeconds * 1.1f) * 2.2f;
+				Camera->SetRelativeRotation(FRotator(0.0f, 0.0f, CurrentCameraRoll));
+			}
+		}
+		else if (State == EMegaJamRunState::Completed)
+		{
+			if (!bTriggeredVictorySting)
+			{
+				bTriggeredVictorySting = true;
+				CurrentFOVPunch = CutFOVPunch;
+				TriggerAudioEvent(TEXT("OnHardCut"));
+			}
+
+			const float VictorySpeed = AttractCruiseSpeed * 1.25f;
+			Velocity = FVector(VictorySpeed, 0.0f, 0.0f);
+			FlowRatio = 1.0f;
+
+			const FVector Loc = GetActorLocation();
+			const float NewY = FMath::FInterpTo(static_cast<float>(Loc.Y), 0.0f, DeltaSeconds, 5.0f);
+			const float NewZ = FMath::FInterpTo(static_cast<float>(Loc.Z), 160.0f, DeltaSeconds, 5.0f);
+			SetActorLocation(FVector(Loc.X + VictorySpeed * DeltaSeconds, NewY, NewZ), false);
+
+			if (Camera)
+			{
+				CurrentCameraRoll = FMath::FInterpTo(CurrentCameraRoll, 0.0f, DeltaSeconds, 6.0f);
+				Camera->SetRelativeRotation(FRotator(0.0f, 0.0f, CurrentCameraRoll));
+			}
+		}
+
 		PushAudioParameters();
 		return;
 	}
 
+	bTriggeredVictorySting = false;
 	StepPhysics(DeltaSeconds);
 
 	MatchCutFlashTimer = FMath::Max(0.0f, MatchCutFlashTimer - DeltaSeconds);
@@ -336,7 +383,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 
 	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
-	if (GameMode && GameMode->GetRunState() != EMegaJamRunState::ActiveFlow)
+	if (GameMode && !GameMode->IsPlaying())
 	{
 		return false;
 	}
@@ -481,6 +528,7 @@ bool AMegaJamFlowPawn::TryTriggerMatchCut()
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
 		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain), true);
+		GameMode->NotifySpliceChainUpdated(SpliceChain);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -513,6 +561,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
 		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain), true);
+		GameMode->RegisterFilmFrameCollected(SpliceChain);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -591,11 +640,20 @@ void AMegaJamFlowPawn::Input_Steer(const FInputActionValue& Value)
 
 void AMegaJamFlowPawn::Input_Boost(const FInputActionValue& Value)
 {
-	// While crashed (or after the film completes) the same button rewinds to the next take immediately.
 	if (AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>())
 	{
 		const EMegaJamRunState State = GameMode->GetRunState();
-		if (State == EMegaJamRunState::Crashed || State == EMegaJamRunState::Completed)
+		if (State == EMegaJamRunState::TitleScreen)
+		{
+			GameMode->StartProductionFromTitle();
+			return;
+		}
+		if (State == EMegaJamRunState::Completed)
+		{
+			GameMode->RestartFullProduction();
+			return;
+		}
+		if (State == EMegaJamRunState::Crashed)
 		{
 			GameMode->ResetRun();
 			return;
@@ -610,6 +668,14 @@ void AMegaJamFlowPawn::Input_Brake(const FInputActionValue& Value)
 	if (bCrashed)
 	{
 		return;
+	}
+
+	if (const AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>())
+	{
+		if (!GameMode->IsPlaying())
+		{
+			return;
+		}
 	}
 
 	ToggleAspect();

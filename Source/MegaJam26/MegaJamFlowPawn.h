@@ -188,6 +188,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Camera")
 	float CutFOVPunchDecaySpeed = 10.0f;
 
+	/** Steady forward cruise speed (cm/s) during the Attract-Mode Title Screen and Victory Cruise. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Attract")
+	float AttractCruiseSpeed = 1600.0f;
+
 	// ---- Enhanced Input actions (assign in a Blueprint subclass) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Input")
 	TObjectPtr<UInputAction> SteerAction;
@@ -347,8 +351,11 @@ protected:
 	/** Accumulator for decaying SpliceChain every StaleDecayInterval seconds while stale. */
 	float StaleDecayAccum = 0.0f;
 
-	/** Remaining HUD flash timer after a Match Cut or Film Frame pickup. */
+	/**Remaining HUD flash timer after a Match Cut or Film Frame pickup. */
 	float MatchCutFlashTimer = 0.0f;
+
+	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
+	bool bTriggeredVictorySting = false;
 
 	/** Transform captured in BeginPlay, restored by ResetForRun. */
 	FTransform SpawnTransform;
