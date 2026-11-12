@@ -16,6 +16,8 @@ public class MegaJam26 : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"UMG",
+			"Slate",
+			"SlateCore",
 			"Niagara",
 			"AudioSynesthesia",
 			"MetasoundEngine"
@@ -23,8 +25,6 @@ public class MegaJam26 : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
-			"Slate",
-			"SlateCore"
 		});
 	}
 }

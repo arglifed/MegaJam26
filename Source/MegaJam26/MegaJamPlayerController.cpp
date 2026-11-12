@@ -2,7 +2,9 @@
 
 #include "MegaJamPlayerController.h"
 
+#include "MegaJamCinemaHUD.h"
 #include "MegaJamFlowPawn.h"
+#include "Blueprint/UserWidget.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -12,6 +14,11 @@
 #include "Misc/PackageName.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPC, Log, All);
+
+AMegaJamPlayerController::AMegaJamPlayerController()
+{
+	CinemaHUDClass = UMegaJamCinemaHUD::StaticClass();
+}
 
 void AMegaJamPlayerController::BeginPlay()
 {
@@ -31,6 +38,15 @@ void AMegaJamPlayerController::BeginPlay()
 			{
 				InputSubsystem->AddMappingContext(DefaultMappingContext, MappingContextPriority);
 			}
+		}
+	}
+
+	if (IsLocalController() && CinemaHUDClass && !CinemaHUDInstance)
+	{
+		CinemaHUDInstance = CreateWidget<UMegaJamCinemaHUD>(this, CinemaHUDClass);
+		if (CinemaHUDInstance)
+		{
+			CinemaHUDInstance->AddToViewport(0);
 		}
 	}
 

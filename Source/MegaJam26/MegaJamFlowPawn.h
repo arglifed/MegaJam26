@@ -8,8 +8,10 @@
 #include "MegaJamTypes.h"
 #include "MegaJamFlowPawn.generated.h"
 
+class UAudioComponent;
 class UCameraComponent;
 class UInputAction;
+class USoundBase;
 class USpringArmComponent;
 class USphereComponent;
 class UStaticMeshComponent;
@@ -60,6 +62,15 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UCameraComponent> Camera;
+
+	// ---- Audio / MetaSound Bridge ----
+	/** Audio component driving the dual-stem MetaSound score and parameter bridge. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Audio")
+	TObjectPtr<UAudioComponent> ScoreAudioComponent;
+
+	/** Optional MetaSound asset to auto-play in BeginPlay. Safely no-ops if null. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
+	TObjectPtr<USoundBase> ScoreMetaSound;
 
 	// ---- Physics tunables ----
 	/** Forward acceleration (cm/s^2). */
@@ -138,6 +149,23 @@ public:
 	/** Interpolation speed for camera FOV transitions between aspect modes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float AspectFOVInterpSpeed = 12.0f;
+
+	// ---- Camera Juice ----
+	/** Maximum camera roll (degrees) induced by lateral strafe velocity. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Camera")
+	float MaxStrafeRoll = 4.5f;
+
+	/** Interpolation speed for camera strafe roll. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Camera")
+	float CameraRollInterpSpeed = 10.0f;
+
+	/** Additive FOV punch (degrees) applied on a hard cut before decaying back to base FOV. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Camera")
+	float CutFOVPunch = 6.0f;
+
+	/** Decay interpolation speed for the additive hard-cut FOV punch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Camera")
+	float CutFOVPunchDecaySpeed = 10.0f;
 
 	// ---- Enhanced Input actions (assign in a Blueprint subclass) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Input")
@@ -222,6 +250,8 @@ protected:
 	void ApplyAspectClamp(float DeltaSeconds);
 
 	void PushTakeAndAspectToSubsystem() const;
+	void PushAudioParameters() const;
+	void TriggerAudioEvent(FName ParameterName) const;
 
 	// ---- Input hooks ----
 	virtual void Input_Steer(const FInputActionValue& Value);
@@ -251,6 +281,12 @@ protected:
 	EMegaJamAspectMode CurrentAspect = EMegaJamAspectMode::Wide_21_9;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
+
+	/** Current decaying additive FOV punch from TriggerHardCut. */
+	float CurrentFOVPunch = 0.0f;
+
+	/** Current interpolated camera roll angle (degrees). */
+	float CurrentCameraRoll = 0.0f;
 
 	/** World time of the last hard cut. */
 	double LastCutTime = -1000.0;

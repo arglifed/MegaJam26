@@ -5,6 +5,7 @@
 #include "MegaJamFlowSubsystem.h"
 #include "MegaJamGameMode.h"
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
@@ -14,6 +15,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "Misc/PackageName.h"
+#include "Sound/SoundBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
 
@@ -62,6 +64,11 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
 	Camera->SetFieldOfView(WideFOV);
+
+	ScoreAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ScoreAudioComponent"));
+	ScoreAudioComponent->SetupAttachment(CollisionSphere);
+	ScoreAudioComponent->bAutoActivate = false;
+	ScoreAudioComponent->bIsUISound = true;
 }
 
 void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
@@ -85,7 +92,14 @@ void AMegaJamFlowPawn::BeginPlay()
 	GrazeSphere->SetSphereRadius(GrazeRadius);
 	GrazeSphere->OnComponentBeginOverlap.AddDynamic(this, &AMegaJamFlowPawn::OnGrazeBeginOverlap);
 
+	if (ScoreAudioComponent && ScoreMetaSound)
+	{
+		ScoreAudioComponent->SetSound(ScoreMetaSound);
+		ScoreAudioComponent->Play();
+	}
+
 	PushTakeAndAspectToSubsystem();
+	PushAudioParameters();
 }
 
 void AMegaJamFlowPawn::EnsureFallbackInputActions()
@@ -170,15 +184,25 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	CurrentFOVPunch = FMath::FInterpTo(CurrentFOVPunch, 0.0f, DeltaSeconds, CutFOVPunchDecaySpeed);
+
 	if (Camera)
 	{
-		const float TargetFOV = (CurrentAspect == EMegaJamAspectMode::Wide_21_9) ? WideFOV : BoxFOV;
-		const float NewFOV = FMath::FInterpTo(Camera->FieldOfView, TargetFOV, DeltaSeconds, AspectFOVInterpSpeed);
-		Camera->SetFieldOfView(NewFOV);
+		const float BaseFOV = (CurrentAspect == EMegaJamAspectMode::Wide_21_9) ? WideFOV : BoxFOV;
+		const float SmoothedBaseFOV = FMath::FInterpTo(Camera->FieldOfView - CurrentFOVPunch, BaseFOV, DeltaSeconds, AspectFOVInterpSpeed);
+		Camera->SetFieldOfView(SmoothedBaseFOV + CurrentFOVPunch);
+
+		const float LateralAlpha = (TerminalVelocity > KINDA_SMALL_NUMBER && !bCrashed)
+			? FMath::Clamp(static_cast<float>(Velocity.Y) / TerminalVelocity, -1.0f, 1.0f)
+			: 0.0f;
+		const float TargetRoll = LateralAlpha * MaxStrafeRoll;
+		CurrentCameraRoll = FMath::FInterpTo(CurrentCameraRoll, TargetRoll, DeltaSeconds, CameraRollInterpSpeed);
+		Camera->SetRelativeRotation(FRotator(0.0f, 0.0f, CurrentCameraRoll));
 	}
 
 	if (bCrashed)
 	{
+		PushAudioParameters();
 		return;
 	}
 
@@ -186,6 +210,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	const AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>();
 	if (GameMode && GameMode->GetRunState() != EMegaJamRunState::ActiveFlow)
 	{
+		PushAudioParameters();
 		return;
 	}
 
@@ -200,6 +225,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 	}
+
+	PushAudioParameters();
 }
 
 void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
@@ -304,8 +331,11 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 
 	// Brief forward impulse. StepPhysics re-applies the terminal velocity clamp.
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
+	CurrentFOVPunch = CutFOVPunch;
 
 	PushTakeAndAspectToSubsystem();
+	PushAudioParameters();
+	TriggerAudioEvent(TEXT("OnHardCut"));
 	OnTakeCut.Broadcast(CurrentTake);
 	OnTakeCutEvent(CurrentTake);
 	return true;
@@ -314,6 +344,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 void AMegaJamFlowPawn::ToggleAspect()
 {
 	SetAspectMode(CurrentAspect == EMegaJamAspectMode::Wide_21_9 ? EMegaJamAspectMode::Box_4_3 : EMegaJamAspectMode::Wide_21_9);
+	TriggerAudioEvent(TEXT("OnAspectSwitch"));
 
 	if (GEngine)
 	{
@@ -341,6 +372,8 @@ void AMegaJamFlowPawn::ResetForRun()
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
 	SteerInput = FVector2D::ZeroVector;
+	CurrentFOVPunch = 0.0f;
+	CurrentCameraRoll = 0.0f;
 	LastCutTime = -1000.0;
 	GrazeTimes.Reset();
 
@@ -352,8 +385,10 @@ void AMegaJamFlowPawn::ResetForRun()
 	if (Camera)
 	{
 		Camera->SetFieldOfView(WideFOV);
+		Camera->SetRelativeRotation(FRotator::ZeroRotator);
 	}
 	PushTakeAndAspectToSubsystem();
+	PushAudioParameters();
 	OnTakeCut.Broadcast(CurrentTake);
 	OnTakeCutEvent(CurrentTake);
 	OnAspectChanged.Broadcast(CurrentAspect);
@@ -380,6 +415,31 @@ void AMegaJamFlowPawn::PushTakeAndAspectToSubsystem() const
 	}
 }
 
+void AMegaJamFlowPawn::PushAudioParameters() const
+{
+	if (!ScoreAudioComponent || !ScoreAudioComponent->IsPlaying())
+	{
+		return;
+	}
+
+	const float ActiveTakeValue = (CurrentTake == EMegaJamTakeState::DirectorsTake) ? 1.0f : 0.0f;
+	const float SpeedRatio = (TerminalVelocity > KINDA_SMALL_NUMBER && !bCrashed)
+		? FMath::Clamp(static_cast<float>(Velocity.X) / TerminalVelocity, 0.0f, 1.0f)
+		: 0.0f;
+
+	ScoreAudioComponent->SetFloatParameter(TEXT("ActiveTake"), ActiveTakeValue);
+	ScoreAudioComponent->SetFloatParameter(TEXT("FlowRatio"), FlowRatio);
+	ScoreAudioComponent->SetFloatParameter(TEXT("SpeedRatio"), SpeedRatio);
+}
+
+void AMegaJamFlowPawn::TriggerAudioEvent(FName ParameterName) const
+{
+	if (ScoreAudioComponent && ScoreAudioComponent->IsPlaying())
+	{
+		ScoreAudioComponent->SetTriggerParameter(ParameterName);
+	}
+}
+
 void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 {
 	if (bCrashed)
@@ -390,6 +450,8 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	bCrashed = true;
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
+	PushAudioParameters();
+	TriggerAudioEvent(TEXT("OnCrashed"));
 
 	if (UWorld* World = GetWorld())
 	{
@@ -476,5 +538,6 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		GameMode->RegisterGraze(OtherActor);
 	}
 
+	TriggerAudioEvent(TEXT("OnGraze"));
 	OnObstacleGrazed(OtherActor);
 }
