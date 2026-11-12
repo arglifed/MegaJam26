@@ -60,9 +60,9 @@ struct FMegaJamSetPieceSlot
 };
 
 /**
- * Procedural corridor for SPLICE // DIRECTOR'S CUT.
- * Manages pooled InstancedStaticMeshComponents for Floor, Walls, Take A / Take B Obstacles (ground, air, and
- * aspect-gated barriers), 4-Scene Set Pieces, and Aspect-Locked Collectible Film Frames.
+ * Procedural 4-Act corridor for SPLICE // DIRECTOR'S CUT.
+ * Manages pooled InstancedStaticMeshComponents for Floor, Walls, Take A / Take B Obstacles (tailored per Act),
+ * 4-Scene Set Pieces, Aspect-Locked Collectible Film Frames, and the 148s Golden Final Cut Wrap Arch.
  */
 UCLASS()
 class MEGAJAM26_API AMegaJamTrackGenerator : public AActor
@@ -103,6 +103,10 @@ public:
 	/** Non-colliding aspect-locked collectible Film Frames (Director's Take B). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> PickupTakeB_ISM;
+
+	/** Celebratory golden FINAL CUT WRAP ARCH spawned across the corridor at 148.0s. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> WrapArchISM;
 
 	// ---- Modular Art Mesh Slots (fall back to Cube / Cylinder when null) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
@@ -149,7 +153,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	int32 RowsPerChunk = 4;
 
-	/** Chunks with an index below this are left empty (start runway). */
+	/** Chunks ahead of the pawn left obstacle-free on start or checkpoint rewind. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	int32 SafeChunks = 2;
 
@@ -161,9 +165,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	float CorridorHalfWidth = 1000.0f;
 
-	/** Probability that a row holds an obstacle at density scale 1 (scene 4, full flow). */
+	/** Probability that a row holds an obstacle at density scale 1 (Act IV, full flow). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
-	float MaxObstacleDensity = 0.78f;
+	float MaxObstacleDensity = 0.80f;
 
 	/** Obstacles are placed within +/- this lateral range (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
@@ -226,9 +230,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Visuals")
 	FLinearColor TakeBColor = FLinearColor(0.1f, 0.8f, 1.0f, 1.0f);
 
-	/** Re-lays every chunk around the pawn's current position. */
+	/** Re-lays every chunk around the pawn's current position and CurrentCheckpointTime. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
 	void RebuildTrack();
+
+	/** Alias for RebuildTrack to support ResetTrack calls. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
+	void ResetTrack() { RebuildTrack(); }
 
 protected:
 	virtual void BeginPlay() override;
@@ -245,6 +253,7 @@ private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
 	static constexpr int32 PickupsPerChunk = 2;
+	static constexpr int32 WrapArchParts = 5;
 
 	int32 PoolSize() const { return FMath::Max(1, ChunksAhead + ChunksBehind); }
 	int32 SlotOf(int32 ChunkIndex) const;
@@ -256,9 +265,11 @@ private:
 	void CreatePools();
 	void PopulateChunk(int32 ChunkIndex);
 	void PopulateSetPiecesForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
-	void PopulatePickupsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, FRandomStream& Stream);
+	void PopulatePickupsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
 	void UpdateDynamicAnimationsAndPickups(float DeltaSeconds);
 	void UpdateSceneMaterials(float DeltaSeconds);
+	void UpdateFinalCutWrapArch();
+	void HideFinalCutWrapArch();
 	FLinearColor GetSceneAccentColor(EMegaJamFilmScene Scene) const;
 
 	UPROPERTY(Transient)
@@ -271,7 +282,7 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> SetPieceMID;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> WallMID;
+	TObjectPtr<UMaterialInstanceDynamic> WrapArchMID;
 
 	UPROPERTY(Transient)
 	TArray<FMegaJamSetPieceSlot> SetPieceSlots;
@@ -281,7 +292,9 @@ private:
 
 	bool bPoolsCreated = false;
 	bool bBuilt = false;
+	bool bWrapArchSpawned = false;
 	int32 FirstChunkIndex = 0;
+	int32 SafeUntilChunkIndex = 2;
 	EMegaJamFilmScene CurrentScene = EMegaJamFilmScene::Soundstage;
 	int32 LastBroadcastScene = -1;
 	FLinearColor CurrentSceneColor = FLinearColor(1.0f, 0.72f, 0.35f, 1.0f);

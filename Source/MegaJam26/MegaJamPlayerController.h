@@ -67,6 +67,9 @@ protected:
 	/** Pause action hook. Override for custom behavior. */
 	virtual void Input_Pause(const FInputActionValue& Value);
 
+	/** Handles SpaceBar / Enter / Gamepad_FaceButton_Bottom on TitleScreen and Completed screens. */
+	void Input_StartOrConfirm();
+
 	/**
 	 * Builds a transient mapping context with default bindings for the pawn's Steer/Boost/Brake actions and
 	 * this controller's PauseAction. Only used when DefaultMappingContext is not assigned.

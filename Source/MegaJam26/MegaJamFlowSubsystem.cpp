@@ -64,6 +64,21 @@ void UMegaJamFlowSubsystem::SetIsShotStale(bool bNewShotStale)
 	bIsShotStale = bNewShotStale;
 }
 
+void UMegaJamFlowSubsystem::SetTotalFramesCollected(int32 NewTotalFrames)
+{
+	TotalFramesCollected = FMath::Max(0, NewTotalFrames);
+}
+
+void UMegaJamFlowSubsystem::SetHighestSpliceChain(int32 NewHighestChain)
+{
+	HighestSpliceChain = FMath::Clamp(NewHighestChain, 1, 8);
+}
+
+void UMegaJamFlowSubsystem::SetCurrentCheckpointTime(float NewCheckpointTime)
+{
+	CurrentCheckpointTime = FMath::Max(0.0f, NewCheckpointTime);
+}
+
 void UMegaJamFlowSubsystem::SetFlowMPC(UMaterialParameterCollection* InFlowMPC)
 {
 	FlowMPC = InFlowMPC;
