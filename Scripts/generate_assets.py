@@ -36,7 +36,7 @@ asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 
 failures = []
 
-# Optional selective run, e.g. $env:MEGAJAM_GEN_ONLY = "mpc,ghost" (steps: mpc, ghost). Empty = generate everything.
+# Optional selective run, e.g. $env:MEGAJAM_GEN_ONLY = "mpc,ghost,input" (steps: mpc, ghost, input). Empty = generate everything.
 ONLY = set(s.strip().lower() for s in os.environ.get("MEGAJAM_GEN_ONLY", "").split(",") if s.strip())
 
 
@@ -119,9 +119,17 @@ def make_imc(steer, boost, brake, pause):
     factory_cls = first_attr("InputMappingContext_Factory", "InputMappingContextFactory")
     factory = factory_cls() if factory_cls else None
     imc = get_or_create("IMC_Flow", CORE, unreal.InputMappingContext, factory)
+    try:
+        imc.unmap_all()
+    except Exception:
+        pass
 
     def negate():
-        return unreal.new_object(unreal.InputModifierNegate, outer=imc)
+        mod = unreal.new_object(unreal.InputModifierNegate, outer=imc)
+        mod.set_editor_property("x", True)
+        mod.set_editor_property("y", True)
+        mod.set_editor_property("z", True)
+        return mod
 
     def swizzle_yxz():
         swz = unreal.new_object(unreal.InputModifierSwizzleAxis, outer=imc)
@@ -131,16 +139,23 @@ def make_imc(steer, boost, brake, pause):
     mappings = [
         # Steer (Axis2D): X = right, Y = up
         new_mapping(imc, steer, "D"),                                         # +X
+        new_mapping(imc, steer, "Right"),                                     # +X
         new_mapping(imc, steer, "A", [negate()]),                             # -X
+        new_mapping(imc, steer, "Left", [negate()]),                          # -X
         new_mapping(imc, steer, "W", [swizzle_yxz()]),                        # +Y (swizzle YXZ)
+        new_mapping(imc, steer, "Up", [swizzle_yxz()]),                       # +Y (swizzle YXZ)
         new_mapping(imc, steer, "S", [swizzle_yxz(), negate()]),              # -Y (swizzle YXZ, then negate)
+        new_mapping(imc, steer, "Down", [swizzle_yxz(), negate()]),           # -Y (swizzle YXZ, then negate)
         new_mapping(imc, steer, "Gamepad_Left2D"),
-        # Boost (Bool)
+        # Boost / Hard Cut (Bool)
         new_mapping(imc, boost, "SpaceBar"),
         new_mapping(imc, boost, "Gamepad_FaceButton_Bottom"),
-        # Brake (Axis1D)
+        # Brake / Aspect Toggle (Bool)
+        new_mapping(imc, brake, "LeftControl"),
+        new_mapping(imc, brake, "RightControl"),
+        new_mapping(imc, brake, "C"),
+        new_mapping(imc, brake, "Gamepad_FaceButton_Right"),
         new_mapping(imc, brake, "LeftShift"),
-        new_mapping(imc, brake, "Gamepad_LeftTriggerAxis"),
         # Pause (Bool)
         new_mapping(imc, pause, "Escape"),
         new_mapping(imc, pause, "Gamepad_Special_Right"),
@@ -386,10 +401,23 @@ def patch_engine_ini():
 # Main
 # ----------------------------------------------------------------------------------------------
 def main_selected():
-    """Runs only the steps listed in MEGAJAM_GEN_ONLY (comma separated): mpc, ghost."""
-    unknown = ONLY - {"mpc", "ghost"}
+    """Runs only the steps listed in MEGAJAM_GEN_ONLY (comma separated): mpc, ghost, input."""
+    unknown = ONLY - {"mpc", "ghost", "input"}
     if unknown:
         raise RuntimeError("unknown MEGAJAM_GEN_ONLY step(s): " + ", ".join(sorted(unknown)))
+
+    if "input" in ONLY:
+        try:
+            steer = make_action("IA_Steer", unreal.InputActionValueType.AXIS2D)
+            brake = make_action("IA_Brake", unreal.InputActionValueType.BOOLEAN)
+            # Load IA_Boost and IA_Pause read-only without saving them so only authorized assets are modified.
+            boost = unreal.load_asset(CORE + "/IA_Boost")
+            pause = unreal.load_asset(CORE + "/IA_Pause")
+            if boost is None or pause is None:
+                raise RuntimeError("IA_Boost or IA_Pause missing; cannot rebuild IMC_Flow")
+            make_imc(steer, boost, brake, pause)
+        except Exception as exc:
+            fail("input (IA_Steer, IA_Brake, IMC_Flow)", exc)
 
     mpc = None
     try:
@@ -429,7 +457,7 @@ def main():
     try:
         steer = make_action("IA_Steer", unreal.InputActionValueType.AXIS2D)
         boost = make_action("IA_Boost", unreal.InputActionValueType.BOOLEAN)
-        brake = make_action("IA_Brake", unreal.InputActionValueType.AXIS1D)
+        brake = make_action("IA_Brake", unreal.InputActionValueType.BOOLEAN)
         pause = make_action("IA_Pause", unreal.InputActionValueType.BOOLEAN, trigger_when_paused=True)
     except Exception as exc:
         fail("input actions", exc)

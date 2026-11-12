@@ -127,6 +127,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float AspectClampInterpSpeed = 30.0f;
 
+	/** Camera field of view in Wide_21_9 mode (degrees). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float WideFOV = 100.0f;
+
+	/** Camera field of view in Box_4_3 mode (degrees). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float BoxFOV = 82.0f;
+
+	/** Interpolation speed for camera FOV transitions between aspect modes. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float AspectFOVInterpSpeed = 12.0f;
+
 	// ---- Enhanced Input actions (assign in a Blueprint subclass) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Input")
 	TObjectPtr<UInputAction> SteerAction;

@@ -9,12 +9,18 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "Engine/LocalPlayer.h"
+#include "Misc/PackageName.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPC, Log, All);
 
 void AMegaJamPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (!DefaultMappingContext && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IMC_Flow")))
+	{
+		DefaultMappingContext = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/MegaJam26/Core/IMC_Flow.IMC_Flow"));
+	}
 
 	// Assigned asset path. The fallback context (if needed) is added in OnPossess, once the pawn's actions exist.
 	if (DefaultMappingContext)
@@ -36,6 +42,10 @@ void AMegaJamPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	// Fallback pause action so Escape works with no assets.
+	if (!PauseAction && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IA_Pause")))
+	{
+		PauseAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/MegaJam26/Core/IA_Pause.IA_Pause"));
+	}
 	if (!PauseAction)
 	{
 		PauseAction = NewObject<UInputAction>(this, TEXT("IA_Pause_Fallback"), RF_Transient);
@@ -93,26 +103,30 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 	UInputMappingContext* Context = NewObject<UInputMappingContext>(this, TEXT("IMC_Flow_Fallback"), RF_Transient);
 
 	// ---- Steer (Axis2D): X = right, Y = up ----
-	// D : +X (no modifiers)
+	// D / Right : +X (no modifiers)
 	Context->MapKey(FlowPawn->SteerAction, EKeys::D);
+	Context->MapKey(FlowPawn->SteerAction, EKeys::Right);
 
-	// A : -X (Negate)
+	// A / Left : -X (Negate)
+	for (const FKey& Key : { EKeys::A, EKeys::Left })
 	{
-		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, EKeys::A);
+		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, Key);
 		Mapping.Modifiers.Add(NewObject<UInputModifierNegate>(Context));
 	}
 
-	// W : +Y (Swizzle YXZ moves the key's X value onto Y)
+	// W / Up : +Y (Swizzle YXZ moves the key's X value onto Y)
+	for (const FKey& Key : { EKeys::W, EKeys::Up })
 	{
-		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, EKeys::W);
+		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, Key);
 		UInputModifierSwizzleAxis* Swizzle = NewObject<UInputModifierSwizzleAxis>(Context);
 		Swizzle->Order = EInputAxisSwizzle::YXZ;
 		Mapping.Modifiers.Add(Swizzle);
 	}
 
-	// S : -Y (Swizzle YXZ first, then Negate)
+	// S / Down : -Y (Swizzle YXZ first, then Negate)
+	for (const FKey& Key : { EKeys::S, EKeys::Down })
 	{
-		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, EKeys::S);
+		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, Key);
 		UInputModifierSwizzleAxis* Swizzle = NewObject<UInputModifierSwizzleAxis>(Context);
 		Swizzle->Order = EInputAxisSwizzle::YXZ;
 		Mapping.Modifiers.Add(Swizzle);
@@ -122,13 +136,16 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 	// Left stick is already a 2D key.
 	Context->MapKey(FlowPawn->SteerAction, EKeys::Gamepad_Left2D);
 
-	// ---- Boost (Bool) ----
+	// ---- Boost (Hard Cut, Bool) ----
 	Context->MapKey(FlowPawn->BoostAction, EKeys::SpaceBar);
 	Context->MapKey(FlowPawn->BoostAction, EKeys::Gamepad_FaceButton_Bottom);
 
-	// ---- Brake (Axis1D) ----
+	// ---- Brake (Aspect Toggle, Bool) ----
+	Context->MapKey(FlowPawn->BrakeAction, EKeys::LeftControl);
+	Context->MapKey(FlowPawn->BrakeAction, EKeys::RightControl);
+	Context->MapKey(FlowPawn->BrakeAction, EKeys::C);
+	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_FaceButton_Right);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::LeftShift);
-	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_LeftTriggerAxis);
 
 	// ---- Pause (Bool) ----
 	Context->MapKey(PauseAction, EKeys::Escape);

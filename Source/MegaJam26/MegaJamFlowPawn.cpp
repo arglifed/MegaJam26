@@ -7,11 +7,13 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
+#include "Misc/PackageName.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
 
@@ -59,6 +61,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
+	Camera->SetFieldOfView(WideFOV);
 }
 
 void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
@@ -74,6 +77,11 @@ void AMegaJamFlowPawn::BeginPlay()
 
 	SpawnTransform = GetActorTransform();
 
+	if (Camera)
+	{
+		Camera->SetFieldOfView(CurrentAspect == EMegaJamAspectMode::Wide_21_9 ? WideFOV : BoxFOV);
+	}
+
 	GrazeSphere->SetSphereRadius(GrazeRadius);
 	GrazeSphere->OnComponentBeginOverlap.AddDynamic(this, &AMegaJamFlowPawn::OnGrazeBeginOverlap);
 
@@ -82,20 +90,34 @@ void AMegaJamFlowPawn::BeginPlay()
 
 void AMegaJamFlowPawn::EnsureFallbackInputActions()
 {
+	if (!SteerAction && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IA_Steer")))
+	{
+		SteerAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/MegaJam26/Core/IA_Steer.IA_Steer"));
+	}
 	if (!SteerAction)
 	{
 		SteerAction = NewObject<UInputAction>(this, TEXT("IA_Steer_Fallback"), RF_Transient);
-		SteerAction->ValueType = EInputActionValueType::Axis2D;
+	}
+	SteerAction->ValueType = EInputActionValueType::Axis2D;
+
+	if (!BoostAction && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IA_Boost")))
+	{
+		BoostAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/MegaJam26/Core/IA_Boost.IA_Boost"));
 	}
 	if (!BoostAction)
 	{
 		BoostAction = NewObject<UInputAction>(this, TEXT("IA_Boost_Fallback"), RF_Transient);
 		BoostAction->ValueType = EInputActionValueType::Boolean;
 	}
+
+	if (!BrakeAction && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IA_Brake")))
+	{
+		BrakeAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/MegaJam26/Core/IA_Brake.IA_Brake"));
+	}
 	if (!BrakeAction)
 	{
 		BrakeAction = NewObject<UInputAction>(this, TEXT("IA_Brake_Fallback"), RF_Transient);
-		BrakeAction->ValueType = EInputActionValueType::Axis1D;
+		BrakeAction->ValueType = EInputActionValueType::Boolean;
 	}
 }
 
@@ -147,6 +169,13 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	if (Camera)
+	{
+		const float TargetFOV = (CurrentAspect == EMegaJamAspectMode::Wide_21_9) ? WideFOV : BoxFOV;
+		const float NewFOV = FMath::FInterpTo(Camera->FieldOfView, TargetFOV, DeltaSeconds, AspectFOVInterpSpeed);
+		Camera->SetFieldOfView(NewFOV);
+	}
 
 	if (bCrashed)
 	{
@@ -285,6 +314,16 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 void AMegaJamFlowPawn::ToggleAspect()
 {
 	SetAspectMode(CurrentAspect == EMegaJamAspectMode::Wide_21_9 ? EMegaJamAspectMode::Box_4_3 : EMegaJamAspectMode::Wide_21_9);
+
+	if (GEngine)
+	{
+		const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9);
+		const FString Banner = bWide
+			? TEXT("ASPECT: 21:9 WIDESCREEN")
+			: TEXT("ASPECT: 4:3 ACADEMY BOX");
+		const FColor BannerColor = bWide ? FColor::Cyan : FColor::Orange;
+		GEngine->AddOnScreenDebugMessage(202601, 2.5f, BannerColor, Banner, true, FVector2D(1.5f, 1.5f));
+	}
 }
 
 void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
@@ -310,6 +349,10 @@ void AMegaJamFlowPawn::ResetForRun()
 	// Back to the opening framing. Broadcast so listeners (track generator, HUD) resync.
 	CurrentTake = EMegaJamTakeState::StudioTake;
 	CurrentAspect = EMegaJamAspectMode::Wide_21_9;
+	if (Camera)
+	{
+		Camera->SetFieldOfView(WideFOV);
+	}
 	PushTakeAndAspectToSubsystem();
 	OnTakeCut.Broadcast(CurrentTake);
 	OnTakeCutEvent(CurrentTake);
