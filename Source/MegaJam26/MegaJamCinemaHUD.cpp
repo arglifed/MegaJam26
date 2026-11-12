@@ -3,12 +3,14 @@
 #include "MegaJamCinemaHUD.h"
 
 #include "MegaJamFlowPawn.h"
+#include "MegaJamTrackGenerator.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "Styling/CoreStyle.h"
 
 TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
@@ -99,9 +101,47 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		TRSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
 		TRSlot->SetAlignment(FVector2D(1.0f, 0.0f));
-		TRSlot->SetPosition(FVector2D(-36.0f, 26.0f));
+		TRSlot->SetPosition(FVector2D(-36.0f, 18.0f));
 		TRSlot->SetAutoSize(true);
 		TRSlot->SetZOrder(10);
+	}
+
+	// Top-Right Match-Cut Chain & Stale Shot Badge (directly below TopRightText)
+	ChainBadgeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ChainBadgeText"));
+	ChainBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 16));
+	ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.92f, 0.92f, 1.0f)));
+	ChainBadgeText->SetShadowOffset(FVector2D(2.0f, 2.0f));
+	ChainBadgeText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+	ChainBadgeText->SetJustification(ETextJustify::Right);
+	ChainBadgeText->SetText(FText::FromString(TEXT("CHAIN x1")));
+	if (UCanvasPanelSlot* ChainSlot = RootCanvas->AddChildToCanvas(ChainBadgeText))
+	{
+		ChainSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
+		ChainSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+		ChainSlot->SetPosition(FVector2D(-36.0f, 48.0f));
+		ChainSlot->SetAutoSize(true);
+		ChainSlot->SetZOrder(10);
+	}
+
+	// Top-Center 2.5s Scene Slugline Clapperboard Banner
+	SceneSluglineBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SceneSluglineBorder"));
+	SceneSluglineBorder->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.02f, 0.88f));
+	SceneSluglineBorder->SetPadding(FMargin(22.0f, 8.0f));
+	SceneSluglineBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	SceneSluglineText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SceneSluglineText"));
+	SceneSluglineText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 20));
+	SceneSluglineText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.25f, 1.0f)));
+	SceneSluglineText->SetJustification(ETextJustify::Center);
+	SceneSluglineBorder->SetContent(SceneSluglineText);
+
+	if (UCanvasPanelSlot* SlugSlot = RootCanvas->AddChildToCanvas(SceneSluglineBorder))
+	{
+		SlugSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
+		SlugSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+		SlugSlot->SetPosition(FVector2D(0.0f, 96.0f));
+		SlugSlot->SetAutoSize(true);
+		SlugSlot->SetZOrder(15);
 	}
 
 	// Center Clapperboard flash overlay
@@ -135,6 +175,13 @@ void UMegaJamCinemaHUD::NativeConstruct()
 	CurrentLetterboxHeight = LetterboxBarHeight;
 	CurrentPillarboxWidth = 0.0f;
 	ActionFlashTimer = ActionFlashDuration;
+	SceneSluglineTimer = SceneSluglineFlashDuration;
+	LastObservedSceneIndex = 0;
+
+	if (SceneSluglineText)
+	{
+		SceneSluglineText->SetText(FText::FromString(GetSceneSluglineText(EMegaJamFilmScene::Soundstage)));
+	}
 
 	if (UWorld* World = GetWorld())
 	{
@@ -145,6 +192,27 @@ void UMegaJamCinemaHUD::NativeConstruct()
 			LastObservedTakeNumber = GameMode->GetCurrentTakeNumber();
 		}
 	}
+
+	BindToTrackGenerator();
+}
+
+void UMegaJamCinemaHUD::BindToTrackGenerator()
+{
+	if (BoundTrackGenerator)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (AMegaJamTrackGenerator* Generator = Cast<AMegaJamTrackGenerator>(
+			UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
+		{
+			BoundTrackGenerator = Generator;
+			Generator->OnFilmSceneChanged.RemoveDynamic(this, &UMegaJamCinemaHUD::HandleFilmSceneChanged);
+			Generator->OnFilmSceneChanged.AddDynamic(this, &UMegaJamCinemaHUD::HandleFilmSceneChanged);
+		}
+	}
 }
 
 void UMegaJamCinemaHUD::HandleRunStateChanged(EMegaJamRunState NewState, EMegaJamRunState OldState)
@@ -152,6 +220,37 @@ void UMegaJamCinemaHUD::HandleRunStateChanged(EMegaJamRunState NewState, EMegaJa
 	if (NewState == EMegaJamRunState::ActiveFlow)
 	{
 		ActionFlashTimer = ActionFlashDuration;
+		SceneSluglineTimer = SceneSluglineFlashDuration;
+		if (SceneSluglineText)
+		{
+			SceneSluglineText->SetText(FText::FromString(GetSceneSluglineText(EMegaJamFilmScene::Soundstage)));
+		}
+	}
+}
+
+void UMegaJamCinemaHUD::HandleFilmSceneChanged(EMegaJamFilmScene NewScene)
+{
+	SceneSluglineTimer = SceneSluglineFlashDuration;
+	LastObservedSceneIndex = static_cast<int32>(NewScene);
+	if (SceneSluglineText)
+	{
+		SceneSluglineText->SetText(FText::FromString(GetSceneSluglineText(NewScene)));
+	}
+}
+
+FString UMegaJamCinemaHUD::GetSceneSluglineText(EMegaJamFilmScene Scene)
+{
+	switch (Scene)
+	{
+	case EMegaJamFilmScene::Soundstage:
+		return TEXT("SCENE 01 // INT. SOUNDSTAGE");
+	case EMegaJamFilmScene::OverpassNight:
+		return TEXT("SCENE 02 // EXT. OVERPASS - NIGHT");
+	case EMegaJamFilmScene::CuttingRoom:
+		return TEXT("SCENE 03 // INT. CUTTING ROOM");
+	case EMegaJamFilmScene::FinalCut:
+	default:
+		return TEXT("SCENE 04 // THE FINAL CUT");
 	}
 }
 
@@ -165,12 +264,24 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		return;
 	}
 
+	BindToTrackGenerator();
+
 	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
 	const AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(GetOwningPlayerPawn());
 
 	const EMegaJamAspectMode Aspect = FlowPawn ? FlowPawn->GetAspectMode() : EMegaJamAspectMode::Wide_21_9;
 	const EMegaJamTakeState TakeState = FlowPawn ? FlowPawn->GetCurrentTake() : EMegaJamTakeState::StudioTake;
 	const float FlowRatio = FlowPawn ? FlowPawn->GetFlowRatio() : 0.0f;
+
+	// Poll scene transitions from BoundTrackGenerator in case delegate fired before binding
+	if (BoundTrackGenerator)
+	{
+		const int32 CurrentSceneIdx = static_cast<int32>(BoundTrackGenerator->GetCurrentScene());
+		if (CurrentSceneIdx != LastObservedSceneIndex)
+		{
+			HandleFilmSceneChanged(BoundTrackGenerator->GetCurrentScene());
+		}
+	}
 
 	// Smoothly interpolate letterbox vs pillarbox matte bars
 	const float TargetLetterbox = (Aspect == EMegaJamAspectMode::Wide_21_9) ? LetterboxBarHeight : 0.0f;
@@ -224,7 +335,11 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		TopLeftText->SetText(FText::FromString(FString::Printf(TEXT("REC %s TAKE %02d  //  %s"), RecDot, TakeNumber, *Timecode)));
 	}
 
-	// Update Top-Right readout: STUDIO CUT // TAKE A vs DIRECTOR'S CUT // TAKE B + FLOW
+	// Update Top-Right readout: STUDIO CUT // TAKE A vs DIRECTOR'S CUT // TAKE B + FLOW + CHAIN
+	const int32 SpliceChain = FlowPawn ? FlowPawn->GetSpliceChain() : 1;
+	const bool bShotStale = FlowPawn ? FlowPawn->IsShotStale() : false;
+	const float MatchCutFlash = FlowPawn ? FlowPawn->GetMatchCutFlashTimer() : 0.0f;
+
 	if (TopRightText)
 	{
 		const bool bDirectorsTake = (TakeState == EMegaJamTakeState::DirectorsTake);
@@ -235,13 +350,52 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		const int32 FlowPct = FMath::RoundToInt(FlowRatio * 100.0f);
 
 		TopRightText->SetText(FText::FromString(FString::Printf(
-			TEXT("%s  [%s]  //  FLOW %.1fx (%d%%)  //  %06d"),
-			TakeLabel, AspectLabel, Multiplier, FlowPct, ScoreInt)));
+			TEXT("%s  [%s]  //  FLOW %.1fx (%d%%)  //  CHAIN x%d  //  %06d"),
+			TakeLabel, AspectLabel, Multiplier, FlowPct, SpliceChain, ScoreInt)));
 
 		const FLinearColor ReadoutColor = bDirectorsTake
 			? FLinearColor(1.0f, 0.35f, 0.15f, 1.0f)
 			: FLinearColor(0.2f, 0.9f, 1.0f, 1.0f);
 		TopRightText->SetColorAndOpacity(FSlateColor(ReadoutColor));
+	}
+
+	// Update Chain Badge (flashing gold on MATCH CUT!, pulsing amber on STALE SHOT)
+	if (ChainBadgeText)
+	{
+		if (MatchCutFlash > 0.0f)
+		{
+			ChainBadgeText->SetText(FText::FromString(FString::Printf(
+				TEXT("★ MATCH CUT! // CHAIN x%d (+%d PTS)"),
+				SpliceChain, SpliceChain * 150)));
+			ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.88f, 0.15f, 1.0f)));
+		}
+		else if (bShotStale)
+		{
+			const float Pulse = 0.55f + 0.45f * FMath::Sin(static_cast<float>(World->GetTimeSeconds()) * 10.0f);
+			ChainBadgeText->SetText(FText::FromString(FString::Printf(
+				TEXT("⚠ STALE SHOT (SWITCH ASPECT) // CHAIN x%d"),
+				SpliceChain)));
+			ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.55f * Pulse, 0.05f, 1.0f)));
+		}
+		else
+		{
+			ChainBadgeText->SetText(FText::FromString(FString::Printf(TEXT("SPLICE CHAIN x%d"), SpliceChain)));
+			ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(0.88f, 0.88f, 0.88f, 0.95f)));
+		}
+	}
+
+	// Update Top-Center 2.5s Scene Slugline flash
+	if (SceneSluglineBorder)
+	{
+		if (SceneSluglineTimer > 0.0f)
+		{
+			SceneSluglineTimer = FMath::Max(0.0f, SceneSluglineTimer - InDeltaTime);
+			SceneSluglineBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		else
+		{
+			SceneSluglineBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 
 	// Update Center Clapperboard flash overlay
@@ -265,8 +419,9 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		else if (ActionFlashTimer > 0.0f)
 		{
 			ActionFlashTimer = FMath::Max(0.0f, ActionFlashTimer - InDeltaTime);
+			const int32 ActiveSceneNum = FMath::Clamp(LastObservedSceneIndex + 1, 1, 4);
 			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
-			CenterBannerText->SetText(FText::FromString(FString::Printf(TEXT("SCENE 1 // TAKE %02d // ACTION!"), TakeNumber)));
+			CenterBannerText->SetText(FText::FromString(FString::Printf(TEXT("SCENE %02d // TAKE %02d // ACTION!"), ActiveSceneNum, TakeNumber)));
 			CenterBannerText->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.95f, 0.95f, 1.0f)));
 		}
 		else

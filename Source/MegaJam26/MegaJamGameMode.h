@@ -61,6 +61,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void RegisterGraze(AActor* GrazedActor);
 
+	/** Awards an immediate bonus score (e.g. Match Cut or Film Frame pickup) and boosts multiplier. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void AddBonusScore(float BonusAmount, bool bBoostMultiplier = true);
+
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	EMegaJamRunState GetRunState() const { return RunState; }
 
