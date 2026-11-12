@@ -39,6 +39,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetAudioEnvelopeValue(float NewEnvelopeValue);
 
+	/** 0.0 = StudioTake, 1.0 = DirectorsTake. Written by the Pawn. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetActiveTake(float NewActiveTake);
+
+	/** 0.0 = Wide_21_9, 1.0 = Box_4_3. Written by the Pawn. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetAspectMode(float NewAspectMode);
+
 	/** Assign the global Material Parameter Collection that receives the flow values each tick. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Shaders")
 	void SetFlowMPC(UMaterialParameterCollection* InFlowMPC);
@@ -54,6 +62,14 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category="MegaJam|Flow")
 	float AudioEnvelopeValue = 0.0f;
 
+	/** 0.0 (StudioTake) or 1.0 (DirectorsTake). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float ActiveTake = 0.0f;
+
+	/** 0.0 (Wide_21_9) or 1.0 (Box_4_3). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float AspectMode = 0.0f;
+
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;
 
@@ -66,6 +82,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Shaders")
 	FName AudioEnvelopeParameterName = TEXT("AudioEnvelope");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Shaders")
+	FName ActiveTakeParameterName = TEXT("ActiveTake");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Shaders")
+	FName AspectModeParameterName = TEXT("AspectMode");
 
 	UFUNCTION(BlueprintPure, Category="MegaJam|Shaders")
 	UMaterialParameterCollection* GetFlowMPC() const { return FlowMPC; }

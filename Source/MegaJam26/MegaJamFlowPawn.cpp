@@ -7,11 +7,13 @@
 #include "Camera/CameraComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
+#include "Misc/PackageName.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
 
@@ -59,6 +61,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
+	Camera->SetFieldOfView(WideFOV);
 }
 
 void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
@@ -72,27 +75,49 @@ void AMegaJamFlowPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	SpawnTransform = GetActorTransform();
+
+	if (Camera)
+	{
+		Camera->SetFieldOfView(CurrentAspect == EMegaJamAspectMode::Wide_21_9 ? WideFOV : BoxFOV);
+	}
+
 	GrazeSphere->SetSphereRadius(GrazeRadius);
 	GrazeSphere->OnComponentBeginOverlap.AddDynamic(this, &AMegaJamFlowPawn::OnGrazeBeginOverlap);
-	GrazeSphere->OnComponentEndOverlap.AddDynamic(this, &AMegaJamFlowPawn::OnGrazeEndOverlap);
+
+	PushTakeAndAspectToSubsystem();
 }
 
 void AMegaJamFlowPawn::EnsureFallbackInputActions()
 {
+	if (!SteerAction && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IA_Steer")))
+	{
+		SteerAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/MegaJam26/Core/IA_Steer.IA_Steer"));
+	}
 	if (!SteerAction)
 	{
 		SteerAction = NewObject<UInputAction>(this, TEXT("IA_Steer_Fallback"), RF_Transient);
-		SteerAction->ValueType = EInputActionValueType::Axis2D;
+	}
+	SteerAction->ValueType = EInputActionValueType::Axis2D;
+
+	if (!BoostAction && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IA_Boost")))
+	{
+		BoostAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/MegaJam26/Core/IA_Boost.IA_Boost"));
 	}
 	if (!BoostAction)
 	{
 		BoostAction = NewObject<UInputAction>(this, TEXT("IA_Boost_Fallback"), RF_Transient);
 		BoostAction->ValueType = EInputActionValueType::Boolean;
 	}
+
+	if (!BrakeAction && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Core/IA_Brake")))
+	{
+		BrakeAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/MegaJam26/Core/IA_Brake.IA_Brake"));
+	}
 	if (!BrakeAction)
 	{
 		BrakeAction = NewObject<UInputAction>(this, TEXT("IA_Brake_Fallback"), RF_Transient);
-		BrakeAction->ValueType = EInputActionValueType::Axis1D;
+		BrakeAction->ValueType = EInputActionValueType::Boolean;
 	}
 }
 
@@ -120,22 +145,20 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		UE_LOG(LogMegaJamPawn, Warning, TEXT("SteerAction is not assigned on %s."), *GetClass()->GetName());
 	}
 
+	// Boost = hard cut. One shot per press, so Started only.
 	if (BoostAction)
 	{
-		EnhancedInput->BindAction(BoostAction, ETriggerEvent::Triggered, this, &AMegaJamFlowPawn::Input_Boost);
-		EnhancedInput->BindAction(BoostAction, ETriggerEvent::Completed, this, &AMegaJamFlowPawn::Input_BoostReleased);
-		EnhancedInput->BindAction(BoostAction, ETriggerEvent::Canceled, this, &AMegaJamFlowPawn::Input_BoostReleased);
+		EnhancedInput->BindAction(BoostAction, ETriggerEvent::Started, this, &AMegaJamFlowPawn::Input_Boost);
 	}
 	else
 	{
 		UE_LOG(LogMegaJamPawn, Warning, TEXT("BoostAction is not assigned on %s."), *GetClass()->GetName());
 	}
 
+	// Brake = aspect toggle. One shot per press, so Started only.
 	if (BrakeAction)
 	{
-		EnhancedInput->BindAction(BrakeAction, ETriggerEvent::Triggered, this, &AMegaJamFlowPawn::Input_Brake);
-		EnhancedInput->BindAction(BrakeAction, ETriggerEvent::Completed, this, &AMegaJamFlowPawn::Input_BrakeReleased);
-		EnhancedInput->BindAction(BrakeAction, ETriggerEvent::Canceled, this, &AMegaJamFlowPawn::Input_BrakeReleased);
+		EnhancedInput->BindAction(BrakeAction, ETriggerEvent::Started, this, &AMegaJamFlowPawn::Input_Brake);
 	}
 	else
 	{
@@ -146,6 +169,13 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	if (Camera)
+	{
+		const float TargetFOV = (CurrentAspect == EMegaJamAspectMode::Wide_21_9) ? WideFOV : BoxFOV;
+		const float NewFOV = FMath::FInterpTo(Camera->FieldOfView, TargetFOV, DeltaSeconds, AspectFOVInterpSpeed);
+		Camera->SetFieldOfView(NewFOV);
+	}
 
 	if (bCrashed)
 	{
@@ -174,26 +204,23 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 {
-	const FVector Forward = GetActorForwardVector();
-	const FVector Right = GetActorRightVector();
-	const FVector Up = GetActorUpVector();
+	const bool bWide = CurrentAspect == EMegaJamAspectMode::Wide_21_9;
 
-	// Forward thrust (boosted when held).
-	const float ThrustNow = Acceleration * (bBoostHeld ? BoostMultiplier : 1.0f);
-	Velocity += Forward * ThrustNow * DeltaSeconds;
+	// Forward thrust along +X (the pawn never rotates).
+	Velocity += GetActorForwardVector() * Acceleration * DeltaSeconds;
 
-	// Strafe: X = right, Y = up.
-	Velocity += (Right * SteerInput.X + Up * SteerInput.Y) * StrafeForce * DeltaSeconds;
-
-	// Brake: remove speed without ever reversing direction.
-	if (BrakeInput > 0.0f)
+	// Strafe. IA_Steer.X is always lateral (+Y / -Y).
+	// Wide_21_9: stronger lateral force, vertical steering locked.
+	// Box_4_3:   IA_Steer.Y steers vertically (+Z / -Z).
+	const float StrafeNow = StrafeForce * (bWide ? WideStrafeMultiplier : 1.0f);
+	Velocity.Y += SteerInput.X * StrafeNow * DeltaSeconds;
+	if (bWide)
 	{
-		const float Speed = Velocity.Size();
-		if (Speed > KINDA_SMALL_NUMBER)
-		{
-			const float NewSpeed = FMath::Max(0.0f, Speed - BrakeDeceleration * BrakeInput * DeltaSeconds);
-			Velocity *= NewSpeed / Speed;
-		}
+		Velocity.Z = 0.0f;
+	}
+	else
+	{
+		Velocity.Z += SteerInput.Y * StrafeNow * DeltaSeconds;
 	}
 
 	// Drag then terminal velocity clamp.
@@ -216,6 +243,140 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 		// Slow contact: slide along the surface.
 		Velocity = FVector::VectorPlaneProject(Velocity, Hit.ImpactNormal);
+	}
+
+	ApplyAspectClamp(DeltaSeconds);
+}
+
+void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
+{
+	const bool bWide = CurrentAspect == EMegaJamAspectMode::Wide_21_9;
+	const FVector2D YBounds = bWide ? WideYBounds : BoxYBounds;
+	const FVector2D ZBounds = bWide ? WideZBounds : BoxZBounds;
+
+	const FVector Location = GetActorLocation();
+	const float ClampedY = FMath::Clamp(static_cast<float>(Location.Y), static_cast<float>(YBounds.X), static_cast<float>(YBounds.Y));
+	const float ClampedZ = FMath::Clamp(static_cast<float>(Location.Z), static_cast<float>(ZBounds.X), static_cast<float>(ZBounds.Y));
+
+	// Stop velocity from driving further out of the corridor.
+	if ((Location.Y >= YBounds.Y && Velocity.Y > 0.0) || (Location.Y <= YBounds.X && Velocity.Y < 0.0))
+	{
+		Velocity.Y = 0.0;
+	}
+	if ((Location.Z >= ZBounds.Y && Velocity.Z > 0.0) || (Location.Z <= ZBounds.X && Velocity.Z < 0.0))
+	{
+		Velocity.Z = 0.0;
+	}
+
+	if (FMath::IsNearlyEqual(ClampedY, static_cast<float>(Location.Y)) && FMath::IsNearlyEqual(ClampedZ, static_cast<float>(Location.Z)))
+	{
+		return;
+	}
+
+	// Fast interpolation toward the clamped position: a punchy squeeze, not a one-frame teleport.
+	const float NewY = FMath::FInterpTo(static_cast<float>(Location.Y), ClampedY, DeltaSeconds, AspectClampInterpSpeed);
+	const float NewZ = FMath::FInterpTo(static_cast<float>(Location.Z), ClampedZ, DeltaSeconds, AspectClampInterpSpeed);
+	AddActorWorldOffset(FVector(0.0f, NewY - Location.Y, NewZ - Location.Z), true);
+}
+
+bool AMegaJamFlowPawn::TriggerHardCut()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return false;
+	}
+
+	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
+	if (GameMode && GameMode->GetRunState() != EMegaJamRunState::ActiveFlow)
+	{
+		return false;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastCutTime < CutCooldown)
+	{
+		return false;
+	}
+	LastCutTime = Now;
+
+	CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
+
+	// Brief forward impulse. StepPhysics re-applies the terminal velocity clamp.
+	Velocity += GetActorForwardVector() * CutSpeedImpulse;
+
+	PushTakeAndAspectToSubsystem();
+	OnTakeCut.Broadcast(CurrentTake);
+	OnTakeCutEvent(CurrentTake);
+	return true;
+}
+
+void AMegaJamFlowPawn::ToggleAspect()
+{
+	SetAspectMode(CurrentAspect == EMegaJamAspectMode::Wide_21_9 ? EMegaJamAspectMode::Box_4_3 : EMegaJamAspectMode::Wide_21_9);
+
+	if (GEngine)
+	{
+		const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9);
+		const FString Banner = bWide
+			? TEXT("ASPECT: 21:9 WIDESCREEN")
+			: TEXT("ASPECT: 4:3 ACADEMY BOX");
+		const FColor BannerColor = bWide ? FColor::Cyan : FColor::Orange;
+		GEngine->AddOnScreenDebugMessage(202601, 2.5f, BannerColor, Banner, true, FVector2D(1.5f, 1.5f));
+	}
+}
+
+void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
+{
+	CurrentAspect = NewAspect;
+
+	PushTakeAndAspectToSubsystem();
+	OnAspectChanged.Broadcast(CurrentAspect);
+	OnAspectChangedEvent(CurrentAspect);
+}
+
+void AMegaJamFlowPawn::ResetForRun()
+{
+	bCrashed = false;
+	Velocity = FVector::ZeroVector;
+	FlowRatio = 0.0f;
+	SteerInput = FVector2D::ZeroVector;
+	LastCutTime = -1000.0;
+	GrazeTimes.Reset();
+
+	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
+
+	// Back to the opening framing. Broadcast so listeners (track generator, HUD) resync.
+	CurrentTake = EMegaJamTakeState::StudioTake;
+	CurrentAspect = EMegaJamAspectMode::Wide_21_9;
+	if (Camera)
+	{
+		Camera->SetFieldOfView(WideFOV);
+	}
+	PushTakeAndAspectToSubsystem();
+	OnTakeCut.Broadcast(CurrentTake);
+	OnTakeCutEvent(CurrentTake);
+	OnAspectChanged.Broadcast(CurrentAspect);
+	OnAspectChangedEvent(CurrentAspect);
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->SetFlowRatio(0.0f);
+		}
+	}
+}
+
+void AMegaJamFlowPawn::PushTakeAndAspectToSubsystem() const
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->SetActiveTake(CurrentTake == EMegaJamTakeState::DirectorsTake ? 1.0f : 0.0f);
+			FlowSubsystem->SetAspectMode(CurrentAspect == EMegaJamAspectMode::Box_4_3 ? 1.0f : 0.0f);
+		}
 	}
 }
 
@@ -252,27 +413,33 @@ void AMegaJamFlowPawn::Input_Steer(const FInputActionValue& Value)
 
 void AMegaJamFlowPawn::Input_Boost(const FInputActionValue& Value)
 {
-	bBoostHeld = Value.Get<bool>();
+	// While crashed (or after the film completes) the same button rewinds to the next take immediately.
+	if (AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>())
+	{
+		const EMegaJamRunState State = GameMode->GetRunState();
+		if (State == EMegaJamRunState::Crashed || State == EMegaJamRunState::Completed)
+		{
+			GameMode->ResetRun();
+			return;
+		}
+	}
+
+	TriggerHardCut();
 }
 
 void AMegaJamFlowPawn::Input_Brake(const FInputActionValue& Value)
 {
-	BrakeInput = FMath::Clamp(Value.Get<float>(), 0.0f, 1.0f);
+	if (bCrashed)
+	{
+		return;
+	}
+
+	ToggleAspect();
 }
 
 void AMegaJamFlowPawn::Input_SteerReleased()
 {
 	SteerInput = FVector2D::ZeroVector;
-}
-
-void AMegaJamFlowPawn::Input_BoostReleased()
-{
-	bBoostHeld = false;
-}
-
-void AMegaJamFlowPawn::Input_BrakeReleased()
-{
-	BrakeInput = 0.0f;
 }
 
 void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -282,22 +449,32 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		return;
 	}
 
-	bool bAlreadyInSet = false;
-	GrazedActors.Add(OtherActor, &bAlreadyInSet);
-	if (bAlreadyInSet)
+	UWorld* World = GetWorld();
+	const double Now = World->GetTimeSeconds();
+	const TTuple<TWeakObjectPtr<UPrimitiveComponent>, int32> Key(OtherComp, OtherBodyIndex);
+
+	if (const double* LastTime = GrazeTimes.Find(Key))
 	{
-		return;
+		if (Now - *LastTime < GrazeRetriggerDelay)
+		{
+			return;
+		}
 	}
 
-	if (AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>())
+	// Drop expired entries so the map stays small.
+	for (auto It = GrazeTimes.CreateIterator(); It; ++It)
+	{
+		if (Now - It.Value() >= GrazeRetriggerDelay)
+		{
+			It.RemoveCurrent();
+		}
+	}
+	GrazeTimes.Add(Key, Now);
+
+	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
 		GameMode->RegisterGraze(OtherActor);
 	}
 
 	OnObstacleGrazed(OtherActor);
-}
-
-void AMegaJamFlowPawn::OnGrazeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
-{
-	GrazedActors.Remove(OtherActor);
 }
