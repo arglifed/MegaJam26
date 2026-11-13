@@ -75,6 +75,10 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> RootCanvas;
 
+	/** Full-screen warm white/amber film-burn washout overlay driven by AirExposureRatio in Box_4_3 mode. */
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> OverexposureWashoutOverlay;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> TopMatteBar;
 
@@ -89,6 +93,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TopLeftText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DevBadgeText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TopRightText;

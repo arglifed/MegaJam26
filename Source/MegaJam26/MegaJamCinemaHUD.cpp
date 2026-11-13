@@ -3,6 +3,7 @@
 #include "MegaJamCinemaHUD.h"
 
 #include "MegaJamFlowPawn.h"
+#include "MegaJamFlowSubsystem.h"
 #include "MegaJamTrackGenerator.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -25,6 +26,19 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 
 	RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RootCanvas"));
 	WidgetTree->RootWidget = RootCanvas;
+
+	// Full-screen warm white/amber 35mm film-burn washout overlay (HitTestInvisible, ZOrder 0 behind mattes and text)
+	OverexposureWashoutOverlay = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("OverexposureWashoutOverlay"));
+	OverexposureWashoutOverlay->SetBrushColor(FLinearColor(1.0f, 0.94f, 0.82f, 0.0f));
+	OverexposureWashoutOverlay->SetPadding(FMargin(0.0f));
+	OverexposureWashoutOverlay->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (UCanvasPanelSlot* WashoutSlot = RootCanvas->AddChildToCanvas(OverexposureWashoutOverlay))
+	{
+		WashoutSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+		WashoutSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+		WashoutSlot->SetOffsets(FMargin(0.0f, 0.0f, 0.0f, 0.0f));
+		WashoutSlot->SetZOrder(0);
+	}
 
 	const FLinearColor MatteBlack(0.0f, 0.0f, 0.0f, 0.96f);
 
@@ -92,20 +106,37 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		TLSlot->SetZOrder(10);
 	}
 
+	// Dev God Mode Badge (only visible when bGodModeEnabled is true)
+	DevBadgeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DevBadgeText"));
+	DevBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	DevBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.72f, 0.12f, 1.0f)));
+	DevBadgeText->SetShadowOffset(FVector2D(1.5f, 1.5f));
+	DevBadgeText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+	DevBadgeText->SetText(FText::FromString(TEXT("[DEV: GOD MODE | HITS: 0]")));
+	DevBadgeText->SetVisibility(ESlateVisibility::Collapsed);
+	if (UCanvasPanelSlot* DevSlot = RootCanvas->AddChildToCanvas(DevBadgeText))
+	{
+		DevSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+		DevSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+		DevSlot->SetPosition(FVector2D(36.0f, 54.0f));
+		DevSlot->SetAutoSize(true);
+		DevSlot->SetZOrder(10);
+	}
+
 	// Top-Center Act Progress Readout & Progress Bar (visible during active gameplay)
 	ActProgressBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ActProgressBorder"));
 	ActProgressBorder->SetBrushColor(FLinearColor(0.04f, 0.04f, 0.04f, 0.78f));
-	ActProgressBorder->SetPadding(FMargin(16.0f, 6.0f));
+	ActProgressBorder->SetPadding(FMargin(14.0f, 5.0f));
 
 	UVerticalBox* ActBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ActBox"));
 	ActProgressText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ActProgressText"));
-	ActProgressText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	ActProgressText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 12));
 	ActProgressText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.25f, 1.0f)));
 	ActProgressText->SetJustification(ETextJustify::Center);
 	ActProgressText->SetText(FText::FromString(TEXT("ACT I / IV  —  INT. SOUNDSTAGE (0%)")));
 	if (UVerticalBoxSlot* TextSlot = ActBox->AddChildToVerticalBox(ActProgressText))
 	{
-		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
 		TextSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 
@@ -122,8 +153,8 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		ActSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		ActSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		ActSlot->SetPosition(FVector2D(0.0f, 18.0f));
-		ActSlot->SetSize(FVector2D(360.0f, 48.0f));
+		ActSlot->SetPosition(FVector2D(0.0f, 78.0f));
+		ActSlot->SetSize(FVector2D(280.0f, 44.0f));
 		ActSlot->SetAutoSize(false);
 		ActSlot->SetZOrder(12);
 	}
@@ -178,7 +209,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		SlugSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		SlugSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		SlugSlot->SetPosition(FVector2D(0.0f, 96.0f));
+		SlugSlot->SetPosition(FVector2D(0.0f, 130.0f));
 		SlugSlot->SetAutoSize(true);
 		SlugSlot->SetZOrder(15);
 	}
@@ -465,12 +496,21 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 
 	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
 	const AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(GetOwningPlayerPawn());
+	const UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
 
 	const EMegaJamRunState RunState = GameMode ? GameMode->GetRunState() : EMegaJamRunState::Playing;
 	const bool bIsPlaying = GameMode ? GameMode->IsPlaying() : true;
 	const EMegaJamAspectMode Aspect = FlowPawn ? FlowPawn->GetAspectMode() : EMegaJamAspectMode::Wide_21_9;
 	const EMegaJamTakeState TakeState = FlowPawn ? FlowPawn->GetCurrentTake() : EMegaJamTakeState::StudioTake;
 	const float FlowRatio = FlowPawn ? FlowPawn->GetFlowRatio() : 0.0f;
+	const float AirExposureRatio = FlowPawn ? FlowPawn->GetAirExposureRatio() : (FlowSubsystem ? FlowSubsystem->AirExposureRatio : 0.0f);
+	const float DropCutBannerTimer = FlowSubsystem ? FlowSubsystem->DropCutBannerTimer : 0.0f;
+
+	if (OverexposureWashoutOverlay)
+	{
+		const float WashoutAlpha = bIsPlaying ? FMath::Clamp(AirExposureRatio, 0.0f, 1.0f) * 0.58f : 0.0f;
+		OverexposureWashoutOverlay->SetBrushColor(FLinearColor(1.0f, 0.94f, 0.82f, WashoutAlpha));
+	}
 
 	if (BoundTrackGenerator)
 	{
@@ -630,10 +670,28 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		}
 	}
 
+	if (DevBadgeText)
+	{
+		if (FlowPawn && FlowPawn->IsGodModeEnabled())
+		{
+			DevBadgeText->SetVisibility(ESlateVisibility::HitTestInvisible);
+			DevBadgeText->SetText(FText::FromString(FString::Printf(
+				TEXT("[DEV: GOD MODE | HITS: %d]"),
+				FlowPawn->GetGodModeSimulatedHits())));
+		}
+		else
+		{
+			DevBadgeText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
 	// 5. Top-Right readout & Chain Badge
 	const int32 SpliceChain = FlowPawn ? FlowPawn->GetSpliceChain() : 1;
 	const bool bShotStale = FlowPawn ? FlowPawn->IsShotStale() : false;
+	const bool bOverexposed = FlowPawn ? FlowPawn->IsOverexposed() : false;
 	const float MatchCutFlash = FlowPawn ? FlowPawn->GetMatchCutFlashTimer() : 0.0f;
+	const float DropCutFlash = FlowPawn ? FlowPawn->GetDropCutFlashTimer() : 0.0f;
+	const float DollyBoostFlash = FlowPawn ? FlowPawn->GetDollyBoostFlashTimer() : 0.0f;
 
 	if (TopRightText)
 	{
@@ -663,12 +721,32 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		else
 		{
 			ChainBadgeText->SetVisibility(ESlateVisibility::HitTestInvisible);
-			if (MatchCutFlash > 0.0f)
+			if (DropCutFlash > 0.0f)
+			{
+				ChainBadgeText->SetText(FText::FromString(FString::Printf(
+					TEXT("★ DROP-CUT SLAM! (+SPEED // CHAIN x%d)"),
+					SpliceChain)));
+				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(0.15f, 0.95f, 1.0f, 1.0f)));
+			}
+			else if (DollyBoostFlash > 0.0f)
+			{
+				ChainBadgeText->SetText(FText::FromString(FString::Printf(
+					TEXT("⚡ DOLLY BOOST RAIL! (+FLOW // CHAIN x%d)"),
+					SpliceChain)));
+				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(0.25f, 1.0f, 0.85f, 1.0f)));
+			}
+			else if (MatchCutFlash > 0.0f)
 			{
 				ChainBadgeText->SetText(FText::FromString(FString::Printf(
 					TEXT("★ MATCH CUT! // CHAIN x%d (+%d PTS)"),
 					SpliceChain, SpliceChain * 150)));
 				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.88f, 0.15f, 1.0f)));
+			}
+			else if (bOverexposed)
+			{
+				const float Pulse = 0.5f + 0.5f * FMath::Sin(static_cast<float>(World->GetTimeSeconds()) * 12.0f);
+				ChainBadgeText->SetText(FText::FromString(TEXT("☀ LENS OVEREXPOSED! DROP TO [21:9] DOLLY")));
+				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, FMath::Lerp(0.55f, 0.98f, Pulse), FMath::Lerp(0.1f, 0.85f, Pulse), 1.0f)));
 			}
 			else if (bShotStale)
 			{
@@ -701,7 +779,7 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		}
 	}
 
-	// 7. Center Clapperboard flash overlay (Crashed / Action!)
+	// 7. Center Clapperboard flash overlay (Crashed / Action! / Drop-Cut Slam / Lens Overexposed)
 	if (CenterBannerBorder && CenterBannerText)
 	{
 		if (RunState == EMegaJamRunState::Crashed)
@@ -718,6 +796,23 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
 			CenterBannerText->SetText(FText::FromString(FString::Printf(TEXT("SCENE %02d // TAKE %02d // ACTION!"), ActiveSceneNum, TakeNumber)));
 			CenterBannerText->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.95f, 0.95f, 1.0f)));
+		}
+		else if (bIsPlaying && DropCutBannerTimer > 0.0f)
+		{
+			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			CenterBannerText->SetText(FText::FromString(TEXT("▼ DROP-CUT SLAM! +SPEED")));
+			CenterBannerText->SetColorAndOpacity(FSlateColor(FLinearColor(0.15f, 0.95f, 1.0f, 1.0f)));
+		}
+		else if (bIsPlaying && AirExposureRatio > 0.65f)
+		{
+			const float ExposurePulse = 0.5f + 0.5f * FMath::Sin(static_cast<float>(World->GetTimeSeconds()) * 14.0f);
+			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			CenterBannerText->SetText(FText::FromString(TEXT("☀ LENS OVEREXPOSED — HIT [CTRL / C] TO SLAM!")));
+			CenterBannerText->SetColorAndOpacity(FSlateColor(FLinearColor(
+				1.0f,
+				FMath::Lerp(0.65f, 0.98f, ExposurePulse),
+				FMath::Lerp(0.15f, 0.88f, ExposurePulse),
+				1.0f)));
 		}
 		else
 		{

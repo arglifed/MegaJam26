@@ -73,25 +73,33 @@ public:
 	TObjectPtr<USoundBase> ScoreMetaSound;
 
 	// ---- Physics tunables ----
-	/** Forward acceleration (cm/s^2). */
+	/** Forward acceleration (cm/s^2). Tuned for crisp arcade gate readability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float Acceleration = 4000.0f;
+	float Acceleration = 3000.0f;
 
-	/** Exponential velocity damping (1/s). */
+	/** Exponential forward velocity damping (1/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float Drag = 0.5f;
 
-	/** Lateral / vertical steering acceleration (cm/s^2). */
+	/** Extra lateral/vertical damping (1/s) so lane and altitude snaps feel crisp rather than floaty. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float StrafeForce = 3000.0f;
+	float LateralDamping = 4.2f;
 
-	/** Maximum speed (cm/s). Maps to FlowRatio = 1. */
+	/** Lateral steering acceleration (cm/s^2). Boosted +25% for responsive lane changes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float TerminalVelocity = 6000.0f;
+	float StrafeForce = 3750.0f;
+
+	/** Multiplier applied to vertical climb/dive acceleration in Box_4_3 mode (+30%). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
+	float VerticalStrafeMultiplier = 1.30f;
+
+	/** Maximum speed (cm/s). Maps to FlowRatio = 1. Tuned for comfortable Act I-IV escalation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
+	float TerminalVelocity = 4500.0f;
 
 	/** Radius of the near-miss detector (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float GrazeRadius = 200.0f;
+	float GrazeRadius = 220.0f;
 
 	/** DEPRECATED: unused since IA_Boost became the hard cut. Kept so existing Blueprint defaults do not break. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -111,12 +119,12 @@ public:
 
 	/** Forward speed added on every hard cut (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float CutSpeedImpulse = 600.0f;
+	float CutSpeedImpulse = 420.0f;
 
 	// ---- Match-Cut Chain & Stale-Shot Mechanics ----
 	/** Maximum time (s) after grazing an obstacle or collecting a Film Frame in which a Hard Cut or Aspect Switch triggers a Match Cut. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
-	float MatchCutWindow = 1.2f;
+	float MatchCutWindow = 1.5f;
 
 	/** Maximum SpliceChain value. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
@@ -128,7 +136,7 @@ public:
 
 	/** Seconds spent continuously in the same Aspect Mode before the shot becomes stale. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
-	float StaleShotThreshold = 5.5f;
+	float StaleShotThreshold = 6.5f;
 
 	/** Seconds between -1 SpliceChain decay ticks while bIsShotStale is true. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
@@ -151,9 +159,42 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	FVector2D BoxZBounds = FVector2D(60.0, 800.0);
 
-	/** Lateral strafe force multiplier while in Wide_21_9. */
+	/** Lateral strafe force multiplier while in Wide_21_9 (+20% extra dolly rail responsiveness). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float WideStrafeMultiplier = 1.35f;
+	float WideStrafeMultiplier = 1.55f;
+
+	// ---- 21:9 Dolly vs. 4:3 Crane Push-Pull Tunables ----
+	/** Altitude threshold (cm) in Box_4_3 above which switching to Wide_21_9 triggers a Drop-Cut Slam. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float DropCutMinAltitude = 185.0f;
+
+	/** Forward speed impulse (cm/s) granted on a Drop-Cut Slam. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float DropCutSpeedImpulse = 850.0f;
+
+	/** Additive camera FOV punch (degrees) triggered on a Drop-Cut Slam. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float DropCutFOVPunch = 10.0f;
+
+	/** Passive Flow regeneration rate (% per second) while riding the Wide_21_9 dolly rail. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float WideDollyFlowRegenPerSec = 4.5f;
+
+	/** Altitude (cm) in Box_4_3 above which AirExposureTimer accumulates. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float OverexposureAltitudeThreshold = 175.0f;
+
+	/** Seconds of high-altitude Box_4_3 flight before bIsOverexposed triggers. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float OverexposureStartSeconds = 2.0f;
+
+	/** Maximum seconds on AirExposureTimer (past which SpliceChain decays). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float OverexposureMaxSeconds = 3.2f;
+
+	/** Flow drain rate (% per second) while bIsOverexposed is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float OverexposureFlowDrainPerSec = 14.0f;
 
 	/** FInterpTo speed used to squeeze the pawn into new bounds after an aspect switch. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
@@ -236,9 +277,43 @@ public:
 	UFUNCTION(BlueprintPure, Category="MegaJam|Chain")
 	float GetMatchCutFlashTimer() const { return MatchCutFlashTimer; }
 
+	UFUNCTION(BlueprintPure, Category="MegaJam|Aspect")
+	float GetDropCutFlashTimer() const { return DropCutFlashTimer; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Aspect")
+	float GetDollyBoostFlashTimer() const { return DollyBoostFlashTimer; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Aspect")
+	float GetAirExposureRatio() const
+	{
+		return OverexposureMaxSeconds > KINDA_SMALL_NUMBER
+			? FMath::Clamp(AirExposureTimer / OverexposureMaxSeconds, 0.0f, 1.0f)
+			: 0.0f;
+	}
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Aspect")
+	bool IsOverexposed() const { return bIsOverexposed; }
+
 	/** Called by AMegaJamTrackGenerator when the pawn collects an active-take Film Frame pickup. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Chain")
 	void NotifyFilmFrameCollected();
+
+	/** Called by AMegaJamTrackGenerator when the pawn rides over an outer-wing 21:9 Dolly Boost Strip. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Aspect")
+	void NotifyDollyBoostStripCollected();
+
+	// ---- Dev Testing Hotkeys (F1 God Mode) ----
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Dev")
+	void ToggleGodMode();
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Dev")
+	bool IsGodModeEnabled() const { return bGodModeEnabled; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Dev")
+	int32 GetGodModeSimulatedHits() const { return GodModeSimulatedHits; }
+
+	/** Clears crash state without teleporting back to origin (used by F2 DebugSkipToNextAct). */
+	void ClearCrashStateForDebugSkip();
 
 	// ---- Director's Cut actions ----
 	/** Toggles the take, adds CutSpeedImpulse and fires OnTakeCut. Returns false when on cooldown or not in a live run. */
@@ -293,7 +368,7 @@ protected:
 	void PushTakeAndAspectToSubsystem() const;
 	void PushAudioParameters() const;
 	void TriggerAudioEvent(FName ParameterName) const;
-	bool TryTriggerMatchCut();
+	bool TryTriggerMatchCut(bool bForceMatchCut = false);
 
 	// ---- Input hooks ----
 	virtual void Input_Steer(const FInputActionValue& Value);
@@ -330,13 +405,29 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
 	float AspectHoldTimer = 0.0f;
 
-	/** True when AspectHoldTimer exceeds StaleShotThreshold (5.5s). */
+	/** True when AspectHoldTimer exceeds StaleShotThreshold (6.5s). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
 	bool bIsShotStale = false;
 
+	/** Seconds spent above Z = 260 in Box_4_3 mode. Cools down 2.5x faster in Wide_21_9 or below Z = 220. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
+	float AirExposureTimer = 0.0f;
+
+	/** True when AirExposureTimer > OverexposureStartSeconds (2.0s), draining Flow and applying aerodynamic drag. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
+	bool bIsOverexposed = false;
+
+	/** True while the pawn is diving down at 3600 u/s from Box_4_3 into the Z = 100.0f Wide_21_9 dolly rail. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
+	bool bIsDropCutSlamming = false;
+
+	/** Decaying camera pitch-nod (degrees) applied during a Drop-Cut Slam and springing back on touchdown. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
+	float SlamPitchPunch = 0.0f;
+
 	FVector2D SteerInput = FVector2D::ZeroVector;
 
-	/** Current decaying additive FOV punch from TriggerHardCut. */
+	/** Current decaying additive FOV punch from TriggerHardCut / Drop-Cut Slam. */
 	float CurrentFOVPunch = 0.0f;
 
 	/** Current interpolated camera roll angle (degrees). */
@@ -351,11 +442,34 @@ protected:
 	/** Accumulator for decaying SpliceChain every StaleDecayInterval seconds while stale. */
 	float StaleDecayAccum = 0.0f;
 
-	/**Remaining HUD flash timer after a Match Cut or Film Frame pickup. */
+	/** Accumulator for decaying SpliceChain when AirExposureTimer is held at max (4.5s). */
+	float OverexposureDecayAccum = 0.0f;
+
+	/** Remaining HUD flash timer after a Match Cut or Film Frame pickup. */
 	float MatchCutFlashTimer = 0.0f;
+
+	/** Remaining HUD flash timer after a Drop-Cut Slam. */
+	float DropCutFlashTimer = 0.0f;
+
+	/** Remaining HUD flash timer after riding an outer 21:9 Dolly Boost Strip. */
+	float DollyBoostFlashTimer = 0.0f;
+
+	/** Bonus Flow offset from 21:9 dolly regen, Drop-Cut Slams, and Boost Strips, vs 4:3 Overexposure drain. */
+	float FlowBonusOffset = 0.0f;
 
 	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
 	bool bTriggeredVictorySting = false;
+
+	/** Dev God Mode flag (toggled by F1 in non-shipping builds). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Dev")
+	bool bGodModeEnabled = false;
+
+	/** Number of fatal hits absorbed while bGodModeEnabled is active. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Dev")
+	int32 GodModeSimulatedHits = 0;
+
+	/** World time of the last simulated hit in God Mode to prevent per-frame multi-counting. */
+	double LastGodModeHitTime = -1000.0;
 
 	/** Transform captured in BeginPlay, restored by ResetForRun. */
 	FTransform SpawnTransform;
