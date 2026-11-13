@@ -543,6 +543,7 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 				Strip.bActive = false;
 				BoostStripISM->UpdateInstanceTransform(Strip.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
 				BoundPawn->NotifyDollyBoostStripCollected();
+				BoundPawn->TriggerDollyBoost();
 				bStripsDirty = true;
 			}
 		}

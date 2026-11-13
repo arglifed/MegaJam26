@@ -382,6 +382,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Aspect")
 	void NotifyDollyBoostStripCollected();
 
+	/** Triggers the physical Dolly Boost speed surge, Film Meter gain, FOV warp, camera trauma, and audio rise. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Aspect")
+	void TriggerDollyBoost();
+
 	/** Adds procedural camera trauma (0..1) up to an optional ceiling cap (MaxCap) to drive high-frequency Pitch/Yaw/Roll/Z shake. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Camera")
 	void AddCameraTrauma(float Amount, float MaxCap = 1.0f);
@@ -600,6 +604,9 @@ protected:
 
 	/** Bonus Flow offset from 21:9 dolly regen, Drop-Cut Slams, and Boost Strips, vs 4:3 Overexposure drain. */
 	float FlowBonusOffset = 0.0f;
+
+	/** Decaying forward velocity bonus granted by outer-lane Dolly Boost Strips. */
+	float ActiveDollyBoostBonus = 0.0f;
 
 	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
 	bool bTriggeredVictorySting = false;

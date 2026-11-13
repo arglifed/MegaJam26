@@ -439,6 +439,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	StepPhysics(DeltaSeconds);
 
+	ActiveDollyBoostBonus = FMath::FInterpTo(ActiveDollyBoostBonus, 0.0f, DeltaSeconds, 3.5f);
 	MatchCutFlashTimer = FMath::Max(0.0f, MatchCutFlashTimer - DeltaSeconds);
 	DropCutFlashTimer = FMath::Max(0.0f, DropCutFlashTimer - DeltaSeconds);
 	DollyBoostFlashTimer = FMath::Max(0.0f, DollyBoostFlashTimer - DeltaSeconds);
@@ -482,8 +483,8 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		const float NextY = FMath::FInterpTo(CurrentY, TargetLaneY, DeltaSeconds, 18.0f);
 		Velocity.Y = (DeltaSeconds > KINDA_SMALL_NUMBER) ? ((NextY - CurrentY) / DeltaSeconds) : 0.0f;
 		Velocity.Z = 0.0f;
-		// Bullet-Time Overdrive: surge and sustain OverdriveSpeed (4500 u/s)
-		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), OverdriveSpeed, DeltaSeconds, 9.0f);
+		// Bullet-Time Overdrive: surge and sustain OverdriveSpeed + ActiveDollyBoostBonus
+		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), OverdriveSpeed + ActiveDollyBoostBonus, DeltaSeconds, 9.0f);
 	}
 	else
 	{
@@ -492,17 +493,21 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		Velocity.Z *= CrossPlaneDamp;
 		Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
 
-		// 4:3 Flight & Charge Mode: accelerate toward CruiseSpeed (2900 u/s) and clamp to MaxFlightSpeed (3600 u/s)
+		// 4:3 Flight & Charge Mode: accelerate toward CruiseSpeed (2900 u/s) and clamp to MaxFlightSpeed + ActiveDollyBoostBonus
 		Velocity.X += Acceleration * DeltaSeconds;
 		Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
-		if (Velocity.X > CruiseSpeed)
+		if (ActiveDollyBoostBonus > 1.0f)
+		{
+			Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), CruiseSpeed + ActiveDollyBoostBonus, DeltaSeconds, 9.0f);
+		}
+		else if (Velocity.X > CruiseSpeed)
 		{
 			Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), CruiseSpeed, DeltaSeconds, 3.5f);
 		}
-		Velocity.X = FMath::Clamp(static_cast<float>(Velocity.X), 0.0f, MaxFlightSpeed);
+		Velocity.X = FMath::Clamp(static_cast<float>(Velocity.X), 0.0f, MaxFlightSpeed + ActiveDollyBoostBonus);
 	}
 
-	const float MaxAllowedSpeed = bWide ? (OverdriveSpeed + 250.0f) : MaxFlightSpeed;
+	const float MaxAllowedSpeed = (bWide ? (OverdriveSpeed + 250.0f) : MaxFlightSpeed) + ActiveDollyBoostBonus;
 	Velocity = Velocity.GetClampedToMaxSize(MaxAllowedSpeed);
 
 	// Swept move. A blocking hit is resolved deterministically.
@@ -811,6 +816,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	DropCutFlashTimer = 0.0f;
 	DollyBoostFlashTimer = 0.0f;
 	FlowBonusOffset = 0.0f;
+	ActiveDollyBoostBonus = 0.0f;
 	LastCutTime = -1000.0;
 	LastEditorSpliceTime = -1000.0;
 	LastGrazeOrPickupTime = -1000.0;
@@ -1033,6 +1039,35 @@ void AMegaJamFlowPawn::NotifyDollyBoostStripCollected()
 
 	PlayOneShot(DollyBoostStripSound);
 	TriggerAudioEvent(TEXT("OnGraze"));
+}
+
+void AMegaJamFlowPawn::TriggerDollyBoost()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return;
+	}
+
+	ActiveDollyBoostBonus = 3500.0f;
+	FilmMeter = FMath::Clamp(FilmMeter + 12.0f, 0.0f, 100.0f);
+
+	if (Camera)
+	{
+		Camera->SetFieldOfView(Camera->FieldOfView + 25.0f);
+	}
+
+	AddCameraTrauma(0.4f, 0.6f);
+
+	if (DirectorsCutEnterSound)
+	{
+		UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.0f, 1.6f);
+	}
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetFilmMeter(FilmMeter);
+	}
 }
 
 void AMegaJamFlowPawn::PlayOneShot(USoundBase* Sound) const
@@ -1283,6 +1318,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 #endif
 
 	bCrashed = true;
+	ActiveDollyBoostBonus = 0.0f;
 	if (HitstopRealTimeRemaining > 0.0f)
 	{
 		HitstopRealTimeRemaining = 0.0f;
@@ -1305,6 +1341,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	DropCutFlashTimer = 0.0f;
 	DollyBoostFlashTimer = 0.0f;
 	FlowBonusOffset = 0.0f;
+	ActiveDollyBoostBonus = 0.0f;
 	LastGrazeOrPickupTime = -1000.0;
 	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
