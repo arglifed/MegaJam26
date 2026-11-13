@@ -18,7 +18,8 @@ UENUM(BlueprintType)
 enum class EMegaJamAspectMode : uint8
 {
 	Wide_21_9,
-	Box_4_3
+	Box_4_3,
+	UltraPanavision_276_1
 };
 
 /** The four film scenes, sequenced by run progress. */

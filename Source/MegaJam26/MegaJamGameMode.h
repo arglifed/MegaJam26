@@ -176,13 +176,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
 	bool bAutoStartRun = true;
 
-	/** Target distance in meters for Scene 01 — ACTION vertical slice (1,800m). */
+	/** Target distance in meters for Scene 01 + Scene 02 campaign (3,600m). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
-	float TargetDistanceMeters = 1800.0f;
+	float TargetDistanceMeters = 3600.0f;
 
-	/** Par time in seconds for Scene 01 — ACTION (45.0s). Awards +500 pts/sec under Par on completion. */
+	/** Par time in seconds for Scene 01 + Scene 02 campaign (90.0s). Awards +500 pts/sec under Par on completion. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
-	float SceneParTimeSeconds = 45.0f;
+	float SceneParTimeSeconds = 90.0f;
 
 	/** Active scene genre (Scene 01 = Action). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
@@ -254,9 +254,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	EMegaJamFilmScene CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
 
-	/** Current distance traveled along the Scene track in meters (0m to 1800m). */
+	/** Current distance traveled along the Scene track in meters (0m to 3600m). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float DistanceMeters = 0.0f;
+
+	/** Distance checkpoint in meters (0m for Scene 01, 1800m for Scene 02). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float CurrentCheckpointDistanceMeters = 0.0f;
 
 	/** World X coordinate at the start of the current Scene (0m mark). */
 	float SceneStartOriginX = 0.0f;

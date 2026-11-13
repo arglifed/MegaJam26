@@ -300,7 +300,15 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	if (Camera)
 	{
-		const float BaseFOV = (CurrentAspect == EMegaJamAspectMode::Wide_21_9) ? WideFOV : BoxFOV;
+		float BaseFOV = BoxFOV;
+		if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
+		{
+			BaseFOV = UltraPanavisionFOV;
+		}
+		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+		{
+			BaseFOV = WideFOV;
+		}
 		const float SmoothedBaseFOV = FMath::FInterpTo(Camera->FieldOfView - CurrentFOVPunch, BaseFOV, DeltaSeconds, AspectFOVInterpSpeed);
 		Camera->SetFieldOfView(SmoothedBaseFOV + CurrentFOVPunch);
 
@@ -401,9 +409,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	}
 
 	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
-	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
 	{
-		// 21:9 Director's Cut (Bullet-Time Overdrive): drain FilmMeter at 15/sec and slow hazard animations to 0.45x
+		// 21:9 / 2.76:1 Director's Cut: drain FilmMeter at 15/sec and slow hazard animations to 0.45x
 		FilmMeter = FMath::Max(0.0f, FilmMeter - OverdriveDrainPerSec * DeltaSeconds);
 		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + (WideDollyFlowRegenPerSec * 0.01f) * DeltaSeconds, 0.0f, 0.35f);
 		if (FlowSubsystem)
@@ -466,25 +474,35 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 {
-	const bool bWide = CurrentAspect == EMegaJamAspectMode::Wide_21_9;
+	const bool bUltraPanavision = (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1);
+	const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || bUltraPanavision);
 
 	// Strafe. IA_Steer.X is always lateral (+Y / -Y).
 	// Wide_21_9: 5-lane magnetic rail system (Y = -700, -350, 0, 350, 700) on horizontal cinema rail (Z = 140).
+	// UltraPanavision_276_1: Center-lane standoff lock (CurrentLane = 2 -> Y = 0) with +30% speed surge.
 	// Box_4_3:   full 2D analog free-flight across Y and Z.
 	const float LateralAccel = StrafeForce * (bWide ? WideStrafeMultiplier : 1.0f);
 	const float VerticalAccel = StrafeForce * VerticalStrafeMultiplier;
 
 	const float CrossPlaneDamp = FMath::Exp(-LateralDamping * DeltaSeconds);
 
+	const float TargetOverdriveSpeed = bUltraPanavision
+		? FMath::Max(CruiseSpeed * 1.30f, OverdriveSpeed)
+		: OverdriveSpeed;
+
 	if (bWide)
 	{
+		if (bUltraPanavision)
+		{
+			CurrentLane = 2;
+		}
 		const float CurrentY = static_cast<float>(GetActorLocation().Y);
 		const float TargetLaneY = static_cast<float>(CurrentLane - 2) * LaneWidthY;
 		const float NextY = FMath::FInterpTo(CurrentY, TargetLaneY, DeltaSeconds, 18.0f);
 		Velocity.Y = (DeltaSeconds > KINDA_SMALL_NUMBER) ? ((NextY - CurrentY) / DeltaSeconds) : 0.0f;
 		Velocity.Z = 0.0f;
-		// Bullet-Time Overdrive: surge and sustain OverdriveSpeed + ActiveDollyBoostBonus
-		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), OverdriveSpeed + ActiveDollyBoostBonus, DeltaSeconds, 9.0f);
+		// Bullet-Time Overdrive / Ultra-Panavision Standoff: surge and sustain TargetOverdriveSpeed + ActiveDollyBoostBonus
+		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), TargetOverdriveSpeed + ActiveDollyBoostBonus, DeltaSeconds, 9.0f);
 	}
 	else
 	{
@@ -493,7 +511,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		Velocity.Z *= CrossPlaneDamp;
 		Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
 
-		// 4:3 Flight & Charge Mode: accelerate toward CruiseSpeed (2900 u/s) and clamp to MaxFlightSpeed + ActiveDollyBoostBonus
+		// 4:3 Flight & Charge Mode: accelerate toward CruiseSpeed (3800 u/s) and clamp to MaxFlightSpeed + ActiveDollyBoostBonus
 		Velocity.X += Acceleration * DeltaSeconds;
 		Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
 		if (ActiveDollyBoostBonus > 1.0f)
@@ -507,7 +525,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		Velocity.X = FMath::Clamp(static_cast<float>(Velocity.X), 0.0f, MaxFlightSpeed + ActiveDollyBoostBonus);
 	}
 
-	const float MaxAllowedSpeed = (bWide ? (OverdriveSpeed + 250.0f) : MaxFlightSpeed) + ActiveDollyBoostBonus;
+	const float MaxAllowedSpeed = (bWide ? (TargetOverdriveSpeed + 250.0f) : MaxFlightSpeed) + ActiveDollyBoostBonus;
 	Velocity = Velocity.GetClampedToMaxSize(MaxAllowedSpeed);
 
 	// Swept move. A blocking hit is resolved deterministically.
@@ -540,7 +558,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 {
-	const bool bWide = CurrentAspect == EMegaJamAspectMode::Wide_21_9;
+	const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1);
 	const FVector2D YBounds = bWide ? WideYBounds : BoxYBounds;
 	const FVector2D ZBounds = bWide ? WideZBounds : BoxZBounds;
 
@@ -574,11 +592,119 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 
 void AMegaJamFlowPawn::ExecuteEditorSplice()
 {
+	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
+	{
+		ExecuteWesternBeatSlash();
+		return;
+	}
 	TriggerHardCut();
+}
+
+void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return;
+	}
+
+	AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
+	if (GameMode && !GameMode->IsPlaying())
+	{
+		return;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	const double EffectiveCooldown = FMath::Max(static_cast<double>(EditorSpliceCooldown), static_cast<double>(CutCooldown));
+	if (Now - LastEditorSpliceTime < EffectiveCooldown || Now - LastCutTime < EffectiveCooldown)
+	{
+		return;
+	}
+	LastEditorSpliceTime = Now;
+	LastCutTime = Now;
+
+	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+
+	CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
+	if (FlowSubsystem)
+	{
+		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+	}
+
+	Velocity += GetActorForwardVector() * CutSpeedImpulse;
+	CurrentFOVPunch = CutFOVPunch;
+
+	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
+	const float PawnX = static_cast<float>(GetActorLocation().X);
+	const float ForwardMaxX = PawnX + (bOnBeat ? 3000.0f : 1800.0f);
+	const float HalfWidthY = bOnBeat ? 1200.0f : 360.0f;
+
+	int32 CleavedCount = 0;
+	if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
+	{
+		CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 120.0f, ForwardMaxX, HalfWidthY);
+	}
+
+	if (bOnBeat)
+	{
+		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
+		FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
+		EmissiveBurstTimer = 0.30f;
+		MatchCutFlashTimer = 1.1f;
+
+		if (GameMode)
+		{
+			const int32 EffectiveCleaved = FMath::Max(1, CleavedCount);
+			GameMode->AddBonusScore(300.0f * static_cast<float>(SpliceChain) * static_cast<float>(EffectiveCleaved) * 2.0f, true);
+			GameMode->NotifySpliceChainUpdated(SpliceChain);
+		}
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetOnBeatFlashTimer(1.1f);
+			FlowSubsystem->SetSpliceChain(SpliceChain);
+			FlowSubsystem->SetFilmMeter(FilmMeter);
+		}
+
+		AddCameraTrauma(0.60f);
+		TriggerMicroHitstop(0.04f, 0.2f);
+		if (DirectorsCutEnterSound)
+		{
+			UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.0f, 1.45f);
+		}
+
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(202605, 1.6f, FColor::Yellow,
+				FString::Printf(TEXT("★ QUICK-DRAW BEAT-SLASH! CLEAVED %d BARRICADE(S)! (CHAIN x%d)"),
+					CleavedCount, SpliceChain),
+				true, FVector2D(1.4f, 1.4f));
+		}
+	}
+	else
+	{
+		AddCameraTrauma(0.30f);
+		if (CleavedCount > 0 && GameMode)
+		{
+			GameMode->AddBonusScore(150.0f * static_cast<float>(SpliceChain) * static_cast<float>(CleavedCount), true);
+		}
+		TryTriggerMatchCut();
+	}
+
+	PushTakeAndAspectToSubsystem();
+	PushAudioParameters();
+	TriggerAudioEvent(TEXT("OnHardCut"));
+	OnTakeCut.Broadcast(CurrentTake);
+	OnTakeCutEvent(CurrentTake);
 }
 
 bool AMegaJamFlowPawn::TriggerHardCut()
 {
+	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
+	{
+		ExecuteWesternBeatSlash();
+		return true;
+	}
+
 	UWorld* World = GetWorld();
 	if (bCrashed || !World)
 	{
@@ -683,31 +809,44 @@ void AMegaJamFlowPawn::ToggleAspect()
 
 	if (CurrentAspect == EMegaJamAspectMode::Box_4_3)
 	{
-		// Require at least 25% Film Meter to activate 21:9 Director's Cut (Bullet-Time Overdrive)
+		// Require at least 25% Film Meter to activate 21:9 / 2.76:1 Director's Cut
 		if (FilmMeter < OverdriveMinActivationMeter)
 		{
 			if (GEngine)
 			{
 				GEngine->AddOnScreenDebugMessage(202601, 1.5f, FColor::Orange,
-					FString::Printf(TEXT("NEED 25%% FILM METER FOR 21:9 DIRECTOR'S CUT (%d%%)"), FMath::RoundToInt(FilmMeter)),
+					FString::Printf(TEXT("NEED 25%% FILM METER FOR DIRECTOR'S CUT (%d%%)"), FMath::RoundToInt(FilmMeter)),
 					true, FVector2D(1.3f, 1.3f));
 			}
 			return;
 		}
 
-		// Lock onto the nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
-		const float EntryY = static_cast<float>(GetActorLocation().Y);
-		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
-		bHasProcessedLaneInput = false;
+		const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
+		const bool bIsWesternGenre = (ActiveGenre == EMegaJamSceneGenre::Western);
 
-		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+		if (bIsWesternGenre)
+		{
+			// Scene 02 Western Standoff: lock to Center Lane (CurrentLane = 2) and snap to Ultra-Panavision 2.76:1
+			CurrentLane = 2;
+			bHasProcessedLaneInput = false;
+			SetAspectMode(EMegaJamAspectMode::UltraPanavision_276_1);
+		}
+		else
+		{
+			// Scene 01 Action: lock onto the nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
+			const float EntryY = static_cast<float>(GetActorLocation().Y);
+			CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
+			bHasProcessedLaneInput = false;
+			SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+		}
+
 		CurrentShotDuration = 0.0f;
 		AspectHoldTimer = 0.0f;
 		bIsShotStale = false;
 		bIsDropCutSlamming = false;
 
-		// Activate Bullet-Time Overdrive: +35% speed surge (4500 u/s), 0.45x HazardTimeScale, camera trauma + hitstop + white-hot burst
-		Velocity.X = OverdriveSpeed;
+		// Activate Director's Cut: +30% speed surge (or OverdriveSpeed), 0.45x HazardTimeScale, camera trauma + hitstop + white-hot burst
+		Velocity.X = bIsWesternGenre ? FMath::Max(static_cast<float>(Velocity.X) * 1.30f, OverdriveSpeed) : OverdriveSpeed;
 		Velocity.Z = 0.0f;
 		CurrentFOVPunch = DropCutFOVPunch;
 		SlamPitchPunch = -5.5f;
@@ -741,8 +880,11 @@ void AMegaJamFlowPawn::ToggleAspect()
 
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage(202601, 2.5f, FColor::Cyan,
-				TEXT("21:9 DIRECTOR'S CUT // BULLET-TIME OVERDRIVE!"), true, FVector2D(1.5f, 1.5f));
+			const FString CutBanner = bIsWesternGenre
+				? TEXT("2.76:1 ULTRA-PANAVISION // QUICK-DRAW STANDOFF!")
+				: TEXT("21:9 DIRECTOR'S CUT // BULLET-TIME OVERDRIVE!");
+			GEngine->AddOnScreenDebugMessage(202601, 2.5f, bIsWesternGenre ? FColor::Yellow : FColor::Cyan,
+				CutBanner, true, FVector2D(1.5f, 1.5f));
 		}
 	}
 	else
@@ -779,9 +921,50 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 {
 	CurrentAspect = NewAspect;
 
+	if (Camera)
+	{
+		if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
+		{
+			// Golden-Hour Sepia post-process grading for Scene 02 Ultra-Panavision 2.76:1
+			Camera->PostProcessBlendWeight = 1.0f;
+			Camera->PostProcessSettings.bOverride_ColorSaturation = true;
+			Camera->PostProcessSettings.ColorSaturation = FVector4(0.62f, 0.62f, 0.62f, 1.0f);
+			Camera->PostProcessSettings.bOverride_ColorGain = true;
+			Camera->PostProcessSettings.ColorGain = FVector4(1.16f, 1.02f, 0.80f, 1.0f);
+		}
+		else
+		{
+			Camera->PostProcessSettings.bOverride_ColorSaturation = false;
+			Camera->PostProcessSettings.bOverride_ColorGain = false;
+		}
+	}
+
 	PushTakeAndAspectToSubsystem();
 	OnAspectChanged.Broadcast(CurrentAspect);
 	OnAspectChangedEvent(CurrentAspect);
+}
+
+void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenre)
+{
+	if (CurrentAspect != EMegaJamAspectMode::Box_4_3)
+	{
+		SetAspectMode(EMegaJamAspectMode::Box_4_3);
+	}
+
+	// Vertical launch impulse into the air + mid-air hang
+	Velocity.Z = 1800.0f;
+	TriggerMicroHitstop(0.25f, 0.0f);
+	OnClapperboardSnapped.Broadcast();
+	PlayRunStartSound();
+	SyncSceneMusicTrack(NextGenre);
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->SetActiveGenre(NextGenre);
+		}
+	}
 }
 
 void AMegaJamFlowPawn::ResetForRun()
@@ -826,7 +1009,7 @@ void AMegaJamFlowPawn::ResetForRun()
 
 	// Default starting mode: 4:3 Academy Frame (Flight & Charge Mode) with 50% Film Meter
 	CurrentTake = EMegaJamTakeState::StudioTake;
-	CurrentAspect = EMegaJamAspectMode::Box_4_3;
+	SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	if (Camera)
 	{
 		Camera->SetFieldOfView(BoxFOV);
@@ -1162,7 +1345,7 @@ void AMegaJamFlowPawn::UpdateDynamicMusicModulation(float UnscaledDelta)
 		TargetPitch = 0.96f;
 		TargetVolume = 0.68f;
 	}
-	else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
 	{
 		if (ActiveMusicGenre == EMegaJamSceneGenre::Action)
 		{
@@ -1218,7 +1401,7 @@ void AMegaJamFlowPawn::AddCameraTrauma(float Amount, float MaxCap)
 void AMegaJamFlowPawn::TriggerMicroHitstop(float RealDurationSeconds, float Dilation)
 {
 	HitstopRealTimeRemaining = FMath::Max(HitstopRealTimeRemaining, RealDurationSeconds);
-	UGameplayStatics::SetGlobalTimeDilation(this, FMath::Clamp(Dilation, 0.05f, 1.0f));
+	UGameplayStatics::SetGlobalTimeDilation(this, FMath::Clamp(Dilation, 0.005f, 1.0f));
 }
 
 void AMegaJamFlowPawn::UpdatePawnDynamicMaterial(float DeltaSeconds)
@@ -1328,7 +1511,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
 	SpliceChain = 1;
-	CurrentAspect = EMegaJamAspectMode::Box_4_3;
+	SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	AspectHoldTimer = 0.0f;
 	bIsShotStale = false;
 	AirExposureTimer = 0.0f;
@@ -1367,6 +1550,14 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 void AMegaJamFlowPawn::Input_Steer(const FInputActionValue& Value)
 {
 	SteerInput = Value.Get<FVector2D>();
+
+	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
+	{
+		// Ultra-Panavision 2.76:1 locks strictly to Center Lane (CurrentLane = 2), ignoring lateral input
+		CurrentLane = 2;
+		bHasProcessedLaneInput = false;
+		return;
+	}
 
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
 	{
