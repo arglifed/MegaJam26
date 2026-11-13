@@ -137,9 +137,9 @@ public:
 	TObjectPtr<UStaticMesh> FilmFramePickupMesh;
 
 	// ---- Track tunables ----
-	/** Length of one chunk along +X (cm). */
+	/** Length of one chunk along +X (cm). Increased +30% (2600 cm) for clear reaction sightlines between rows. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
-	float ChunkLength = 2000.0f;
+	float ChunkLength = 2600.0f;
 
 	/** Chunks kept active ahead of the pawn's chunk. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
@@ -185,13 +185,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
 	FVector2D AirObstacleZRange = FVector2D(320.0, 820.0);
 
-	/** Collection distance (cm) for Aspect-Locked Film Frame pickups. */
+	/** Collection distance (cm) for Aspect-Locked Film Frame pickups. Generous radius so pickups snag cleanly. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
-	float PickupCollectionRadius = 190.0f;
+	float PickupCollectionRadius = 215.0f;
 
 	/** Assumed speed (cm/s) when projecting when a chunk will be reached, to pick its scene. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
-	float MinProjectionSpeed = 3000.0f;
+	float MinProjectionSpeed = 2600.0f;
 
 	// ---- Scenes ----
 	/** Run time (s) at which each film scene ends: Soundstage, Overpass Night, Cutting Room, Final Cut. */

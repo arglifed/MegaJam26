@@ -70,6 +70,12 @@ protected:
 	/** Handles SpaceBar / Enter / Gamepad_FaceButton_Bottom on TitleScreen and Completed screens. */
 	void Input_StartOrConfirm();
 
+	/** Dev hotkey [F1]: Toggles God Mode in non-shipping builds. */
+	void Input_DebugToggleGodMode();
+
+	/** Dev hotkey [F2]: Skips to the next Act milestone in non-shipping builds. */
+	void Input_DebugSkipAct();
+
 	/**
 	 * Builds a transient mapping context with default bindings for the pawn's Steer/Boost/Brake actions and
 	 * this controller's PauseAction. Only used when DefaultMappingContext is not assigned.

@@ -89,6 +89,43 @@ void AMegaJamPlayerController::SetupInputComponent()
 		KeyBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_StartOrConfirm);
 		InputComponent->KeyBindings.Add(KeyBinding);
 	}
+
+#if !UE_BUILD_SHIPPING
+	{
+		FInputKeyBinding F1Binding(FInputChord(EKeys::F1), IE_Pressed);
+		F1Binding.bConsumeInput = false;
+		F1Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_DebugToggleGodMode);
+		InputComponent->KeyBindings.Add(F1Binding);
+
+		FInputKeyBinding F2Binding(FInputChord(EKeys::F2), IE_Pressed);
+		F2Binding.bConsumeInput = false;
+		F2Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_DebugSkipAct);
+		InputComponent->KeyBindings.Add(F2Binding);
+	}
+#endif
+}
+
+void AMegaJamPlayerController::Input_DebugToggleGodMode()
+{
+#if !UE_BUILD_SHIPPING
+	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(GetPawn()))
+	{
+		FlowPawn->ToggleGodMode();
+	}
+#endif
+}
+
+void AMegaJamPlayerController::Input_DebugSkipAct()
+{
+#if !UE_BUILD_SHIPPING
+	if (UWorld* World = GetWorld())
+	{
+		if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+		{
+			GameMode->DebugSkipToNextAct();
+		}
+	}
+#endif
 }
 
 void AMegaJamPlayerController::Input_StartOrConfirm()

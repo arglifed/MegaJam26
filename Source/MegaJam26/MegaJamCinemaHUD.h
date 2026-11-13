@@ -91,6 +91,9 @@ protected:
 	TObjectPtr<UTextBlock> TopLeftText;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DevBadgeText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TopRightText;
 
 	UPROPERTY(Transient)

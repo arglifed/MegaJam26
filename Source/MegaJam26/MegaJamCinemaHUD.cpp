@@ -92,6 +92,23 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		TLSlot->SetZOrder(10);
 	}
 
+	// Dev God Mode Badge (only visible when bGodModeEnabled is true)
+	DevBadgeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DevBadgeText"));
+	DevBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	DevBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.72f, 0.12f, 1.0f)));
+	DevBadgeText->SetShadowOffset(FVector2D(1.5f, 1.5f));
+	DevBadgeText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+	DevBadgeText->SetText(FText::FromString(TEXT("[DEV: GOD MODE | HITS: 0]")));
+	DevBadgeText->SetVisibility(ESlateVisibility::Collapsed);
+	if (UCanvasPanelSlot* DevSlot = RootCanvas->AddChildToCanvas(DevBadgeText))
+	{
+		DevSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+		DevSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+		DevSlot->SetPosition(FVector2D(36.0f, 54.0f));
+		DevSlot->SetAutoSize(true);
+		DevSlot->SetZOrder(10);
+	}
+
 	// Top-Center Act Progress Readout & Progress Bar (visible during active gameplay)
 	ActProgressBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ActProgressBorder"));
 	ActProgressBorder->SetBrushColor(FLinearColor(0.04f, 0.04f, 0.04f, 0.78f));
@@ -627,6 +644,21 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			const bool bRecBlink = FMath::Fmod(World->GetTimeSeconds(), 1.0) < 0.65;
 			const TCHAR* RecDot = bRecBlink ? TEXT("●") : TEXT("○");
 			TopLeftText->SetText(FText::FromString(FString::Printf(TEXT("REC %s TAKE %02d  //  %s"), RecDot, TakeNumber, *Timecode)));
+		}
+	}
+
+	if (DevBadgeText)
+	{
+		if (FlowPawn && FlowPawn->IsGodModeEnabled())
+		{
+			DevBadgeText->SetVisibility(ESlateVisibility::HitTestInvisible);
+			DevBadgeText->SetText(FText::FromString(FString::Printf(
+				TEXT("[DEV: GOD MODE | HITS: %d]"),
+				FlowPawn->GetGodModeSimulatedHits())));
+		}
+		else
+		{
+			DevBadgeText->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 

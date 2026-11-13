@@ -653,49 +653,58 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		// Helper lambdas for reusable gate & shaft patterns
 		auto SpawnCeilingGate21_9 = [&]()
 		{
+			// Overhead Ceiling Gate (21:9 Required): bottom clearance raised to Z = 290 (center Z = 610, height 640 -> Z: [290, 930])
+			// so ducking into Wide_21_9 (Z <= 200) clears reliably without head-clips!
 			const FTransform CeilingGateTransform(
 				FRotator::ZeroRotator,
-				FVector(RowCenterX, 0.0f, 560.0f),
-				FVector(ObstacleSize / 100.0f, 18.0f, 6.8f));
+				FVector(RowCenterX, 0.0f, 610.0f),
+				FVector(ObstacleSize / 100.0f, 18.0f, 6.4f));
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
 
-			const float LowLateral = (LateralRoll < 0.5f) ? -520.0f : 520.0f;
-			const FTransform LowBlockTransform(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, LowLateral, 100.0f),
-				FVector(ObstacleSize / 100.0f, 5.0f, 2.0f));
-			UInstancedStaticMeshComponent* LowTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			LowTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, LowBlockTransform, true, false, true);
+			// Only add a secondary low block in Acts III-IV so Acts I-II let players focus cleanly on the 21:9 duck.
+			if (ChunkScene == EMegaJamFilmScene::CuttingRoom || ChunkScene == EMegaJamFilmScene::FinalCut)
+			{
+				const float LowLateral = (LateralRoll < 0.5f) ? -540.0f : 540.0f;
+				const FTransform LowBlockTransform(
+					FRotator::ZeroRotator,
+					FVector(RowCenterX, LowLateral, 95.0f),
+					FVector(ObstacleSize / 100.0f, 4.4f, 1.9f));
+				UInstancedStaticMeshComponent* LowTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+				LowTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, LowBlockTransform, true, false, true);
+			}
 		};
 
 		auto SpawnVerticalShaft4_3 = [&]()
 		{
+			// Narrow Vertical Shaft (4:3 Required): center opening widened to Y: [-480, 480]
+			// Outer blockers span Y: [-900, -480] (center -690, width 420) and Y: [480, 900] (center +690, width 420).
 			const FTransform LeftOuterBlocker(
 				FRotator::ZeroRotator,
-				FVector(RowCenterX, -660.0f, 450.0f),
-				FVector(ObstacleSize / 100.0f, 4.8f, 9.0f));
+				FVector(RowCenterX, -690.0f, 450.0f),
+				FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
 			const FTransform RightOuterBlocker(
 				FRotator::ZeroRotator,
-				FVector(RowCenterX, 660.0f, 450.0f),
-				FVector(ObstacleSize / 100.0f, 4.8f, 9.0f));
+				FVector(RowCenterX, 690.0f, 450.0f),
+				FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
 
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
 
-			const bool bLowHurdle = (HeightRoll < 0.55f);
-			const float HurdleZ = bLowHurdle ? 140.0f : 650.0f;
-			const FTransform ShaftHurdle(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, 0.0f, HurdleZ),
-				FVector(ObstacleSize / 100.0f, 8.2f, 2.8f));
-
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, ShaftHurdle, true, false, true);
-			if (bLowHurdle)
+			// Reduce simultaneous interior hurdles in Acts I-II; only place interior shaft hurdles in Acts III-IV.
+			if (ChunkScene == EMegaJamFilmScene::CuttingRoom || ChunkScene == EMegaJamFilmScene::FinalCut)
 			{
-				TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, ShaftHurdle, true, false, true);
+				const bool bLowHurdle = (HeightRoll < 0.55f);
+				const float HurdleZ = bLowHurdle ? 130.0f : 660.0f;
+				const FTransform ShaftHurdle(
+					FRotator::ZeroRotator,
+					FVector(RowCenterX, 0.0f, HurdleZ),
+					FVector(ObstacleSize / 100.0f, 8.8f, 2.5f));
+
+				UInstancedStaticMeshComponent* HurdleTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+				HurdleTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, ShaftHurdle, true, false, true);
 			}
 		};
 
