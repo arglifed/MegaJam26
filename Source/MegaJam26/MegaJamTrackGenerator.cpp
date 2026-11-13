@@ -3,6 +3,7 @@
 #include "MegaJamTrackGenerator.h"
 
 #include "MegaJamFlowPawn.h"
+#include "MegaJamFlowSubsystem.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/StaticMesh.h"
@@ -258,15 +259,16 @@ void AMegaJamTrackGenerator::UpdateFinalCutWrapArch()
 		WrapArchMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
 	}
 
-	const float RunTime = GetRunTimeSeconds();
-	if (RunTime >= 148.0f && !bWrapArchSpawned)
+	const float CurrentDistMeters = BoundGameMode
+		? BoundGameMode->GetDistanceMeters()
+		: FMath::Max(0.0f, static_cast<float>(BoundPawn->GetActorLocation().X) / 100.0f);
+
+	if (CurrentDistMeters >= 1520.0f && !bWrapArchSpawned)
 	{
 		bWrapArchSpawned = true;
-		const float PawnX = static_cast<float>(BoundPawn->GetActorLocation().X);
-		const float Speed = FMath::Max(static_cast<float>(BoundPawn->GetFlowVelocity().X), MinProjectionSpeed);
-		const float ArchX = PawnX + FMath::Max(2800.0f, Speed * 2.0f);
+		// Golden Wrap Arch at 1,740m (174,000 cm) framing the 1,800m finish line
+		const float ArchX = 174000.0f;
 
-		// Golden monument arch framing the 150s finish line
 		WrapArchISM->UpdateInstanceTransform(0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
 		WrapArchISM->UpdateInstanceTransform(1, FTransform(FRotator::ZeroRotator, FVector(ArchX, 880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
 		WrapArchISM->UpdateInstanceTransform(2, FTransform(FRotator::ZeroRotator, FVector(ArchX, 0.0f, 960.0f), FVector(3.2f, 20.4f, 2.2f)), true, false, true);
@@ -380,9 +382,11 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 		return;
 	}
 
-	const float TimeSeconds = static_cast<float>(World->GetTimeSeconds());
+	const UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	const float HazardScale = FlowSubsystem ? FlowSubsystem->HazardTimeScale : 1.0f;
+	ScaledTrackTime += DeltaSeconds * HazardScale;
 
-	// 1. Rotate Scene 3 (Cutting Room) film-reel pillars in SetPieceISM
+	// 1. Rotate set-piece pillars in SetPieceISM (scaled by HazardTimeScale so Bullet-Time Overdrive slows them to 0.45x)
 	bool bSetPiecesDirty = false;
 	for (int32 Index = 0; Index < SetPieceSlots.Num(); ++Index)
 	{
@@ -390,7 +394,7 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 		if (Slot.bActive && Slot.bRotates)
 		{
 			FTransform AnimatedTransform = Slot.BaseTransform;
-			const FRotator SpinRot(0.0f, TimeSeconds * Slot.RotationSpeedDeg, 0.0f);
+			const FRotator SpinRot(0.0f, ScaledTrackTime * Slot.RotationSpeedDeg, 0.0f);
 			AnimatedTransform.SetRotation((Slot.BaseTransform.GetRotation().Rotator() + SpinRot).Quaternion());
 			SetPieceISM->UpdateInstanceTransform(Index, AnimatedTransform, true, false, true);
 			bSetPiecesDirty = true;
@@ -402,8 +406,12 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 	}
 
 	// 2. Rotate active Film Frame pickups and check pawn proximity for collection
+	// Double pickup magnet radius (380 cm) when 21:9 Bullet-Time Overdrive is active!
 	const FVector PawnLocation = BoundPawn->GetActorLocation();
-	const float RadiusSq = FMath::Square(PickupCollectionRadius);
+	const float EffectivePickupRadius = (BoundPawn->GetAspectMode() == EMegaJamAspectMode::Wide_21_9)
+		? 380.0f
+		: PickupCollectionRadius;
+	const float RadiusSq = FMath::Square(EffectivePickupRadius);
 	const EMegaJamTakeState PawnTake = BoundPawn->GetCurrentTake();
 	const bool bIsActivelyPlaying = BoundGameMode ? BoundGameMode->IsPlaying() : true;
 	bool bPickupsDirty = false;
@@ -432,8 +440,8 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 			}
 		}
 
-		const float BobZ = FMath::Sin(TimeSeconds * 4.0f + static_cast<float>(Index)) * 14.0f;
-		const FRotator RingRot(90.0f, TimeSeconds * 110.0f + static_cast<float>(Index * 45), 0.0f);
+		const float BobZ = FMath::Sin(ScaledTrackTime * 4.0f + static_cast<float>(Index)) * 14.0f;
+		const FRotator RingRot(90.0f, ScaledTrackTime * 110.0f + static_cast<float>(Index * 45), 0.0f);
 		const FTransform RingTransform(RingRot, Pickup.Location + FVector(0.0f, 0.0f, BobZ), Pickup.Scale);
 		TargetISM->UpdateInstanceTransform(Pickup.PoolIndex, RingTransform, true, false, true);
 		bPickupsDirty = true;
@@ -445,8 +453,8 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 		PickupTakeB_ISM->MarkRenderStateDirty();
 	}
 
-	// 3. Outer-Wing Dolly Boost Strips (21:9 Required): collect when riding outer lanes in Wide_21_9
-	if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && BoundPawn->GetAspectMode() == EMegaJamAspectMode::Wide_21_9)
+	// 3. Outer-Wing Dolly Boost Strips: collect when riding outer lanes in Wide_21_9 or low 4:3
+	if (bIsActivelyPlaying && !BoundPawn->HasCrashed())
 	{
 		bool bStripsDirty = false;
 		for (int32 Index = 0; Index < BoostStripSlots.Num(); ++Index)
@@ -457,8 +465,8 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 				continue;
 			}
 
-			if (FMath::Abs(PawnLocation.X - Strip.Location.X) <= 280.0f &&
-				FMath::Abs(PawnLocation.Y - Strip.Location.Y) <= 185.0f &&
+			if (FMath::Abs(PawnLocation.X - Strip.Location.X) <= 300.0f &&
+				FMath::Abs(PawnLocation.Y - Strip.Location.Y) <= 210.0f &&
 				PawnLocation.Z <= 240.0f)
 			{
 				Strip.bActive = false;
@@ -678,32 +686,19 @@ int32 AMegaJamTrackGenerator::SceneIndexAtTime(float RunTimeSeconds) const
 
 bool AMegaJamTrackGenerator::IsHazardChunkForScene(int32 ChunkIndex, EMegaJamFilmScene ChunkScene) const
 {
-	const int32 Mod3 = ((ChunkIndex % 3) + 3) % 3;
+	// Scene 01 (Action Vertical Slice): strict Beat & Rest pacing —
+	// every Action Gauntlet chunk (even) is followed by a clean 4:3 Flight Charge Runway chunk (odd).
 	const int32 Mod2 = ((ChunkIndex % 2) + 2) % 2;
-
-	switch (ChunkScene)
-	{
-	case EMegaJamFilmScene::Soundstage:
-		// Act I (0-35s): 1 hazard chunk followed by 2 clean runway chunks
-		return (Mod3 == 0);
-	case EMegaJamFilmScene::OverpassNight:
-		// Act II (35-75s): 1 hazard chunk followed by 1 clean runway chunk
-		return (Mod2 == 0);
-	case EMegaJamFilmScene::CuttingRoom:
-	case EMegaJamFilmScene::FinalCut:
-	default:
-		// Acts III & IV (75-150s): 2 hazard chunks followed by 1 clean runway chunk
-		return (Mod3 != 2);
-	}
+	return (Mod2 == 0);
 }
 
 int32 AMegaJamTrackGenerator::GetHazardArchetypeForChunk(int32 ChunkIndex) const
 {
-	// Deterministic cycle across the 4 clean set-piece archetypes:
-	// 0 = Color-Splice Gate
-	// 1 = 21:9 Center-Median Split Blockade
-	// 2 = 21:9 Overhead Ceiling Gate
-	// 3 = 4:3 Vertical Shaft
+	// Deterministic cycle across the 4 clean Action Gauntlet set-piece archetypes:
+	// 0 = Color-Splice Twin Gate (Take A / Take B side-by-side floor & air gates)
+	// 1 = Action Split Pillars (Center pillar with wide Take A / Take B outer lanes & boost strips)
+	// 2 = Overhead Laser Curtain (Upper barrier Z > 300 with open Z = 140 Overdrive rail)
+	// 3 = Alternating Take Cross-Beams (High & Low Take A / Take B laser beams)
 	FRandomStream ArchetypeStream(Seed + ChunkIndex * 4999);
 	const int32 BaseCycle = ((ChunkIndex % 4) + 4) % 4;
 	return (BaseCycle + ArchetypeStream.RandHelper(2)) % 4;
@@ -726,22 +721,28 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	WallISM->UpdateInstanceTransform(Slot * 2 + 1,
 		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 500.0f), WallScale), true, false, true);
 
-	int32 ProjectedSceneIdx = 0;
-	float ProjectedTime = GetRunTimeSeconds();
 	const bool bTitleOrCompleted = BoundGameMode && !BoundGameMode->IsPlaying();
+	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
 
-	if (BoundPawn)
+	// Subtle visual progression along the 1,800m Action vertical slice
+	EMegaJamFilmScene ChunkScene = EMegaJamFilmScene::Soundstage;
+	if (ChunkDistMeters >= 1350.0f)
 	{
-		const float PawnX = static_cast<float>(BoundPawn->GetActorLocation().X);
-		const float Speed = FMath::Max(static_cast<float>(BoundPawn->GetFlowVelocity().X), MinProjectionSpeed);
-		ProjectedTime = GetRunTimeSeconds() + FMath::Max(0.0f, ChunkCenterX - PawnX) / Speed;
-		ProjectedSceneIdx = bTitleOrCompleted ? 0 : SceneIndexAtTime(ProjectedTime);
+		ChunkScene = EMegaJamFilmScene::FinalCut;
+	}
+	else if (ChunkDistMeters >= 900.0f)
+	{
+		ChunkScene = EMegaJamFilmScene::CuttingRoom;
+	}
+	else if (ChunkDistMeters >= 450.0f)
+	{
+		ChunkScene = EMegaJamFilmScene::OverpassNight;
 	}
 
-	const EMegaJamFilmScene ChunkScene = static_cast<EMegaJamFilmScene>(ProjectedSceneIdx);
 	FRandomStream Stream(Seed + ChunkIndex * 7919);
 
-	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || ProjectedTime >= 147.5f || bTitleOrCompleted);
+	// Keep chunks before SafeUntilChunkIndex and beyond 1,680m (Golden Wrap Arch finish stretch) obstacle-free
+	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || ChunkDistMeters >= 1680.0f || bTitleOrCompleted);
 	const bool bIsHazardChunk = !bInSafeOrFinishZone && IsHazardChunkForScene(ChunkIndex, ChunkScene);
 	const int32 HazardArchetype = GetHazardArchetypeForChunk(ChunkIndex);
 
@@ -777,34 +778,33 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		return;
 	}
 
-	// Breathing Runway Chunks (and start/finish safe zones) contain zero lethal blocks!
+	// Flight Charge Runway Chunks (and start/finish safe zones) contain zero lethal blocks!
 	if (!bIsHazardChunk)
 	{
 		return;
 	}
 
-	// Strict 1-Archetype-Per-Hazard-Chunk rule: place the single telegraphed set-piece at the center of the chunk
+	// Action Gauntlets: clean, telegraphed Take A / Take B laser & blockade formations
 	const int32 CenterRow = FMath::Clamp(Rows / 2, 0, Rows - 1);
 	const int32 BaseObstacleIndex = (Slot * Rows + CenterRow) * ObstaclesPerRow;
 	const float HazardX = ChunkCenterX;
 	const float TakeRoll = Stream.FRand();
-	const float HeightRoll = Stream.FRand();
 
 	switch (HazardArchetype)
 	{
 	case 0:
 	{
-		// Archetype 1 — Color-Splice Gate:
-		// A single pair of side-by-side Take A and Take B floor blocks (player matches color or Hard Cuts).
+		// Archetype 0 — Color-Splice Twin Gate:
+		// Side-by-side Take A and Take B gates spanning floor + mid-air (player matches Take color or Hard Cuts).
 		const bool bLeftIsTakeA = (TakeRoll < 0.5f);
 		const FTransform LeftGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, -380.0f, 140.0f),
-			FVector(ObstacleSize / 100.0f, 7.2f, 2.8f));
+			FVector(HazardX, -400.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.2f, 5.2f));
 		const FTransform RightGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 380.0f, 140.0f),
-			FVector(ObstacleSize / 100.0f, 7.2f, 2.8f));
+			FVector(HazardX, 400.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.2f, 5.2f));
 
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? LeftGateBlock : RightGateBlock, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? RightGateBlock : LeftGateBlock, true, false, true);
@@ -813,62 +813,56 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	case 1:
 	{
-		// Archetype 2 — 21:9 Center-Median Split Blockade:
-		// Central monolith (Y: [-450, 450], Z: [0, 930]) with open outer wings (Y = +/-700) lined with cyan Dolly Boost Strips.
-		// Zero extra obstacles on this chunk!
-		const FTransform CentralMonolith(
+		// Archetype 1 — Action Split Pillars:
+		// Central pillar (Y: [-340, 340], Z: [0, 860]) with wide open outer lanes (Y = +/-680) lined with cyan Dolly Boost Strips.
+		const FTransform CentralPillar(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 465.0f),
-			FVector(ObstacleSize / 100.0f, 9.0f, 9.3f));
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralMonolith, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralMonolith, true, false, true);
+			FVector(HazardX, 0.0f, 430.0f),
+			FVector(ObstacleSize / 100.0f, 6.8f, 8.6f));
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
 		break;
 	}
 
 	case 2:
 	{
-		// Archetype 3 — 21:9 Overhead Ceiling Gate:
-		// Upper barrier (Y: [-900, 900], Z: [310, 930] -> center Z = 620, height 620) leaving the entire floor (Z < 310) open.
+		// Archetype 2 — Overhead Laser Curtain:
+		// Upper barrier (Z: [310, 930]) leaving the entire Z = 140 Overdrive rail wide open underneath,
+		// with a Take-specific floor laser bar that can be phased through via Hard Cut!
 		const FTransform CeilingGateTransform(
 			FRotator::ZeroRotator,
 			FVector(HazardX, 0.0f, 620.0f),
 			FVector(ObstacleSize / 100.0f, 18.0f, 6.2f));
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
+
+		const FTransform FloorLaserBar(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 0.0f, 130.0f),
+			FVector(ObstacleSize / 100.0f, 16.0f, 1.8f));
+		UInstancedStaticMeshComponent* LaserTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+		LaserTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, FloorLaserBar, true, false, true);
 		break;
 	}
 
 	case 3:
 	default:
 	{
-		// Archetype 4 — 4:3 Vertical Shaft:
-		// Outer blockers (Y: [-900, -480] and [480, 900]) with a wide center opening containing a clean arc of 3 high Film Frames.
-		// Zero interior hurdles in Acts I-II; at most 1 single low or high hurdle in Acts III-IV.
-		const FTransform LeftOuterBlocker(
+		// Archetype 3 — Alternating Take Cross-Beams:
+		// Low beam on one Take (Z = 140) and High beam on the opposite Take (Z = 520), so players can fly over/under in 4:3
+		// or Hard-Cut straight through the Z = 140 rail at 4,500 u/s in 21:9 Overdrive!
+		const bool bLowIsTakeA = (TakeRoll < 0.5f);
+		const FTransform LowBeam(
 			FRotator::ZeroRotator,
-			FVector(HazardX, -690.0f, 450.0f),
-			FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
-		const FTransform RightOuterBlocker(
+			FVector(HazardX, 0.0f, 140.0f),
+			FVector(ObstacleSize / 100.0f, 16.5f, 2.2f));
+		const FTransform HighBeam(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 690.0f, 450.0f),
-			FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
+			FVector(HazardX, 0.0f, 520.0f),
+			FVector(ObstacleSize / 100.0f, 16.5f, 3.6f));
 
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
-
-		if (ChunkScene == EMegaJamFilmScene::CuttingRoom || ChunkScene == EMegaJamFilmScene::FinalCut)
-		{
-			const bool bLowHurdle = (HeightRoll < 0.65f);
-			const float HurdleZ = bLowHurdle ? 125.0f : 680.0f;
-			const FTransform ShaftHurdle(
-				FRotator::ZeroRotator,
-				FVector(HazardX, 0.0f, HurdleZ),
-				FVector(ObstacleSize / 100.0f, 8.8f, 2.4f));
-			UInstancedStaticMeshComponent* HurdleTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			HurdleTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, ShaftHurdle, true, false, true);
-		}
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? LowBeam : HighBeam, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? HighBeam : LowBeam, true, false, true);
 		break;
 	}
 	}
@@ -973,40 +967,28 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), Pos, RingScale), true, false, true);
 	};
 
-	// Check if the NEXT chunk is a 21:9 Overhead Ceiling Gate (Archetype 2) so this runway chunk sets up a Drop-Cut Slam!
-	const bool bNextIsCeilingGate = IsHazardChunkForScene(ChunkIndex + 1, ChunkScene) && (GetHazardArchetypeForChunk(ChunkIndex + 1) == 2);
+	if (!bIsHazardChunk)
+	{
+		// Flight Charge Runway: sweeping 5-frame 3D arc across Y and Z designed for 4:3 free-flight scooping!
+		const float SideSign = ((ChunkIndex / 2) % 2 == 0) ? 1.0f : -1.0f;
+		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.16f, -480.0f * SideSign, 240.0f));
+		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.33f, -240.0f * SideSign, 480.0f));
+		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.50f,    0.0f,            640.0f));
+		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.67f,  240.0f * SideSign, 480.0f));
+		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.84f,  480.0f * SideSign, 240.0f));
+	}
+	else
+	{
+		// Action Gauntlet: dense horizontal Z = 140.0f frame cluster designed to be carved through in 21:9 Bullet-Time Overdrive!
+		const float LaneY = (HazardArchetype == 1)
+			? ((ChunkIndex % 4 == 0) ? -680.0f : 680.0f)
+			: ((HazardArchetype == 0) ? ((ChunkIndex % 4 == 0) ? -380.0f : 380.0f) : 0.0f);
 
-	if ((bIsHazardChunk && HazardArchetype == 3) || (!bIsHazardChunk && bNextIsCeilingGate))
-	{
-		// 4:3 Vertical Shaft OR Runway preceding a 21:9 Ceiling Gate:
-		// Spawn a clean arc of 3 high Film Frames (Z = 520 - 640) along Y = 0 to reward climbing in 4:3 and arming a Drop-Cut Slam!
-		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.28f, 0.0f, 520.0f));
-		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.50f, 0.0f, 640.0f));
-		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.72f, 0.0f, 560.0f));
-	}
-	else if (bIsHazardChunk && HazardArchetype == 2)
-	{
-		// On a 21:9 Overhead Ceiling Gate chunk, place high approach frames before the gate (X = 0.20) and low dolly frames under the gate (Z = 120)
-		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.18f, 0.0f, 560.0f));
-		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.50f, 0.0f, 120.0f));
-		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.78f, 0.0f, 120.0f));
-	}
-	else if (!bIsHazardChunk)
-	{
-		// Clean Breathing Runway Chunk: alternating high 4:3 arc or wide 21:9 outer-wing line
-		if (ChunkIndex % 2 == 0)
-		{
-			const float WingY = ((ChunkIndex / 2) % 2 == 0) ? -680.0f : 680.0f;
-			PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.25f, WingY, 130.0f));
-			PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.50f, WingY, 130.0f));
-			PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.75f, WingY, 130.0f));
-		}
-		else
-		{
-			PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.28f, 0.0f, 540.0f));
-			PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.52f, 0.0f, 620.0f));
-			PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.76f, 0.0f, 540.0f));
-		}
+		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.18f, LaneY, 140.0f));
+		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.34f, LaneY, 140.0f));
+		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.50f, LaneY, 140.0f));
+		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.66f, LaneY, 140.0f));
+		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.82f, LaneY, 140.0f));
 	}
 }
 

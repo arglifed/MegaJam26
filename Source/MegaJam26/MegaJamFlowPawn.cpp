@@ -68,7 +68,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
-	Camera->SetFieldOfView(WideFOV);
+	Camera->SetFieldOfView(BoxFOV);
 
 	ScoreAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ScoreAudioComponent"));
 	ScoreAudioComponent->SetupAttachment(CollisionSphere);
@@ -312,72 +312,48 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	}
 
 	bTriggeredVictorySting = false;
+
+	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive ----
+	AirExposureTimer = 0.0f;
+	bIsOverexposed = false;
+	bIsShotStale = false;
+	AspectHoldTimer += DeltaSeconds;
+
+	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	{
+		// 21:9 Director's Cut (Bullet-Time Overdrive): drain FilmMeter at 15/sec and slow hazard animations to 0.45x
+		FilmMeter = FMath::Max(0.0f, FilmMeter - OverdriveDrainPerSec * DeltaSeconds);
+		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + (WideDollyFlowRegenPerSec * 0.01f) * DeltaSeconds, 0.0f, 0.35f);
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetHazardTimeScale(0.45f);
+		}
+
+		if (FilmMeter <= 0.0f)
+		{
+			FilmMeter = 0.0f;
+			SetAspectMode(EMegaJamAspectMode::Box_4_3);
+			if (FlowSubsystem)
+			{
+				FlowSubsystem->SetHazardTimeScale(1.0f);
+			}
+			TriggerAudioEvent(TEXT("OnAspectSwitch"));
+		}
+	}
+	else
+	{
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetHazardTimeScale(1.0f);
+		}
+	}
+
 	StepPhysics(DeltaSeconds);
 
 	MatchCutFlashTimer = FMath::Max(0.0f, MatchCutFlashTimer - DeltaSeconds);
 	DropCutFlashTimer = FMath::Max(0.0f, DropCutFlashTimer - DeltaSeconds);
 	DollyBoostFlashTimer = FMath::Max(0.0f, DollyBoostFlashTimer - DeltaSeconds);
-
-	AspectHoldTimer += DeltaSeconds;
-	if (AspectHoldTimer > StaleShotThreshold)
-	{
-		bIsShotStale = true;
-		StaleDecayAccum += DeltaSeconds;
-		while (StaleDecayAccum >= StaleDecayInterval)
-		{
-			StaleDecayAccum -= StaleDecayInterval;
-			SpliceChain = FMath::Max(1, SpliceChain - 1);
-		}
-	}
-	else
-	{
-		bIsShotStale = false;
-		StaleDecayAccum = 0.0f;
-	}
-
-	// ---- 21:9 Dolly Rail vs. 4:3 Crane Overexposure ----
-	const float CurrentAltitude = static_cast<float>(GetActorLocation().Z);
-	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
-	{
-		// 21:9 Dolly Rail: cool down exposure at 1.2x speed and grant passive Flow regeneration (+4.5% / sec).
-		AirExposureTimer = FMath::Max(0.0f, AirExposureTimer - 1.2f * DeltaSeconds);
-		bIsOverexposed = (AirExposureTimer > OverexposureStartSeconds);
-		OverexposureDecayAccum = 0.0f;
-		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + (WideDollyFlowRegenPerSec * 0.01f) * DeltaSeconds, -0.5f, 0.35f);
-	}
-	else
-	{
-		if (CurrentAltitude > OverexposureAltitudeThreshold)
-		{
-			AirExposureTimer = FMath::Min(OverexposureMaxSeconds, AirExposureTimer + DeltaSeconds);
-		}
-		else
-		{
-			AirExposureTimer = FMath::Max(0.0f, AirExposureTimer - 1.2f * DeltaSeconds);
-		}
-
-		bIsOverexposed = (AirExposureTimer > OverexposureStartSeconds);
-		if (bIsOverexposed)
-		{
-			// Drain Flow (-14% / sec) and apply aerodynamic drag to forward speed.
-			FlowBonusOffset = FMath::Clamp(FlowBonusOffset - (OverexposureFlowDrainPerSec * 0.01f) * DeltaSeconds, -0.5f, 0.35f);
-			Velocity.X *= FMath::Exp(-1.35f * DeltaSeconds);
-
-			if (AirExposureTimer >= OverexposureMaxSeconds)
-			{
-				OverexposureDecayAccum += DeltaSeconds;
-				while (OverexposureDecayAccum >= 1.5f)
-				{
-					OverexposureDecayAccum -= 1.5f;
-					SpliceChain = FMath::Max(1, SpliceChain - 1);
-				}
-			}
-		}
-		else
-		{
-			OverexposureDecayAccum = 0.0f;
-		}
-	}
 
 	// Normalized speed + FlowBonusOffset. Computed after StepPhysics so a crash leaves FlowRatio at 0.
 	const float RawSpeedFlow = TerminalVelocity > KINDA_SMALL_NUMBER
@@ -385,14 +361,15 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		: 0.0f;
 	FlowRatio = FMath::Clamp(RawSpeedFlow + FlowBonusOffset, 0.0f, 1.0f);
 
-	if (UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>())
+	if (FlowSubsystem)
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 		FlowSubsystem->SetSpliceChain(SpliceChain);
 		FlowSubsystem->SetAspectHoldTimer(AspectHoldTimer);
-		FlowSubsystem->SetIsShotStale(bIsShotStale);
-		FlowSubsystem->SetAirExposureRatio(GetAirExposureRatio());
-		FlowSubsystem->SetIsOverexposed(bIsOverexposed);
+		FlowSubsystem->SetIsShotStale(false);
+		FlowSubsystem->SetAirExposureRatio(0.0f);
+		FlowSubsystem->SetIsOverexposed(false);
+		FlowSubsystem->SetFilmMeter(FilmMeter);
 	}
 
 	PushAudioParameters();
@@ -402,47 +379,39 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 {
 	const bool bWide = CurrentAspect == EMegaJamAspectMode::Wide_21_9;
 
-	// Forward thrust along +X (the pawn never rotates).
-	Velocity += GetActorForwardVector() * Acceleration * DeltaSeconds;
-
 	// Strafe. IA_Steer.X is always lateral (+Y / -Y).
-	// Wide_21_9: stronger lateral force, vertical steering locked.
-	// Box_4_3:   IA_Steer.Y steers vertically (+Z / -Z) with +30% vertical responsiveness.
+	// Wide_21_9: stronger lateral force on horizontal cinema rail (Z = 140).
+	// Box_4_3:   full 2D free-flight across Y and Z.
 	const float LateralAccel = StrafeForce * (bWide ? WideStrafeMultiplier : 1.0f);
 	const float VerticalAccel = StrafeForce * VerticalStrafeMultiplier;
 
-	// Tighter lateral/vertical velocity damping when steering is neutral or counter-steering
 	const float CrossPlaneDamp = FMath::Exp(-LateralDamping * DeltaSeconds);
 	Velocity.Y *= CrossPlaneDamp;
 	Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
 
-	if (bIsDropCutSlamming)
-	{
-		Velocity.Z = -3600.0f;
-	}
-	else if (bWide)
+	if (bWide)
 	{
 		Velocity.Z = 0.0f;
+		// Bullet-Time Overdrive: surge and sustain OverdriveSpeed (4500 u/s)
+		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), OverdriveSpeed, DeltaSeconds, 9.0f);
 	}
 	else
 	{
 		Velocity.Z *= CrossPlaneDamp;
 		Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
+
+		// 4:3 Flight & Charge Mode: accelerate toward CruiseSpeed (2900 u/s) and clamp to MaxFlightSpeed (3600 u/s)
+		Velocity.X += Acceleration * DeltaSeconds;
+		Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
+		if (Velocity.X > CruiseSpeed)
+		{
+			Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), CruiseSpeed, DeltaSeconds, 3.5f);
+		}
+		Velocity.X = FMath::Clamp(static_cast<float>(Velocity.X), 0.0f, MaxFlightSpeed);
 	}
 
-	// Forward drag then terminal velocity clamp (allow brief overspeed from Drop-Cut Slam / Boost Strip to decay smoothly).
-	Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
-	const float MaxAllowedSpeed = (DropCutFlashTimer > 0.0f || DollyBoostFlashTimer > 0.0f || bIsDropCutSlamming)
-		? (TerminalVelocity + 450.0f)
-		: TerminalVelocity;
-	if (!bIsDropCutSlamming)
-	{
-		Velocity = Velocity.GetClampedToMaxSize(MaxAllowedSpeed);
-	}
-	else
-	{
-		Velocity.X = FMath::Min(static_cast<float>(Velocity.X), MaxAllowedSpeed);
-	}
+	const float MaxAllowedSpeed = bWide ? (OverdriveSpeed + 250.0f) : MaxFlightSpeed;
+	Velocity = Velocity.GetClampedToMaxSize(MaxAllowedSpeed);
 
 	// Swept move. A blocking hit is resolved deterministically.
 	FHitResult Hit;
@@ -467,46 +436,6 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 			// Slow contact: slide along the surface.
 			Velocity = FVector::VectorPlaneProject(Velocity, Hit.ImpactNormal);
 		}
-	}
-
-	// Check for Drop-Cut Slam touchdown at Z <= 105.0f
-	if (bIsDropCutSlamming && GetActorLocation().Z <= 105.0f)
-	{
-		bIsDropCutSlamming = false;
-		const FVector Loc = GetActorLocation();
-		SetActorLocation(FVector(Loc.X, Loc.Y, 100.0f), true);
-		Velocity.Z = 0.0f;
-
-		// Touchdown thud: +10 deg FOV punch, -7 deg pitch nod, +850 u/s forward speed surge, +25 Flow, +300 * SpliceChain score
-		CurrentFOVPunch = DropCutFOVPunch;
-		SlamPitchPunch = -7.0f;
-		Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + DropCutSpeedImpulse, TerminalVelocity + 450.0f);
-		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.25f, -0.5f, 0.35f);
-		FlowRatio = FMath::Clamp(FlowRatio + 0.25f, 0.0f, 1.0f);
-		AirExposureTimer = 0.0f;
-		bIsOverexposed = false;
-		DropCutFlashTimer = 1.4f;
-		EmissiveBurstTimer = 0.25f;
-
-		AddCameraTrauma(0.85f);
-		TriggerMicroHitstop(0.035f, 0.15f);
-
-		TryTriggerMatchCut(true);
-
-		if (UWorld* World = GetWorld())
-		{
-			if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
-			{
-				GameMode->AddBonusScore(300.0f * static_cast<float>(SpliceChain), true);
-			}
-			if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
-			{
-				FlowSubsystem->SetDropCutBannerTimer(1.4f);
-			}
-		}
-
-		PushTakeAndAspectToSubsystem();
-		TriggerAudioEvent(TEXT("OnHardCut"));
 	}
 
 	ApplyAspectClamp(DeltaSeconds);
@@ -586,53 +515,84 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 
 void AMegaJamFlowPawn::ToggleAspect()
 {
-	const EMegaJamAspectMode OldAspect = CurrentAspect;
-	const float PreSwitchZ = static_cast<float>(GetActorLocation().Z);
+	UWorld* World = GetWorld();
+	UMegaJamFlowSubsystem* FlowSubsystem = World ? World->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
 
-	SetAspectMode(OldAspect == EMegaJamAspectMode::Wide_21_9 ? EMegaJamAspectMode::Box_4_3 : EMegaJamAspectMode::Wide_21_9);
-
-	AspectHoldTimer = 0.0f;
-	bIsShotStale = false;
-	StaleDecayAccum = 0.0f;
-
-	// ---- Drop-Cut Slam: switching from Box_4_3 -> Wide_21_9 while airborne (Z > 185.0f) ----
-	if (OldAspect == EMegaJamAspectMode::Box_4_3 && CurrentAspect == EMegaJamAspectMode::Wide_21_9 && PreSwitchZ > DropCutMinAltitude)
+	if (CurrentAspect == EMegaJamAspectMode::Box_4_3)
 	{
-		// Arm visceral downward slam at 3600 u/s toward the Z = 100.0f dolly plane; touchdown at Z <= 105 fires the impact surge
-		bIsDropCutSlamming = true;
-		SlamPitchPunch = -7.0f;
-		Velocity.Z = -3600.0f;
-		AirExposureTimer = 0.0f;
-		bIsOverexposed = false;
-		DropCutFlashTimer = 1.4f;
-
-		if (UWorld* World = GetWorld())
+		// Require at least 25% Film Meter to activate 21:9 Director's Cut (Bullet-Time Overdrive)
+		if (FilmMeter < OverdriveMinActivationMeter)
 		{
-			if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+			if (GEngine)
 			{
-				FlowSubsystem->SetDropCutBannerTimer(1.4f);
+				GEngine->AddOnScreenDebugMessage(202601, 1.5f, FColor::Orange,
+					FString::Printf(TEXT("NEED 25%% FILM METER FOR 21:9 DIRECTOR'S CUT (%d%%)"), FMath::RoundToInt(FilmMeter)),
+					true, FVector2D(1.3f, 1.3f));
 			}
+			return;
+		}
+
+		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+		AspectHoldTimer = 0.0f;
+		bIsShotStale = false;
+		bIsDropCutSlamming = false;
+
+		// Activate Bullet-Time Overdrive: +35% speed surge (4500 u/s), 0.45x HazardTimeScale, camera trauma + hitstop + white-hot burst
+		Velocity.X = OverdriveSpeed;
+		Velocity.Z = 0.0f;
+		CurrentFOVPunch = DropCutFOVPunch;
+		SlamPitchPunch = -5.5f;
+		EmissiveBurstTimer = 0.25f;
+		DropCutFlashTimer = 1.4f;
+		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.22f, 0.0f, 0.35f);
+		FlowRatio = 1.0f;
+
+		AddCameraTrauma(0.65f);
+		TriggerMicroHitstop(0.03f, 0.15f);
+
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetHazardTimeScale(0.45f);
+			FlowSubsystem->SetDropCutBannerTimer(1.4f);
+		}
+
+		// Check 128 BPM On-Beat Cut window (±0.16s) + Match-Cut window
+		if (!TryTriggerOnBeatCut())
+		{
+			TryTriggerMatchCut(false);
+		}
+
+		PushTakeAndAspectToSubsystem();
+		TriggerAudioEvent(TEXT("OnHardCut"));
+		TriggerAudioEvent(TEXT("OnAspectSwitch"));
+
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(202601, 2.5f, FColor::Cyan,
+				TEXT("21:9 DIRECTOR'S CUT // BULLET-TIME OVERDRIVE!"), true, FVector2D(1.5f, 1.5f));
+		}
+	}
+	else
+	{
+		// Return to 4:3 Flight & Charge Mode
+		SetAspectMode(EMegaJamAspectMode::Box_4_3);
+		AspectHoldTimer = 0.0f;
+		bIsShotStale = false;
+		bIsDropCutSlamming = false;
+
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetHazardTimeScale(1.0f);
 		}
 
 		PushTakeAndAspectToSubsystem();
 		TriggerAudioEvent(TEXT("OnAspectSwitch"));
-	}
-	else
-	{
-		bIsDropCutSlamming = false;
-		TryTriggerMatchCut(false);
-		PushTakeAndAspectToSubsystem();
-		TriggerAudioEvent(TEXT("OnAspectSwitch"));
-	}
 
-	if (GEngine)
-	{
-		const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9);
-		const FString Banner = bWide
-			? TEXT("ASPECT: 21:9 WIDESCREEN")
-			: TEXT("ASPECT: 4:3 ACADEMY BOX");
-		const FColor BannerColor = bWide ? FColor::Cyan : FColor::Orange;
-		GEngine->AddOnScreenDebugMessage(202601, 2.5f, BannerColor, Banner, true, FVector2D(1.5f, 1.5f));
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(202601, 2.0f, FColor::Orange,
+				TEXT("4:3 FLIGHT & CHARGE MODE"), true, FVector2D(1.4f, 1.4f));
+		}
 	}
 }
 
@@ -650,6 +610,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	bCrashed = false;
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
+	FilmMeter = 50.0f;
 	SteerInput = FVector2D::ZeroVector;
 	CurrentFOVPunch = 0.0f;
 	SlamPitchPunch = 0.0f;
@@ -679,12 +640,12 @@ void AMegaJamFlowPawn::ResetForRun()
 
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 
-	// Back to the opening framing. Broadcast so listeners (track generator, HUD) resync.
+	// Default starting mode: 4:3 Academy Frame (Flight & Charge Mode) with 50% Film Meter
 	CurrentTake = EMegaJamTakeState::StudioTake;
-	CurrentAspect = EMegaJamAspectMode::Wide_21_9;
+	CurrentAspect = EMegaJamAspectMode::Box_4_3;
 	if (Camera)
 	{
-		Camera->SetFieldOfView(WideFOV);
+		Camera->SetFieldOfView(BoxFOV);
 		Camera->SetRelativeRotation(FRotator::ZeroRotator);
 		Camera->SetRelativeLocation(FVector::ZeroVector);
 	}
@@ -700,6 +661,8 @@ void AMegaJamFlowPawn::ResetForRun()
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
 			FlowSubsystem->SetFlowRatio(0.0f);
+			FlowSubsystem->SetFilmMeter(FilmMeter);
+			FlowSubsystem->SetHazardTimeScale(1.0f);
 		}
 	}
 }
@@ -714,11 +677,47 @@ void AMegaJamFlowPawn::PushTakeAndAspectToSubsystem() const
 			FlowSubsystem->SetAspectMode(CurrentAspect == EMegaJamAspectMode::Box_4_3 ? 1.0f : 0.0f);
 			FlowSubsystem->SetSpliceChain(SpliceChain);
 			FlowSubsystem->SetAspectHoldTimer(AspectHoldTimer);
-			FlowSubsystem->SetIsShotStale(bIsShotStale);
-			FlowSubsystem->SetAirExposureRatio(GetAirExposureRatio());
-			FlowSubsystem->SetIsOverexposed(bIsOverexposed);
+			FlowSubsystem->SetIsShotStale(false);
+			FlowSubsystem->SetAirExposureRatio(0.0f);
+			FlowSubsystem->SetIsOverexposed(false);
+			FlowSubsystem->SetFilmMeter(FilmMeter);
 		}
 	}
+}
+
+bool AMegaJamFlowPawn::TryTriggerOnBeatCut()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return false;
+	}
+
+	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	if (!FlowSubsystem || !FlowSubsystem->IsWithinBeatWindow(0.16f))
+	{
+		return false;
+	}
+
+	// ★ ON-BEAT CUT! (+15 Film Meter, +1 Chain up to x8, camera trauma, HUD flash, audio sting)
+	FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
+	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
+	EmissiveBurstTimer = 0.25f;
+	AddCameraTrauma(0.35f);
+
+	FlowSubsystem->SetOnBeatFlashTimer(1.1f);
+	FlowSubsystem->SetFilmMeter(FilmMeter);
+	FlowSubsystem->SetSpliceChain(SpliceChain);
+
+	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+	{
+		const float OverdriveMult = IsInBulletTimeOverdrive() ? 2.0f : 1.0f;
+		GameMode->AddBonusScore(200.0f * static_cast<float>(SpliceChain) * OverdriveMult, true);
+		GameMode->NotifySpliceChainUpdated(SpliceChain);
+	}
+
+	TriggerAudioEvent(TEXT("OnHardCut"));
+	return true;
 }
 
 bool AMegaJamFlowPawn::TryTriggerMatchCut(bool bForceMatchCut)
@@ -741,15 +740,17 @@ bool AMegaJamFlowPawn::TryTriggerMatchCut(bool bForceMatchCut)
 	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 	MatchCutFlashTimer = 1.1f;
 	EmissiveBurstTimer = 0.25f;
+	FilmMeter = FMath::Clamp(FilmMeter + 10.0f, 0.0f, 100.0f);
 
 	// Refill Flow and forward momentum on a successful Match Cut.
-	Velocity.X = FMath::Max(static_cast<float>(Velocity.X), TerminalVelocity * 0.95f);
+	Velocity.X = FMath::Max(static_cast<float>(Velocity.X), IsInBulletTimeOverdrive() ? OverdriveSpeed : MaxFlightSpeed * 0.95f);
 	FlowBonusOffset = FMath::Max(0.0f, FlowBonusOffset);
 	FlowRatio = 1.0f;
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
-		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain), true);
+		const float OverdriveMult = IsInBulletTimeOverdrive() ? 2.0f : 1.0f;
+		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain) * OverdriveMult, true);
 		GameMode->NotifySpliceChainUpdated(SpliceChain);
 	}
 
@@ -757,6 +758,7 @@ bool AMegaJamFlowPawn::TryTriggerMatchCut(bool bForceMatchCut)
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 		FlowSubsystem->SetSpliceChain(SpliceChain);
+		FlowSubsystem->SetFilmMeter(FilmMeter);
 	}
 
 	TriggerAudioEvent(TEXT("OnGraze"));
@@ -772,20 +774,26 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 	}
 
 	LastGrazeOrPickupTime = World->GetTimeSeconds();
+	FilmMeter = FMath::Clamp(FilmMeter + 14.0f, 0.0f, 100.0f);
 	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 	MatchCutFlashTimer = 0.9f;
 	EmissiveBurstTimer = 0.25f;
 	AddCameraTrauma(0.25f);
 
-	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + CutSpeedImpulse * 0.75f, TerminalVelocity);
-	FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.12f, -0.5f, 0.35f);
+	const float MaxCap = IsInBulletTimeOverdrive() ? OverdriveSpeed : MaxFlightSpeed;
+	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + CutSpeedImpulse * 0.75f, MaxCap);
+	FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.12f, 0.0f, 0.35f);
 	FlowRatio = TerminalVelocity > KINDA_SMALL_NUMBER
 		? FMath::Clamp(Velocity.Size() / TerminalVelocity + FlowBonusOffset, 0.0f, 1.0f)
 		: 0.0f;
 
+	// Check 128 BPM On-Beat Cut window (±0.16s) when scooping a Film Frame
+	TryTriggerOnBeatCut();
+
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
-		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain), true);
+		const float OverdriveMult = IsInBulletTimeOverdrive() ? 2.0f : 1.0f;
+		GameMode->AddBonusScore(MatchCutBonusBase * static_cast<float>(SpliceChain) * OverdriveMult, true);
 		GameMode->RegisterFilmFrameCollected(SpliceChain);
 	}
 
@@ -793,6 +801,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 		FlowSubsystem->SetSpliceChain(SpliceChain);
+		FlowSubsystem->SetFilmMeter(FilmMeter);
 	}
 
 	TriggerAudioEvent(TEXT("OnGraze"));
@@ -807,23 +816,26 @@ void AMegaJamFlowPawn::NotifyDollyBoostStripCollected()
 	}
 
 	LastGrazeOrPickupTime = World->GetTimeSeconds();
+	FilmMeter = FMath::Clamp(FilmMeter + 10.0f, 0.0f, 100.0f);
 	DollyBoostFlashTimer = 1.0f;
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
 	AddCameraTrauma(0.25f);
 
-	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + 550.0f, TerminalVelocity + 300.0f);
-	FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.15f, -0.5f, 0.35f);
+	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + 550.0f, OverdriveSpeed + 250.0f);
+	FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.15f, 0.0f, 0.35f);
 	FlowRatio = FMath::Clamp(FlowRatio + 0.15f, 0.0f, 1.0f);
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
-		GameMode->AddBonusScore(100.0f * static_cast<float>(SpliceChain), true);
+		const float OverdriveMult = IsInBulletTimeOverdrive() ? 2.0f : 1.0f;
+		GameMode->AddBonusScore(100.0f * static_cast<float>(SpliceChain) * OverdriveMult, true);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
+		FlowSubsystem->SetFilmMeter(FilmMeter);
 	}
 
 	TriggerAudioEvent(TEXT("OnGraze"));
@@ -946,6 +958,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
 	SpliceChain = 1;
+	CurrentAspect = EMegaJamAspectMode::Box_4_3;
 	AspectHoldTimer = 0.0f;
 	bIsShotStale = false;
 	AirExposureTimer = 0.0f;
@@ -968,6 +981,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
 			FlowSubsystem->SetFlowRatio(0.0f);
+			FlowSubsystem->SetHazardTimeScale(1.0f);
 		}
 		if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 		{
@@ -1087,11 +1101,21 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	}
 	GrazeTimes.Add(Key, Now);
 	LastGrazeOrPickupTime = Now;
+	FilmMeter = FMath::Clamp(FilmMeter + 10.0f, 0.0f, 100.0f);
 	AddCameraTrauma(0.25f);
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetFilmMeter(FilmMeter);
+	}
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
 		GameMode->RegisterGraze(OtherActor);
+		if (IsInBulletTimeOverdrive())
+		{
+			GameMode->AddBonusScore(120.0f * static_cast<float>(SpliceChain), true);
+		}
 	}
 
 	TriggerAudioEvent(TEXT("OnGraze"));
