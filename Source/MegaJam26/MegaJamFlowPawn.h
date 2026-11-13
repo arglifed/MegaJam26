@@ -387,6 +387,14 @@ public:
 	void ClearCrashStateForDebugSkip();
 
 	// ---- Director's Cut actions ----
+	/** Executes the Editor's Splice: toggles Take A / Take B and, if pressed within the 128 BPM beat window (0.18s), shreds obstacles ahead into Film Frames. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void ExecuteEditorSplice();
+
+	/** Minimum cooldown (seconds) between ExecuteEditorSplice calls to prevent macro-spamming. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Flow")
+	float EditorSpliceCooldown = 0.25f;
+
 	/** Toggles the take, adds CutSpeedImpulse and fires OnTakeCut. Returns false when on cooldown or not in a live run. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	bool TriggerHardCut();
@@ -545,6 +553,9 @@ protected:
 
 	/** World time of the last hard cut. */
 	double LastCutTime = -1000.0;
+
+	/** World time of the last ExecuteEditorSplice call (0.25s cooldown). */
+	double LastEditorSpliceTime = -1000.0;
 
 	/** World time of the most recent obstacle graze or Film Frame pickup. */
 	double LastGrazeOrPickupTime = -1000.0;

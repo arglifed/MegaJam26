@@ -93,7 +93,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 
 	// Top-Left SMPTE & Take Counter readout
 	TopLeftText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TopLeftText"));
-	TopLeftText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 18));
+	TopLeftText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
 	TopLeftText->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.95f, 0.95f, 1.0f)));
 	TopLeftText->SetShadowOffset(FVector2D(2.0f, 2.0f));
 	TopLeftText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
@@ -102,14 +102,14 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		TLSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
 		TLSlot->SetAlignment(FVector2D(0.0f, 0.0f));
-		TLSlot->SetPosition(FVector2D(36.0f, 26.0f));
+		TLSlot->SetPosition(FVector2D(30.0f, 30.0f));
 		TLSlot->SetAutoSize(true);
 		TLSlot->SetZOrder(10);
 	}
 
 	// Dev God Mode Badge (only visible when bGodModeEnabled is true)
 	DevBadgeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DevBadgeText"));
-	DevBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	DevBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 13));
 	DevBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.72f, 0.12f, 1.0f)));
 	DevBadgeText->SetShadowOffset(FVector2D(1.5f, 1.5f));
 	DevBadgeText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
@@ -119,7 +119,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		DevSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
 		DevSlot->SetAlignment(FVector2D(0.0f, 0.0f));
-		DevSlot->SetPosition(FVector2D(36.0f, 54.0f));
+		DevSlot->SetPosition(FVector2D(30.0f, 54.0f));
 		DevSlot->SetAutoSize(true);
 		DevSlot->SetZOrder(10);
 	}
@@ -154,7 +154,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		ActSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		ActSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		ActSlot->SetPosition(FVector2D(0.0f, 78.0f));
+		ActSlot->SetPosition(FVector2D(0.0f, 85.0f));
 		ActSlot->SetSize(FVector2D(300.0f, 44.0f));
 		ActSlot->SetAutoSize(false);
 		ActSlot->SetZOrder(12);
@@ -210,7 +210,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 
 	// Top-Right Active Take & Flow Multiplier readout
 	TopRightText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TopRightText"));
-	TopRightText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 18));
+	TopRightText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
 	TopRightText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 0.9f, 1.0f, 1.0f)));
 	TopRightText->SetShadowOffset(FVector2D(2.0f, 2.0f));
 	TopRightText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
@@ -220,14 +220,14 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		TRSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
 		TRSlot->SetAlignment(FVector2D(1.0f, 0.0f));
-		TRSlot->SetPosition(FVector2D(-36.0f, 18.0f));
+		TRSlot->SetPosition(FVector2D(-30.0f, 30.0f));
 		TRSlot->SetAutoSize(true);
 		TRSlot->SetZOrder(10);
 	}
 
 	// Top-Right Match-Cut Chain & Stale Shot Badge
 	ChainBadgeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ChainBadgeText"));
-	ChainBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 16));
+	ChainBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 13));
 	ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.92f, 0.92f, 1.0f)));
 	ChainBadgeText->SetShadowOffset(FVector2D(2.0f, 2.0f));
 	ChainBadgeText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
@@ -237,7 +237,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		ChainSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
 		ChainSlot->SetAlignment(FVector2D(1.0f, 0.0f));
-		ChainSlot->SetPosition(FVector2D(-36.0f, 48.0f));
+		ChainSlot->SetPosition(FVector2D(-30.0f, 54.0f));
 		ChainSlot->SetAutoSize(true);
 		ChainSlot->SetZOrder(10);
 	}

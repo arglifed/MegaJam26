@@ -49,6 +49,23 @@ void UMegaJamFlowSubsystem::SetAudioEnvelopeValue(float NewEnvelopeValue)
 void UMegaJamFlowSubsystem::SetActiveTake(float NewActiveTake)
 {
 	ActiveTake = FMath::Clamp(NewActiveTake, 0.0f, 1.0f);
+	const bool bNewTakeA = (ActiveTake < 0.5f);
+	if (bIsTakeA_Active != bNewTakeA)
+	{
+		bIsTakeA_Active = bNewTakeA;
+		OnTakeSwapped.Broadcast(bIsTakeA_Active);
+	}
+}
+
+void UMegaJamFlowSubsystem::SetTakeAActive(bool bNewTakeState)
+{
+	const bool bChanged = (bIsTakeA_Active != bNewTakeState);
+	bIsTakeA_Active = bNewTakeState;
+	ActiveTake = bIsTakeA_Active ? 0.0f : 1.0f;
+	if (bChanged)
+	{
+		OnTakeSwapped.Broadcast(bIsTakeA_Active);
+	}
 }
 
 void UMegaJamFlowSubsystem::SetAspectMode(float NewAspectMode)
