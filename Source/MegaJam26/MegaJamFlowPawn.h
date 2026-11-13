@@ -258,6 +258,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float AspectClampInterpSpeed = 30.0f;
 
+	/** Active discrete magnetic lane index in 21:9 mode (0 = Far Left -700, 1 = Mid Left -350, 2 = Center 0, 3 = Mid Right +350, 4 = Far Right +700). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	int32 CurrentLane = 2;
+
+	/** Fixed lateral distance (cm) between adjacent 21:9 magnetic lanes (lanes at Y = -700, -350, 0, 350, 700). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float LaneWidthY = 350.0f;
+
 	/** Camera field of view in Wide_21_9 mode (degrees). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float WideFOV = 100.0f;
@@ -544,6 +552,9 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> PawnVisualMID;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
+
+	/** Latch to prevent sliding across multiple 21:9 lanes from a single held stick/key press. */
+	bool bHasProcessedLaneInput = false;
 
 	/** Current decaying additive FOV punch from TriggerHardCut / Drop-Cut Slam. */
 	float CurrentFOVPunch = 0.0f;

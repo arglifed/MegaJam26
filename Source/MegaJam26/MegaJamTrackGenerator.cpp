@@ -885,16 +885,16 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	case 0:
 	{
 		// Archetype 0 — Color-Splice Twin Gate:
-		// Side-by-side Take A and Take B gates spanning floor + mid-air (player matches Take color or Hard Cuts).
+		// Aligned to 5-lane centers: Left Gate on Lane 1 (Y = -350), Right Gate on Lane 3 (Y = +350), Center Gate on Lane 2 (Y = 0).
 		const bool bLeftIsTakeA = (TakeRoll < 0.5f);
 		const FTransform LeftGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, -400.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 7.2f, 5.2f));
+			FVector(HazardX, -350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.0f, 5.2f));
 		const FTransform RightGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 400.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 7.2f, 5.2f));
+			FVector(HazardX, 350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.0f, 5.2f));
 
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? LeftGateBlock : RightGateBlock, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? RightGateBlock : LeftGateBlock, true, false, true);
@@ -904,13 +904,26 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	case 1:
 	{
 		// Archetype 1 — Action Split Pillars:
-		// Central pillar (Y: [-340, 340], Z: [0, 860]) with wide open outer lanes (Y = +/-680) lined with cyan Dolly Boost Strips.
+		// Central pillar on Lane 2 (Y = 0.0f) and flanking Take-specific pillars on Lanes 1 & 3 (Y = -350.0f, +350.0f),
+		// with outer Lanes 0 & 4 (Y = -700.0f, +700.0f) lined with cyan Dolly Boost Strips.
 		const FTransform CentralPillar(
 			FRotator::ZeroRotator,
 			FVector(HazardX, 0.0f, 430.0f),
-			FVector(ObstacleSize / 100.0f, 6.8f, 8.6f));
+			FVector(ObstacleSize / 100.0f, 3.2f, 8.6f));
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
+
+		const bool bMidLeftIsTakeA = (TakeRoll < 0.5f);
+		const FTransform MidLeftPillar(
+			FRotator::ZeroRotator,
+			FVector(HazardX, -350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 3.2f, 5.2f));
+		const FTransform MidRightPillar(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 3.2f, 5.2f));
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidLeftPillar : MidRightPillar, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidRightPillar : MidLeftPillar, true, false, true);
 		break;
 	}
 
@@ -1062,20 +1075,20 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 
 	if (!bIsHazardChunk)
 	{
-		// Flight Charge Runway: sweeping 5-frame 3D arc across Y and Z designed for 4:3 free-flight scooping!
+		// Flight Charge Runway: sweeping 5-frame 3D arc aligned with the 5 lane centers (-700, -350, 0, 350, 700)
 		const float SideSign = ((ChunkIndex / 2) % 2 == 0) ? 1.0f : -1.0f;
-		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.16f, -480.0f * SideSign, 240.0f));
-		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.33f, -240.0f * SideSign, 480.0f));
+		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.16f, -700.0f * SideSign, 240.0f));
+		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.33f, -350.0f * SideSign, 480.0f));
 		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.50f,    0.0f,            640.0f));
-		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.67f,  240.0f * SideSign, 480.0f));
-		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.84f,  480.0f * SideSign, 240.0f));
+		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.67f,  350.0f * SideSign, 480.0f));
+		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.84f,  700.0f * SideSign, 240.0f));
 	}
 	else
 	{
-		// Action Gauntlet: dense horizontal Z = 140.0f frame cluster designed to be carved through in 21:9 Bullet-Time Overdrive!
+		// Action Gauntlet: dense horizontal Z = 140.0f frame cluster aligned strictly to the 5 lane centers (-700, -350, 0, 350, 700)
 		const float LaneY = (HazardArchetype == 1)
-			? ((ChunkIndex % 4 == 0) ? -680.0f : 680.0f)
-			: ((HazardArchetype == 0) ? ((ChunkIndex % 4 == 0) ? -380.0f : 380.0f) : 0.0f);
+			? ((ChunkIndex % 4 == 0) ? -700.0f : 700.0f)
+			: ((HazardArchetype == 0) ? ((ChunkIndex % 4 == 0) ? -350.0f : 350.0f) : 0.0f);
 
 		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.18f, LaneY, 140.0f));
 		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.34f, LaneY, 140.0f));

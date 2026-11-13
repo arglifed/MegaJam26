@@ -450,23 +450,27 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	const bool bWide = CurrentAspect == EMegaJamAspectMode::Wide_21_9;
 
 	// Strafe. IA_Steer.X is always lateral (+Y / -Y).
-	// Wide_21_9: stronger lateral force on horizontal cinema rail (Z = 140).
-	// Box_4_3:   full 2D free-flight across Y and Z.
+	// Wide_21_9: 5-lane magnetic rail system (Y = -700, -350, 0, 350, 700) on horizontal cinema rail (Z = 140).
+	// Box_4_3:   full 2D analog free-flight across Y and Z.
 	const float LateralAccel = StrafeForce * (bWide ? WideStrafeMultiplier : 1.0f);
 	const float VerticalAccel = StrafeForce * VerticalStrafeMultiplier;
 
 	const float CrossPlaneDamp = FMath::Exp(-LateralDamping * DeltaSeconds);
-	Velocity.Y *= CrossPlaneDamp;
-	Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
 
 	if (bWide)
 	{
+		const float CurrentY = static_cast<float>(GetActorLocation().Y);
+		const float TargetLaneY = static_cast<float>(CurrentLane - 2) * LaneWidthY;
+		const float NextY = FMath::FInterpTo(CurrentY, TargetLaneY, DeltaSeconds, 18.0f);
+		Velocity.Y = (DeltaSeconds > KINDA_SMALL_NUMBER) ? ((NextY - CurrentY) / DeltaSeconds) : 0.0f;
 		Velocity.Z = 0.0f;
 		// Bullet-Time Overdrive: surge and sustain OverdriveSpeed (4500 u/s)
 		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), OverdriveSpeed, DeltaSeconds, 9.0f);
 	}
 	else
 	{
+		Velocity.Y *= CrossPlaneDamp;
+		Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
 		Velocity.Z *= CrossPlaneDamp;
 		Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
 
@@ -668,6 +672,11 @@ void AMegaJamFlowPawn::ToggleAspect()
 			return;
 		}
 
+		// Lock onto the nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
+		const float EntryY = static_cast<float>(GetActorLocation().Y);
+		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
+		bHasProcessedLaneInput = false;
+
 		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
 		AspectHoldTimer = 0.0f;
 		bIsShotStale = false;
@@ -715,6 +724,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 	else
 	{
 		// Return to 4:3 Flight & Charge Mode
+		bHasProcessedLaneInput = false;
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 		AspectHoldTimer = 0.0f;
 		bIsShotStale = false;
@@ -756,6 +766,8 @@ void AMegaJamFlowPawn::ResetForRun()
 	FlowRatio = 0.0f;
 	FilmMeter = 50.0f;
 	SteerInput = FVector2D::ZeroVector;
+	CurrentLane = 2;
+	bHasProcessedLaneInput = false;
 	CurrentFOVPunch = 0.0f;
 	SlamPitchPunch = 0.0f;
 	CameraTrauma = 0.0f;
@@ -1275,6 +1287,35 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 void AMegaJamFlowPawn::Input_Steer(const FInputActionValue& Value)
 {
 	SteerInput = Value.Get<FVector2D>();
+
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	{
+		const float AxisValue = static_cast<float>(SteerInput.X);
+		if (AxisValue > 0.5f && !bHasProcessedLaneInput)
+		{
+			const int32 NewLane = FMath::Min(4, CurrentLane + 1);
+			bHasProcessedLaneInput = true;
+			if (NewLane != CurrentLane)
+			{
+				CurrentLane = NewLane;
+				TriggerAudioEvent(TEXT("OnGraze"));
+			}
+		}
+		else if (AxisValue < -0.5f && !bHasProcessedLaneInput)
+		{
+			const int32 NewLane = FMath::Max(0, CurrentLane - 1);
+			bHasProcessedLaneInput = true;
+			if (NewLane != CurrentLane)
+			{
+				CurrentLane = NewLane;
+				TriggerAudioEvent(TEXT("OnGraze"));
+			}
+		}
+		else if (FMath::Abs(AxisValue) < 0.2f)
+		{
+			bHasProcessedLaneInput = false;
+		}
+	}
 }
 
 void AMegaJamFlowPawn::Input_Boost(const FInputActionValue& Value)
@@ -1323,6 +1364,7 @@ void AMegaJamFlowPawn::Input_Brake(const FInputActionValue& Value)
 void AMegaJamFlowPawn::Input_SteerReleased()
 {
 	SteerInput = FVector2D::ZeroVector;
+	bHasProcessedLaneInput = false;
 }
 
 void AMegaJamFlowPawn::ToggleGodMode()
