@@ -157,9 +157,9 @@ public:
 	TObjectPtr<UStaticMesh> FilmFramePickupMesh;
 
 	// ---- Track tunables ----
-	/** Length of one chunk along +X (cm). Increased +30% (2600 cm) for clear reaction sightlines between rows. */
+	/** Length of one chunk along +X (cm). 3200 cm for long, clean forward sightlines. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
-	float ChunkLength = 2600.0f;
+	float ChunkLength = 3200.0f;
 
 	/** Chunks kept active ahead of the pawn's chunk. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
@@ -272,7 +272,7 @@ protected:
 private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
-	static constexpr int32 PickupsPerChunk = 2;
+	static constexpr int32 PickupsPerChunk = 3;
 	static constexpr int32 BoostStripsPerChunk = 2;
 	static constexpr int32 WrapArchParts = 5;
 
@@ -280,14 +280,16 @@ private:
 	int32 SlotOf(int32 ChunkIndex) const;
 	int32 SceneIndexAtTime(float RunTimeSeconds) const;
 	float GetRunTimeSeconds() const;
+	bool IsHazardChunkForScene(int32 ChunkIndex, EMegaJamFilmScene ChunkScene) const;
+	int32 GetHazardArchetypeForChunk(int32 ChunkIndex) const;
 
 	void ApplyTakeCollision(EMegaJamTakeState Take);
 	void BindToPawn();
 	void CreatePools();
 	void PopulateChunk(int32 ChunkIndex);
 	void PopulateSetPiecesForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
-	void PopulatePickupsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
-	void PopulateBoostStripsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, FRandomStream& Stream);
+	void PopulatePickupsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, EMegaJamFilmScene ChunkScene, bool bIsHazardChunk, int32 HazardArchetype, FRandomStream& Stream);
+	void PopulateBoostStripsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, bool bIsHazardChunk, int32 HazardArchetype, FRandomStream& Stream);
 	void UpdateDynamicAnimationsAndPickups(float DeltaSeconds);
 	void UpdateSceneMaterials(float DeltaSeconds);
 	void UpdateFinalCutWrapArch();

@@ -73,9 +73,9 @@ public:
 	TObjectPtr<USoundBase> ScoreMetaSound;
 
 	// ---- Physics tunables ----
-	/** Forward acceleration (cm/s^2). Tuned ~15% lower so patterns remain readable at high speed. */
+	/** Forward acceleration (cm/s^2). Tuned for crisp arcade gate readability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float Acceleration = 3400.0f;
+	float Acceleration = 3000.0f;
 
 	/** Exponential forward velocity damping (1/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -93,9 +93,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float VerticalStrafeMultiplier = 1.30f;
 
-	/** Maximum speed (cm/s). Maps to FlowRatio = 1. Tuned ~15% lower for readable Act I-IV escalation. */
+	/** Maximum speed (cm/s). Maps to FlowRatio = 1. Tuned for comfortable Act I-IV escalation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float TerminalVelocity = 5100.0f;
+	float TerminalVelocity = 4500.0f;
 
 	/** Radius of the near-miss detector (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -119,7 +119,7 @@ public:
 
 	/** Forward speed added on every hard cut (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float CutSpeedImpulse = 510.0f;
+	float CutSpeedImpulse = 420.0f;
 
 	// ---- Match-Cut Chain & Stale-Shot Mechanics ----
 	/** Maximum time (s) after grazing an obstacle or collecting a Film Frame in which a Hard Cut or Aspect Switch triggers a Match Cut. */
