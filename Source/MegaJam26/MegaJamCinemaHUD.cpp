@@ -665,7 +665,10 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	// 5. Top-Right readout & Chain Badge
 	const int32 SpliceChain = FlowPawn ? FlowPawn->GetSpliceChain() : 1;
 	const bool bShotStale = FlowPawn ? FlowPawn->IsShotStale() : false;
+	const bool bOverexposed = FlowPawn ? FlowPawn->IsOverexposed() : false;
 	const float MatchCutFlash = FlowPawn ? FlowPawn->GetMatchCutFlashTimer() : 0.0f;
+	const float DropCutFlash = FlowPawn ? FlowPawn->GetDropCutFlashTimer() : 0.0f;
+	const float DollyBoostFlash = FlowPawn ? FlowPawn->GetDollyBoostFlashTimer() : 0.0f;
 
 	if (TopRightText)
 	{
@@ -695,12 +698,32 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		else
 		{
 			ChainBadgeText->SetVisibility(ESlateVisibility::HitTestInvisible);
-			if (MatchCutFlash > 0.0f)
+			if (DropCutFlash > 0.0f)
+			{
+				ChainBadgeText->SetText(FText::FromString(FString::Printf(
+					TEXT("★ DROP-CUT SLAM! (+SPEED // CHAIN x%d)"),
+					SpliceChain)));
+				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(0.15f, 0.95f, 1.0f, 1.0f)));
+			}
+			else if (DollyBoostFlash > 0.0f)
+			{
+				ChainBadgeText->SetText(FText::FromString(FString::Printf(
+					TEXT("⚡ DOLLY BOOST RAIL! (+FLOW // CHAIN x%d)"),
+					SpliceChain)));
+				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(0.25f, 1.0f, 0.85f, 1.0f)));
+			}
+			else if (MatchCutFlash > 0.0f)
 			{
 				ChainBadgeText->SetText(FText::FromString(FString::Printf(
 					TEXT("★ MATCH CUT! // CHAIN x%d (+%d PTS)"),
 					SpliceChain, SpliceChain * 150)));
 				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.88f, 0.15f, 1.0f)));
+			}
+			else if (bOverexposed)
+			{
+				const float Pulse = 0.5f + 0.5f * FMath::Sin(static_cast<float>(World->GetTimeSeconds()) * 12.0f);
+				ChainBadgeText->SetText(FText::FromString(TEXT("☀ LENS OVEREXPOSED! DROP TO [21:9] DOLLY")));
+				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, FMath::Lerp(0.55f, 0.98f, Pulse), FMath::Lerp(0.1f, 0.85f, Pulse), 1.0f)));
 			}
 			else if (bShotStale)
 			{

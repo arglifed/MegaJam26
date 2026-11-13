@@ -68,6 +68,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetCurrentCheckpointTime(float NewCheckpointTime);
 
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetAirExposureRatio(float NewExposureRatio);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetIsOverexposed(bool bNewOverexposed);
+
 	/** Assign the global Material Parameter Collection that receives the flow values each tick. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Shaders")
 	void SetFlowMPC(UMaterialParameterCollection* InFlowMPC);
@@ -114,6 +120,14 @@ public:
 	/** Start time (s) of the latest reached Act/Scene checkpoint. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float CurrentCheckpointTime = 0.0f;
+
+	/** Normalized 0..1 aerial exposure meter while flying high in Box_4_3 mode. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float AirExposureRatio = 0.0f;
+
+	/** True when AirExposureTimer exceeds 3.2s in Box_4_3 high altitude, draining Flow and speed. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	bool bIsOverexposed = false;
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;

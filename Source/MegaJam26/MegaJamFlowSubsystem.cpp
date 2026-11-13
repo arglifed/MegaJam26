@@ -79,6 +79,16 @@ void UMegaJamFlowSubsystem::SetCurrentCheckpointTime(float NewCheckpointTime)
 	CurrentCheckpointTime = FMath::Max(0.0f, NewCheckpointTime);
 }
 
+void UMegaJamFlowSubsystem::SetAirExposureRatio(float NewExposureRatio)
+{
+	AirExposureRatio = FMath::Clamp(NewExposureRatio, 0.0f, 1.0f);
+}
+
+void UMegaJamFlowSubsystem::SetIsOverexposed(bool bNewOverexposed)
+{
+	bIsOverexposed = bNewOverexposed;
+}
+
 void UMegaJamFlowSubsystem::SetFlowMPC(UMaterialParameterCollection* InFlowMPC)
 {
 	FlowMPC = InFlowMPC;

@@ -249,6 +249,8 @@ void AMegaJamGameMode::StartProductionFromTitle()
 			FlowSubsystem->SetSpliceChain(1);
 			FlowSubsystem->SetAspectHoldTimer(0.0f);
 			FlowSubsystem->SetIsShotStale(false);
+			FlowSubsystem->SetAirExposureRatio(0.0f);
+			FlowSubsystem->SetIsOverexposed(false);
 			FlowSubsystem->SetTotalFramesCollected(0);
 			FlowSubsystem->SetHighestSpliceChain(1);
 			FlowSubsystem->SetCurrentCheckpointTime(0.0f);
@@ -302,6 +304,8 @@ void AMegaJamGameMode::ResetRun()
 		FlowSubsystem->SetSpliceChain(1);
 		FlowSubsystem->SetAspectHoldTimer(0.0f);
 		FlowSubsystem->SetIsShotStale(false);
+		FlowSubsystem->SetAirExposureRatio(0.0f);
+		FlowSubsystem->SetIsOverexposed(false);
 	}
 
 	OnClapperboard(CurrentTakeNumber);

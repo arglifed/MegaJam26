@@ -59,6 +59,22 @@ struct FMegaJamSetPieceSlot
 	bool bActive = false;
 };
 
+/** Runtime state for an outer-wing 21:9 Dolly Boost Strip instance. */
+USTRUCT()
+struct FMegaJamDollyBoostStrip
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY()
+	int32 PoolIndex = 0;
+
+	UPROPERTY()
+	bool bActive = false;
+};
+
 /**
  * Procedural 4-Act corridor for SPLICE // DIRECTOR'S CUT.
  * Manages pooled InstancedStaticMeshComponents for Floor, Walls, Take A / Take B Obstacles (tailored per Act),
@@ -107,6 +123,10 @@ public:
 	/** Celebratory golden FINAL CUT WRAP ARCH spawned across the corridor at 148.0s. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> WrapArchISM;
+
+	/** Non-colliding outer-wing 21:9 Dolly Boost Strips (Y = +/-700, Z = 18) flanking Center-Median Blockades and Ceiling Gates. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> BoostStripISM;
 
 	// ---- Modular Art Mesh Slots (fall back to Cube / Cylinder when null) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
@@ -253,6 +273,7 @@ private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
 	static constexpr int32 PickupsPerChunk = 2;
+	static constexpr int32 BoostStripsPerChunk = 2;
 	static constexpr int32 WrapArchParts = 5;
 
 	int32 PoolSize() const { return FMath::Max(1, ChunksAhead + ChunksBehind); }
@@ -266,6 +287,7 @@ private:
 	void PopulateChunk(int32 ChunkIndex);
 	void PopulateSetPiecesForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
 	void PopulatePickupsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
+	void PopulateBoostStripsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, FRandomStream& Stream);
 	void UpdateDynamicAnimationsAndPickups(float DeltaSeconds);
 	void UpdateSceneMaterials(float DeltaSeconds);
 	void UpdateFinalCutWrapArch();
@@ -285,10 +307,16 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> WrapArchMID;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BoostStripMID;
+
+	UPROPERTY(Transient)
 	TArray<FMegaJamSetPieceSlot> SetPieceSlots;
 
 	UPROPERTY(Transient)
 	TArray<FMegaJamFilmFramePickup> PickupSlots;
+
+	UPROPERTY(Transient)
+	TArray<FMegaJamDollyBoostStrip> BoostStripSlots;
 
 	bool bPoolsCreated = false;
 	bool bBuilt = false;
