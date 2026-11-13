@@ -731,8 +731,8 @@ void AMegaJamFlowPawn::ToggleGodMode()
 	if (GEngine)
 	{
 		const FString Msg = bGodModeEnabled
-			? TEXT("DEV HOTKEY [F1]: GOD MODE ENABLED")
-			: TEXT("DEV HOTKEY [F1]: GOD MODE DISABLED");
+			? TEXT("DEV HOTKEY [F6]: GOD MODE ENABLED")
+			: TEXT("DEV HOTKEY [F6]: GOD MODE DISABLED");
 		GEngine->AddOnScreenDebugMessage(202602, 2.5f, FColor::Yellow, Msg, true, FVector2D(1.3f, 1.3f));
 	}
 #endif

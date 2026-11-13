@@ -66,7 +66,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void NotifyCheckpointReached(EMegaJamFilmScene NewScene, float CheckpointTime);
 
-	/** Dev hotkey (F2 in non-shipping builds): skips to the next Act milestone (0s -> 35s -> 75s -> 115s -> 147s). */
+	/** Dev hotkey (F7 in non-shipping builds): skips to the next Act milestone (0s -> 35s -> 75s -> 115s -> 147s). */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Dev")
 	void DebugSkipToNextAct();
 

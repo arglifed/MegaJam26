@@ -213,7 +213,7 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(202603, 2.5f, FColor::Green,
-			FString::Printf(TEXT("DEV HOTKEY [F2]: SKIPPED TO %s"), *MilestoneName), true, FVector2D(1.3f, 1.3f));
+			FString::Printf(TEXT("DEV HOTKEY [F7]: SKIPPED TO %s"), *MilestoneName), true, FVector2D(1.3f, 1.3f));
 	}
 #endif
 }

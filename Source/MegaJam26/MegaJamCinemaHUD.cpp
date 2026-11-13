@@ -112,17 +112,17 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// Top-Center Act Progress Readout & Progress Bar (visible during active gameplay)
 	ActProgressBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ActProgressBorder"));
 	ActProgressBorder->SetBrushColor(FLinearColor(0.04f, 0.04f, 0.04f, 0.78f));
-	ActProgressBorder->SetPadding(FMargin(16.0f, 6.0f));
+	ActProgressBorder->SetPadding(FMargin(14.0f, 5.0f));
 
 	UVerticalBox* ActBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ActBox"));
 	ActProgressText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ActProgressText"));
-	ActProgressText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	ActProgressText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 12));
 	ActProgressText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.25f, 1.0f)));
 	ActProgressText->SetJustification(ETextJustify::Center);
 	ActProgressText->SetText(FText::FromString(TEXT("ACT I / IV  —  INT. SOUNDSTAGE (0%)")));
 	if (UVerticalBoxSlot* TextSlot = ActBox->AddChildToVerticalBox(ActProgressText))
 	{
-		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
 		TextSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 
@@ -139,8 +139,8 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		ActSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		ActSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		ActSlot->SetPosition(FVector2D(0.0f, 18.0f));
-		ActSlot->SetSize(FVector2D(360.0f, 48.0f));
+		ActSlot->SetPosition(FVector2D(0.0f, 78.0f));
+		ActSlot->SetSize(FVector2D(280.0f, 44.0f));
 		ActSlot->SetAutoSize(false);
 		ActSlot->SetZOrder(12);
 	}
@@ -195,7 +195,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		SlugSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		SlugSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		SlugSlot->SetPosition(FVector2D(0.0f, 96.0f));
+		SlugSlot->SetPosition(FVector2D(0.0f, 130.0f));
 		SlugSlot->SetAutoSize(true);
 		SlugSlot->SetZOrder(15);
 	}

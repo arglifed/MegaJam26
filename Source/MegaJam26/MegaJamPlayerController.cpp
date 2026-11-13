@@ -92,15 +92,15 @@ void AMegaJamPlayerController::SetupInputComponent()
 
 #if !UE_BUILD_SHIPPING
 	{
-		FInputKeyBinding F1Binding(FInputChord(EKeys::F1), IE_Pressed);
-		F1Binding.bConsumeInput = false;
-		F1Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_DebugToggleGodMode);
-		InputComponent->KeyBindings.Add(F1Binding);
+		FInputKeyBinding F6Binding(FInputChord(EKeys::F6), IE_Pressed);
+		F6Binding.bConsumeInput = false;
+		F6Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_DebugToggleGodMode);
+		InputComponent->KeyBindings.Add(F6Binding);
 
-		FInputKeyBinding F2Binding(FInputChord(EKeys::F2), IE_Pressed);
-		F2Binding.bConsumeInput = false;
-		F2Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_DebugSkipAct);
-		InputComponent->KeyBindings.Add(F2Binding);
+		FInputKeyBinding F7Binding(FInputChord(EKeys::F7), IE_Pressed);
+		F7Binding.bConsumeInput = false;
+		F7Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_DebugSkipAct);
+		InputComponent->KeyBindings.Add(F7Binding);
 	}
 #endif
 }
