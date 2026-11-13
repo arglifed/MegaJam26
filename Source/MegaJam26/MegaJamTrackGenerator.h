@@ -28,6 +28,9 @@ struct FMegaJamFilmFramePickup
 	FVector Location = FVector::ZeroVector;
 
 	UPROPERTY()
+	FVector Velocity = FVector::ZeroVector;
+
+	UPROPERTY()
 	FVector Scale = FVector(1.2f, 1.2f, 1.2f);
 
 	UPROPERTY()
@@ -38,6 +41,9 @@ struct FMegaJamFilmFramePickup
 
 	UPROPERTY()
 	bool bActive = false;
+
+	UPROPERTY()
+	bool bHasBallisticVelocity = false;
 };
 
 /** Runtime state for a pooled set-piece instance (supports continuous rotation in Scene 3). */
@@ -258,6 +264,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
 	void ResetTrack() { RebuildTrack(); }
 
+	/**
+	 * Beat-Splice Harvesting: finds active-take obstacles directly ahead of PawnLocation within ForwardRange & SpliceRadius,
+	 * shreds them, and spawns a 3D arc of 3 to 5 collectible Film Frames in their place. Returns the number of obstacles shredded.
+	 */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
+	int32 SpliceObstaclesInFront(const FVector& PawnLocation, float ForwardRange = 2500.0f, float SpliceRadius = 600.0f);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -267,12 +280,16 @@ protected:
 	void HandleTakeCut(EMegaJamTakeState NewTake);
 
 	UFUNCTION()
+	void HandleTakeSwapped(bool bNewTakeState);
+
+	UFUNCTION()
 	void HandleRunStateChanged(EMegaJamRunState NewState, EMegaJamRunState OldState);
 
 private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
 	static constexpr int32 PickupsPerChunk = 5;
+	static constexpr int32 BurstPickupPoolSize = 30;
 	static constexpr int32 BoostStripsPerChunk = 2;
 	static constexpr int32 WrapArchParts = 5;
 
@@ -303,6 +320,12 @@ private:
 	TObjectPtr<AMegaJamGameMode> BoundGameMode;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ObstacleMatA;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ObstacleMatB;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SetPieceMID;
 
 	UPROPERTY(Transient)
@@ -330,6 +353,7 @@ private:
 	bool bBuilt = false;
 	bool bWrapArchSpawned = false;
 	float ScaledTrackTime = 0.0f;
+	int32 NextBurstPickupCursor = 0;
 	int32 FirstChunkIndex = 0;
 	int32 SafeUntilChunkIndex = 2;
 	EMegaJamFilmScene CurrentScene = EMegaJamFilmScene::Soundstage;

@@ -5,7 +5,9 @@
 #include "MegaJamFlowPawn.h"
 #include "MegaJamFlowSubsystem.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/PointLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -90,15 +92,15 @@ void AMegaJamTrackGenerator::BeginPlay()
 
 	if (ObstacleMaterial)
 	{
-		UMaterialInstanceDynamic* MaterialA = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
-		MaterialA->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
-		MaterialA->SetVectorParameterValue(TEXT("TakeColor"), TakeAColor);
-		TakeA_ObstaclesISM->SetMaterial(0, MaterialA);
+		ObstacleMatA = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+		ObstacleMatA->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
+		ObstacleMatA->SetVectorParameterValue(TEXT("TakeColor"), TakeAColor);
+		TakeA_ObstaclesISM->SetMaterial(0, ObstacleMatA);
 
-		UMaterialInstanceDynamic* MaterialB = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
-		MaterialB->SetScalarParameterValue(TEXT("TakeIndex"), 1.0f);
-		MaterialB->SetVectorParameterValue(TEXT("TakeColor"), TakeBColor);
-		TakeB_ObstaclesISM->SetMaterial(0, MaterialB);
+		ObstacleMatB = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+		ObstacleMatB->SetScalarParameterValue(TEXT("TakeIndex"), 1.0f);
+		ObstacleMatB->SetVectorParameterValue(TEXT("TakeColor"), TakeBColor);
+		TakeB_ObstaclesISM->SetMaterial(0, ObstacleMatB);
 
 		PickupMatA = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
 		PickupMatA->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
@@ -127,9 +129,19 @@ void AMegaJamTrackGenerator::BeginPlay()
 	}
 	else
 	{
+		ObstacleMatA = TakeA_ObstaclesISM->CreateAndSetMaterialInstanceDynamic(0);
+		ObstacleMatB = TakeB_ObstaclesISM->CreateAndSetMaterialInstanceDynamic(0);
 		PickupMatA = PickupISM->CreateAndSetMaterialInstanceDynamic(0);
 		PickupMatB = PickupTakeB_ISM->CreateAndSetMaterialInstanceDynamic(0);
 		BoostStripMID = BoostStripISM->CreateAndSetMaterialInstanceDynamic(0);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->OnTakeSwapped.AddUniqueDynamic(this, &AMegaJamTrackGenerator::HandleTakeSwapped);
+		}
 	}
 
 	if (AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>())
@@ -144,6 +156,13 @@ void AMegaJamTrackGenerator::BeginPlay()
 
 void AMegaJamTrackGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->OnTakeSwapped.RemoveDynamic(this, &AMegaJamTrackGenerator::HandleTakeSwapped);
+		}
+	}
 	if (BoundPawn)
 	{
 		BoundPawn->OnTakeCut.RemoveDynamic(this, &AMegaJamTrackGenerator::HandleTakeCut);
@@ -428,6 +447,24 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 			? PickupISM.Get()
 			: PickupTakeB_ISM.Get();
 
+		if (Pickup.bHasBallisticVelocity)
+		{
+			Pickup.Location += Pickup.Velocity * DeltaSeconds;
+			Pickup.Velocity.Z -= 2200.0f * DeltaSeconds;
+			Pickup.Location.Y = FMath::Clamp(static_cast<float>(Pickup.Location.Y), -CorridorHalfWidth + 120.0f, CorridorHalfWidth - 120.0f);
+			if (Pickup.Location.Z < 110.0f)
+			{
+				Pickup.Location.Z = 110.0f;
+				Pickup.Velocity.Z = FMath::Abs(Pickup.Velocity.Z) * 0.45f;
+			}
+			// Gentle magnet pull once within 2.5x pickup radius so blasted frames swoop cleanly into the player
+			const float MagnetRange = EffectivePickupRadius * 2.5f;
+			if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= FMath::Square(MagnetRange))
+			{
+				Pickup.Location = FMath::VInterpTo(Pickup.Location, PawnLocation, DeltaSeconds, 11.0f);
+			}
+		}
+
 		if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= RadiusSq)
 		{
 			if (PawnTake == Pickup.RequiredTake)
@@ -504,6 +541,18 @@ void AMegaJamTrackGenerator::RebuildTrack()
 		PopulateChunk(FirstChunkIndex + Offset);
 	}
 
+	// Clear any leftover harvested burst Film Frames
+	const int32 BaseBurstIdx = PoolSize() * PickupsPerChunk;
+	for (int32 BurstIdx = BaseBurstIdx; BurstIdx < PickupSlots.Num(); ++BurstIdx)
+	{
+		PickupSlots[BurstIdx].bActive = false;
+		PickupSlots[BurstIdx].bHasBallisticVelocity = false;
+		PickupSlots[BurstIdx].Velocity = FVector::ZeroVector;
+		PickupISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
+		PickupTakeB_ISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
+	}
+	NextBurstPickupCursor = 0;
+
 	FloorISM->MarkRenderStateDirty();
 	WallISM->MarkRenderStateDirty();
 	TakeA_ObstaclesISM->MarkRenderStateDirty();
@@ -522,6 +571,11 @@ void AMegaJamTrackGenerator::RebuildTrack()
 void AMegaJamTrackGenerator::HandleTakeCut(EMegaJamTakeState NewTake)
 {
 	ApplyTakeCollision(NewTake);
+}
+
+void AMegaJamTrackGenerator::HandleTakeSwapped(bool bNewTakeState)
+{
+	ApplyTakeCollision(bNewTakeState ? EMegaJamTakeState::StudioTake : EMegaJamTakeState::DirectorsTake);
 }
 
 void AMegaJamTrackGenerator::HandleRunStateChanged(EMegaJamRunState NewState, EMegaJamRunState OldState)
@@ -550,6 +604,29 @@ void AMegaJamTrackGenerator::ApplyTakeCollision(EMegaJamTakeState Take)
 
 	TakeA_ObstaclesISM->SetCollisionEnabled(bStudio ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
 	TakeB_ObstaclesISM->SetCollisionEnabled(bStudio ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryAndPhysics);
+
+	// Dynamically toggle solid vs ghosted/wireframe material parameters for Take A and Take B obstacles
+	const float ActiveTakeVal = bStudio ? 0.0f : 1.0f;
+	if (ObstacleMatA)
+	{
+		const FLinearColor ColorA = bStudio ? TakeAColor * 1.35f : TakeAColor * 0.22f;
+		ObstacleMatA->SetScalarParameterValue(TEXT("ActiveTake"), ActiveTakeVal);
+		ObstacleMatA->SetScalarParameterValue(TEXT("Opacity"), bStudio ? 1.0f : 0.22f);
+		ObstacleMatA->SetVectorParameterValue(TEXT("TakeColor"), ColorA);
+		ObstacleMatA->SetVectorParameterValue(TEXT("Color"), ColorA);
+		ObstacleMatA->SetVectorParameterValue(TEXT("BaseColor"), ColorA);
+		ObstacleMatA->SetVectorParameterValue(TEXT("EmissiveColor"), ColorA);
+	}
+	if (ObstacleMatB)
+	{
+		const FLinearColor ColorB = !bStudio ? TakeBColor * 1.35f : TakeBColor * 0.22f;
+		ObstacleMatB->SetScalarParameterValue(TEXT("ActiveTake"), ActiveTakeVal);
+		ObstacleMatB->SetScalarParameterValue(TEXT("Opacity"), !bStudio ? 1.0f : 0.22f);
+		ObstacleMatB->SetVectorParameterValue(TEXT("TakeColor"), ColorB);
+		ObstacleMatB->SetVectorParameterValue(TEXT("Color"), ColorB);
+		ObstacleMatB->SetVectorParameterValue(TEXT("BaseColor"), ColorB);
+		ObstacleMatB->SetVectorParameterValue(TEXT("EmissiveColor"), ColorB);
+	}
 }
 
 void AMegaJamTrackGenerator::BindToPawn()
@@ -587,7 +664,7 @@ void AMegaJamTrackGenerator::CreatePools()
 	const int32 Rows = FMath::Max(1, RowsPerChunk);
 	const int32 ObstacleSlots = Pool * Rows * ObstaclesPerRow;
 	const int32 TotalSetPieceSlots = Pool * SetPiecesPerChunk;
-	const int32 TotalPickupSlots = Pool * PickupsPerChunk;
+	const int32 TotalPickupSlots = Pool * PickupsPerChunk + BurstPickupPoolSize;
 	const int32 TotalBoostStripSlots = Pool * BoostStripsPerChunk;
 
 	FloorISM->SetStaticMesh(FloorTileMesh ? FloorTileMesh.Get() : BlockMesh.Get());
@@ -961,9 +1038,11 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	{
 		const int32 PoolIdx = BasePickupIdx + SubIdx;
 		PickupSlots[PoolIdx].Location = Pos;
+		PickupSlots[PoolIdx].Velocity = FVector::ZeroVector;
 		PickupSlots[PoolIdx].Scale = RingScale;
 		PickupSlots[PoolIdx].RequiredTake = LineTake;
 		PickupSlots[PoolIdx].bActive = true;
+		PickupSlots[PoolIdx].bHasBallisticVelocity = false;
 		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), Pos, RingScale), true, false, true);
 	};
 
@@ -1039,4 +1118,161 @@ void AMegaJamTrackGenerator::PopulateBoostStripsForChunk(
 		BoostStripSlots[PoolIdx].bActive = true;
 		BoostStripISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
 	}
+}
+
+int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation, float ForwardRange, float SpliceRadius)
+{
+	if (!bPoolsCreated || !TakeA_ObstaclesISM || !TakeB_ObstaclesISM)
+	{
+		return 0;
+	}
+
+	const EMegaJamTakeState CurrentPawnTake = BoundPawn ? BoundPawn->GetCurrentTake() : EMegaJamTakeState::StudioTake;
+	UInstancedStaticMeshComponent* TargetPickupISM = (CurrentPawnTake == EMegaJamTakeState::StudioTake)
+		? PickupISM.Get()
+		: PickupTakeB_ISM.Get();
+	UInstancedStaticMeshComponent* OtherPickupISM = (CurrentPawnTake == EMegaJamTakeState::StudioTake)
+		? PickupTakeB_ISM.Get()
+		: PickupISM.Get();
+
+	const int32 TotalObstacleInstances = TakeA_ObstaclesISM->GetInstanceCount();
+	int32 ShreddedCount = 0;
+	bool bObstaclesDirty = false;
+	bool bPickupsDirty = false;
+
+	auto TryCheckAndHideInstance = [&](UInstancedStaticMeshComponent* ISM, int32 InstanceIdx, FVector& OutHitCenter) -> bool
+	{
+		if (!ISM || InstanceIdx >= ISM->GetInstanceCount())
+		{
+			return false;
+		}
+
+		FTransform InstTransform;
+		if (!ISM->GetInstanceTransform(InstanceIdx, InstTransform, true))
+		{
+			return false;
+		}
+
+		const FVector Scale = InstTransform.GetScale3D();
+		if (Scale.SizeSquared() < 0.01f)
+		{
+			return false;
+		}
+
+		const FVector Loc = InstTransform.GetLocation();
+		if (Loc.Z < -1000.0f)
+		{
+			return false;
+		}
+
+		// Cube primitive is 100x100x100 cm so half-extents are Scale * 50.0f
+		const FVector HalfExtent = Scale.GetAbs() * 50.0f;
+		if (Loc.X + HalfExtent.X < PawnLocation.X - 100.0f || Loc.X - HalfExtent.X > PawnLocation.X + ForwardRange)
+		{
+			return false;
+		}
+
+		const float ClosestY = FMath::Clamp(static_cast<float>(PawnLocation.Y), static_cast<float>(Loc.Y - HalfExtent.Y), static_cast<float>(Loc.Y + HalfExtent.Y));
+		const float ClosestZ = FMath::Clamp(static_cast<float>(PawnLocation.Z), static_cast<float>(Loc.Z - HalfExtent.Z), static_cast<float>(Loc.Z + HalfExtent.Z));
+		const float CrossDist = FVector2D::Distance(
+			FVector2D(static_cast<float>(PawnLocation.Y), static_cast<float>(PawnLocation.Z)),
+			FVector2D(ClosestY, ClosestZ));
+
+		if (CrossDist > SpliceRadius)
+		{
+			return false;
+		}
+
+		ISM->UpdateInstanceTransform(InstanceIdx, MakeHiddenInstanceTransform(), true, false, true);
+		OutHitCenter = FVector(Loc.X, ClosestY, FMath::Clamp(ClosestZ, 130.0f, 760.0f));
+		return true;
+	};
+
+	const int32 BaseBurstIdx = PoolSize() * PickupsPerChunk;
+	const FVector BurstRingScale(1.45f, 1.45f, 0.30f);
+
+	for (int32 InstanceIdx = 0; InstanceIdx < TotalObstacleInstances; ++InstanceIdx)
+	{
+		FVector HitCenterA = FVector::ZeroVector;
+		FVector HitCenterB = FVector::ZeroVector;
+		const bool bHitA = TryCheckAndHideInstance(TakeA_ObstaclesISM, InstanceIdx, HitCenterA);
+		const bool bHitB = TryCheckAndHideInstance(TakeB_ObstaclesISM, InstanceIdx, HitCenterB);
+
+		if (!bHitA && !bHitB)
+		{
+			continue;
+		}
+
+		bObstaclesDirty = true;
+		++ShreddedCount;
+
+		const FVector ImpactLocation = bHitA ? HitCenterA : HitCenterB;
+
+		// Flashbulb strobe: 150,000-lumen single-frame burst at ImpactLocation
+		if (UWorld* World = GetWorld())
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			if (APointLight* Flash = World->SpawnActor<APointLight>(ImpactLocation, FRotator::ZeroRotator, SpawnParams))
+			{
+				if (UPointLightComponent* LightComp = Flash->PointLightComponent)
+				{
+					LightComp->SetMobility(EComponentMobility::Movable);
+					LightComp->SetIntensity(150000.0f);
+					LightComp->SetAttenuationRadius(2500.0f);
+				}
+				Flash->SetLifeSpan(0.15f);
+			}
+		}
+
+		// Piñata Radial Scatter: blast 4 Film Frames outward and upward before the pawn's magnet catches them
+		const int32 FramesToSpawn = 4;
+		for (int32 FrameIdx = 0; FrameIdx < FramesToSpawn; ++FrameIdx)
+		{
+			if (BaseBurstIdx + BurstPickupPoolSize > PickupSlots.Num())
+			{
+				break;
+			}
+
+			const int32 PoolIdx = BaseBurstIdx + (NextBurstPickupCursor % BurstPickupPoolSize);
+			++NextBurstPickupCursor;
+
+			const FVector ScatterVel = (FMath::VRand() * FMath::RandRange(800.0f, 1500.0f)) + FVector(0.0f, 0.0f, 800.0f);
+			PickupSlots[PoolIdx].Location = ImpactLocation;
+			PickupSlots[PoolIdx].Velocity = ScatterVel;
+			PickupSlots[PoolIdx].Scale = BurstRingScale;
+			PickupSlots[PoolIdx].RequiredTake = CurrentPawnTake;
+			PickupSlots[PoolIdx].bActive = true;
+			PickupSlots[PoolIdx].bHasBallisticVelocity = true;
+
+			if (OtherPickupISM)
+			{
+				OtherPickupISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+			}
+			if (TargetPickupISM)
+			{
+				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), ImpactLocation, BurstRingScale), true, false, true);
+			}
+			bPickupsDirty = true;
+		}
+	}
+
+	if (bObstaclesDirty)
+	{
+		TakeA_ObstaclesISM->MarkRenderStateDirty();
+		TakeB_ObstaclesISM->MarkRenderStateDirty();
+	}
+	if (bPickupsDirty)
+	{
+		if (PickupISM)
+		{
+			PickupISM->MarkRenderStateDirty();
+		}
+		if (PickupTakeB_ISM)
+		{
+			PickupTakeB_ISM->MarkRenderStateDirty();
+		}
+	}
+
+	return ShreddedCount;
 }

@@ -4,6 +4,7 @@
 
 #include "MegaJamFlowSubsystem.h"
 #include "MegaJamGameMode.h"
+#include "MegaJamTrackGenerator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
 #include "Components/SphereComponent.h"
@@ -241,6 +242,15 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	else
 	{
 		UE_LOG(LogMegaJamPawn, Warning, TEXT("BrakeAction is not assigned on %s."), *GetClass()->GetName());
+	}
+
+	// Direct bindings for SpaceBar / Gamepad_FaceButton_Right to ExecuteEditorSplice()
+	for (const FKey& SpliceKey : { EKeys::SpaceBar, EKeys::Gamepad_FaceButton_Right })
+	{
+		FInputKeyBinding SpliceBinding(FInputChord(SpliceKey), IE_Pressed);
+		SpliceBinding.bConsumeInput = false;
+		SpliceBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamFlowPawn::ExecuteEditorSplice);
+		PlayerInputComponent->KeyBindings.Add(SpliceBinding);
 	}
 }
 
@@ -535,6 +545,11 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	AddActorWorldOffset(FVector(0.0f, NewY - Location.Y, NewZ - Location.Z), true);
 }
 
+void AMegaJamFlowPawn::ExecuteEditorSplice()
+{
+	TriggerHardCut();
+}
+
 bool AMegaJamFlowPawn::TriggerHardCut()
 {
 	UWorld* World = GetWorld();
@@ -543,27 +558,88 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		return false;
 	}
 
-	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
+	AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
 	if (GameMode && !GameMode->IsPlaying())
 	{
 		return false;
 	}
 
 	const double Now = World->GetTimeSeconds();
-	if (Now - LastCutTime < CutCooldown)
+	const double EffectiveCooldown = FMath::Max(static_cast<double>(EditorSpliceCooldown), static_cast<double>(CutCooldown));
+	if (Now - LastEditorSpliceTime < EffectiveCooldown || Now - LastCutTime < EffectiveCooldown)
 	{
 		return false;
 	}
+	LastEditorSpliceTime = Now;
 	LastCutTime = Now;
 
-	CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
+	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+
+	// When pressed in 4:3 mode (or active flight), toggle Take A / Take B state
+	if (CurrentAspect == EMegaJamAspectMode::Box_4_3 || CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	{
+		CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+		}
+	}
 
 	// Brief forward impulse. StepPhysics re-applies the terminal velocity clamp.
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
-	AddCameraTrauma(0.35f);
 
-	TryTriggerMatchCut();
+	// Beat-Splice Harvesting: if pressed within the 128 BPM beat window (0.18s), shred active-take obstacles ahead into Film Frames!
+	int32 ShreddedCount = 0;
+	if (FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f))
+	{
+		if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
+		{
+			ShreddedCount = TrackGen->SpliceObstaclesInFront(GetActorLocation(), 2500.0f, 600.0f);
+		}
+	}
+
+	if (ShreddedCount > 0)
+	{
+		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
+		FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
+		EmissiveBurstTimer = 0.30f;
+		MatchCutFlashTimer = 1.1f;
+
+		if (GameMode)
+		{
+			const float OverdriveMult = IsInBulletTimeOverdrive() ? 2.0f : 1.0f;
+			GameMode->AddBonusScore(250.0f * static_cast<float>(SpliceChain) * static_cast<float>(ShreddedCount) * OverdriveMult, true);
+			GameMode->NotifySpliceChainUpdated(SpliceChain);
+		}
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetOnBeatFlashTimer(1.1f);
+			FlowSubsystem->SetSpliceChain(SpliceChain);
+			FlowSubsystem->SetFilmMeter(FilmMeter);
+		}
+
+		TriggerMicroHitstop(0.06f, 0.10f);
+		AddCameraTrauma(0.35f, 0.50f);
+		if (DirectorsCutEnterSound)
+		{
+			const float ChainPitch = FMath::Clamp(1.15f + 0.04f * static_cast<float>(SpliceChain), 1.15f, 1.45f);
+			UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.0f, ChainPitch);
+		}
+
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(202605, 1.6f, FColor::Yellow,
+				FString::Printf(TEXT("★ BEAT-SPLICE HARVEST! SHREDDED %d OBSTACLE(S) -> FILM FRAMES! (+%d PTS | CHAIN x%d)"),
+					ShreddedCount, 250 * SpliceChain * ShreddedCount, SpliceChain),
+				true, FVector2D(1.35f, 1.35f));
+		}
+	}
+	else
+	{
+		AddCameraTrauma(0.14f, 0.28f);
+		TryTriggerMatchCut();
+	}
 
 	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
@@ -703,6 +779,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	DollyBoostFlashTimer = 0.0f;
 	FlowBonusOffset = 0.0f;
 	LastCutTime = -1000.0;
+	LastEditorSpliceTime = -1000.0;
 	LastGrazeOrPickupTime = -1000.0;
 	GrazeTimes.Reset();
 

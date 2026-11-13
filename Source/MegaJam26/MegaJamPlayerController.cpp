@@ -290,16 +290,18 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 	// Left stick is already a 2D key.
 	Context->MapKey(FlowPawn->SteerAction, EKeys::Gamepad_Left2D);
 
-	// ---- Boost (Hard Cut, Bool) ----
+	// ---- Boost (Editor's Splice / Hard Cut, Bool) ----
 	Context->MapKey(FlowPawn->BoostAction, EKeys::SpaceBar);
 	Context->MapKey(FlowPawn->BoostAction, EKeys::LeftShift);
 	Context->MapKey(FlowPawn->BoostAction, EKeys::Gamepad_FaceButton_Bottom);
+	Context->MapKey(FlowPawn->BoostAction, EKeys::Gamepad_FaceButton_Right);
 
 	// ---- Brake (Aspect Toggle, Bool) ----
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::LeftControl);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::RightControl);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::C);
-	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_FaceButton_Right);
+	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_LeftShoulder);
+	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_RightShoulder);
 
 	// ---- Pause (Bool) ----
 	Context->MapKey(PauseAction, EKeys::Escape);

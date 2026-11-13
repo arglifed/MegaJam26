@@ -12,6 +12,9 @@ class UMaterialParameterCollection;
 /** Fired every tick with the current flow values. Bind in Blueprint (HUD, MetaSound parameter drivers, etc). */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnFlowStateUpdated, float, FlowRatio, float, CurrentMultiplier, float, AudioEnvelopeValue);
 
+/** Fired whenever Take A / Take B state swaps so AMegaJamTrackGenerator and obstacles can toggle collision and opacity. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTakeSwapped, bool, bNewTakeState);
+
 /**
  * Central data bridge between gameplay physics, audio stems and shaders.
  *  - The Pawn writes FlowRatio.
@@ -43,6 +46,10 @@ public:
 	/** 0.0 = StudioTake, 1.0 = DirectorsTake. Written by the Pawn. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetActiveTake(float NewActiveTake);
+
+	/** Sets bIsTakeA_Active (true = Studio Take A, false = Director's Take B) and broadcasts OnTakeSwapped. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetTakeAActive(bool bNewTakeState);
 
 	/** 0.0 = Wide_21_9, 1.0 = Box_4_3. Written by the Pawn. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
@@ -121,6 +128,14 @@ public:
 	/** 0.0 (StudioTake) or 1.0 (DirectorsTake). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float ActiveTake = 0.0f;
+
+	/** True when Studio Take A is active; false when Director's Take B is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Flow")
+	bool bIsTakeA_Active = true;
+
+	/** Broadcast whenever bIsTakeA_Active swaps so track generator and obstacles toggle collision and opacity. */
+	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
+	FOnTakeSwapped OnTakeSwapped;
 
 	/** 0.0 (Wide_21_9) or 1.0 (Box_4_3). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
