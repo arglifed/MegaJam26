@@ -55,6 +55,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|UI")
 	void SetPaused(bool bPause);
 
+	/** Current selected row in the Pause Menu (0 = Resume, 1 = Retake Act, 2 = Wrap to Title Slate). */
+	UFUNCTION(BlueprintPure, Category="MegaJam|UI")
+	int32 GetPauseMenuSelectionIndex() const { return PauseMenuSelectionIndex; }
+
 	/** Show / hide the pause widget here. */
 	UFUNCTION(BlueprintImplementableEvent, Category="MegaJam|UI")
 	void OnPauseStateChanged(bool bPaused);
@@ -67,7 +71,14 @@ protected:
 	/** Pause action hook. Override for custom behavior. */
 	virtual void Input_Pause(const FInputActionValue& Value);
 
-	/** Handles SpaceBar / Enter / Gamepad_FaceButton_Bottom on TitleScreen and Completed screens. */
+	/** Toggles pause when RunState == Playing (or unpauses if already paused). */
+	void Input_TogglePauseKey();
+
+	/** Moves the Pause Menu selection cursor up/down while paused. */
+	void Input_PauseMenuUp();
+	void Input_PauseMenuDown();
+
+	/** Handles SpaceBar / Enter / Gamepad_FaceButton_Bottom on Pause Menu, TitleScreen, and Completed screens. */
 	void Input_StartOrConfirm();
 
 	/** Dev hotkey [F6]: Toggles God Mode in non-shipping builds. */
@@ -88,4 +99,7 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> FallbackMappingContext;
+
+	int32 PauseMenuSelectionIndex = 0;
+	double LastPauseToggleRealTime = -100.0;
 };

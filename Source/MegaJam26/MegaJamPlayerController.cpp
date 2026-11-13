@@ -13,6 +13,8 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "Engine/LocalPlayer.h"
+#include "HAL/PlatformTime.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/PackageName.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPC, Log, All);
@@ -80,12 +82,42 @@ void AMegaJamPlayerController::SetupInputComponent()
 	PauseAction->bTriggerWhenPaused = true;
 	EnhancedInput->BindAction(PauseAction, ETriggerEvent::Started, this, &AMegaJamPlayerController::Input_Pause);
 
-	// Bind SpaceBar, Enter, and Gamepad_FaceButton_Bottom (non-consuming so gameplay IA_Boost still fires)
-	// to start from TitleScreen or restart from Completed Wrap-Up screen.
+	// Bind Escape, P, and Gamepad_Special_Right with .bExecuteWhenPaused = true to toggle pause during Playing state.
+	for (const FKey& PauseKey : { EKeys::Escape, EKeys::P, EKeys::Gamepad_Special_Right })
+	{
+		FInputKeyBinding PauseBinding(FInputChord(PauseKey), IE_Pressed);
+		PauseBinding.bConsumeInput = false;
+		PauseBinding.bExecuteWhenPaused = true;
+		PauseBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_TogglePauseKey);
+		InputComponent->KeyBindings.Add(PauseBinding);
+	}
+
+	// Bind W / Up / Gamepad_DPad_Up and S / Down / Gamepad_DPad_Down with .bExecuteWhenPaused = true for Pause Menu navigation.
+	for (const FKey& UpKey : { EKeys::W, EKeys::Up, EKeys::Gamepad_DPad_Up })
+	{
+		FInputKeyBinding UpBinding(FInputChord(UpKey), IE_Pressed);
+		UpBinding.bConsumeInput = false;
+		UpBinding.bExecuteWhenPaused = true;
+		UpBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_PauseMenuUp);
+		InputComponent->KeyBindings.Add(UpBinding);
+	}
+
+	for (const FKey& DownKey : { EKeys::S, EKeys::Down, EKeys::Gamepad_DPad_Down })
+	{
+		FInputKeyBinding DownBinding(FInputChord(DownKey), IE_Pressed);
+		DownBinding.bConsumeInput = false;
+		DownBinding.bExecuteWhenPaused = true;
+		DownBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_PauseMenuDown);
+		InputComponent->KeyBindings.Add(DownBinding);
+	}
+
+	// Bind SpaceBar, Enter, and Gamepad_FaceButton_Bottom (non-consuming so gameplay IA_Boost still fires, and executing when paused)
+	// to confirm Pause Menu selection, start from TitleScreen, or restart from Completed Wrap-Up screen.
 	for (const FKey& StartKey : { EKeys::SpaceBar, EKeys::Enter, EKeys::Gamepad_FaceButton_Bottom })
 	{
 		FInputKeyBinding KeyBinding(FInputChord(StartKey), IE_Pressed);
 		KeyBinding.bConsumeInput = false;
+		KeyBinding.bExecuteWhenPaused = true;
 		KeyBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamPlayerController::Input_StartOrConfirm);
 		InputComponent->KeyBindings.Add(KeyBinding);
 	}
@@ -128,21 +160,59 @@ void AMegaJamPlayerController::Input_DebugSkipAct()
 #endif
 }
 
+void AMegaJamPlayerController::Input_PauseMenuUp()
+{
+	if (IsPaused())
+	{
+		PauseMenuSelectionIndex = (PauseMenuSelectionIndex + 2) % 3;
+	}
+}
+
+void AMegaJamPlayerController::Input_PauseMenuDown()
+{
+	if (IsPaused())
+	{
+		PauseMenuSelectionIndex = (PauseMenuSelectionIndex + 1) % 3;
+	}
+}
+
 void AMegaJamPlayerController::Input_StartOrConfirm()
 {
-	if (UWorld* World = GetWorld())
+	UWorld* World = GetWorld();
+	if (!World)
 	{
-		if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+		return;
+	}
+
+	AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
+	if (IsPaused())
+	{
+		const int32 Choice = PauseMenuSelectionIndex;
+		SetPaused(false);
+		if (GameMode)
 		{
-			const EMegaJamRunState State = GameMode->GetRunState();
-			if (State == EMegaJamRunState::TitleScreen)
+			if (Choice == 1)
 			{
-				GameMode->StartProductionFromTitle();
+				GameMode->RetakeCurrentAct();
 			}
-			else if (State == EMegaJamRunState::Completed)
+			else if (Choice == 2)
 			{
-				GameMode->RestartFullProduction();
+				GameMode->WrapToTitleSlate();
 			}
+		}
+		return;
+	}
+
+	if (GameMode)
+	{
+		const EMegaJamRunState State = GameMode->GetRunState();
+		if (State == EMegaJamRunState::TitleScreen)
+		{
+			GameMode->StartProductionFromTitle();
+		}
+		else if (State == EMegaJamRunState::Completed)
+		{
+			GameMode->RestartFullProduction();
 		}
 	}
 }
@@ -233,6 +303,7 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 
 	// ---- Pause (Bool) ----
 	Context->MapKey(PauseAction, EKeys::Escape);
+	Context->MapKey(PauseAction, EKeys::P);
 	Context->MapKey(PauseAction, EKeys::Gamepad_Special_Right);
 
 	return Context;
@@ -240,15 +311,52 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 
 void AMegaJamPlayerController::Input_Pause(const FInputActionValue& Value)
 {
-	SetPaused(!IsPaused());
+	Input_TogglePauseKey();
+}
+
+void AMegaJamPlayerController::Input_TogglePauseKey()
+{
+	const double NowReal = FPlatformTime::Seconds();
+	if (NowReal - LastPauseToggleRealTime < 0.12)
+	{
+		return;
+	}
+
+	if (IsPaused())
+	{
+		LastPauseToggleRealTime = NowReal;
+		SetPaused(false);
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+		{
+			if (GameMode->GetRunState() != EMegaJamRunState::Playing && !GameMode->IsPlaying())
+			{
+				return;
+			}
+		}
+	}
+
+	LastPauseToggleRealTime = NowReal;
+	PauseMenuSelectionIndex = 0;
+	SetPaused(true);
 }
 
 void AMegaJamPlayerController::SetPaused(bool bPause)
 {
+	if (!bPause)
+	{
+		UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+	}
+
 	SetPause(bPause);
 
 	if (bPause)
 	{
+		PauseMenuSelectionIndex = 0;
 		SetMenuFocus();
 	}
 	else
