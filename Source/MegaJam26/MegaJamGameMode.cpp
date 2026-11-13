@@ -258,6 +258,10 @@ void AMegaJamGameMode::StartProductionFromTitle()
 		}
 	}
 
+	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		ClapperPawn->PlayRunStartSound();
+	}
 	OnClapperboard(CurrentTakeNumber);
 	SetRunState(EMegaJamRunState::PreRun);
 	StartRun();
@@ -300,6 +304,10 @@ void AMegaJamGameMode::RetakeCurrentAct()
 		FlowSubsystem->SetDropCutBannerTimer(0.0f);
 	}
 
+	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		ClapperPawn->PlayRunStartSound();
+	}
 	OnClapperboard(CurrentTakeNumber);
 	SetRunState(EMegaJamRunState::PreRun);
 	StartRun();
@@ -391,6 +399,10 @@ void AMegaJamGameMode::ResetRun()
 		FlowSubsystem->SetDropCutBannerTimer(0.0f);
 	}
 
+	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		ClapperPawn->PlayRunStartSound();
+	}
 	OnClapperboard(CurrentTakeNumber);
 
 	SetRunState(EMegaJamRunState::PreRun);
