@@ -74,6 +74,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetIsOverexposed(bool bNewOverexposed);
 
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetDropCutBannerTimer(float NewTimer);
+
 	/** Assign the global Material Parameter Collection that receives the flow values each tick. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Shaders")
 	void SetFlowMPC(UMaterialParameterCollection* InFlowMPC);
@@ -125,9 +128,13 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float AirExposureRatio = 0.0f;
 
-	/** True when AirExposureTimer exceeds 3.2s in Box_4_3 high altitude, draining Flow and speed. */
+	/** True when AirExposureTimer exceeds OverexposureStartSeconds (2.0s) in Box_4_3 high altitude, draining Flow and speed. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	bool bIsOverexposed = false;
+
+	/** Remaining duration (s) for the center-screen Drop-Cut Slam alert banner. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float DropCutBannerTimer = 0.0f;
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;

@@ -186,6 +186,10 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	CurrentFOVPunch = FMath::FInterpTo(CurrentFOVPunch, 0.0f, DeltaSeconds, CutFOVPunchDecaySpeed);
+	if (!bIsDropCutSlamming)
+	{
+		SlamPitchPunch = FMath::FInterpTo(SlamPitchPunch, 0.0f, DeltaSeconds, 12.0f);
+	}
 
 	if (Camera)
 	{
@@ -198,7 +202,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			: 0.0f;
 		const float TargetRoll = LateralAlpha * MaxStrafeRoll;
 		CurrentCameraRoll = FMath::FInterpTo(CurrentCameraRoll, TargetRoll, DeltaSeconds, CameraRollInterpSpeed);
-		Camera->SetRelativeRotation(FRotator(0.0f, 0.0f, CurrentCameraRoll));
+		Camera->SetRelativeRotation(FRotator(SlamPitchPunch, 0.0f, CurrentCameraRoll));
 	}
 
 	if (bCrashed)
@@ -289,9 +293,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	const float CurrentAltitude = static_cast<float>(GetActorLocation().Z);
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
 	{
-		// 21:9 Dolly Rail: cool down exposure 2.5x faster and grant passive Flow regeneration (+4.5% / sec).
-		AirExposureTimer = FMath::Max(0.0f, AirExposureTimer - 2.5f * DeltaSeconds);
-		bIsOverexposed = false;
+		// 21:9 Dolly Rail: cool down exposure at 1.2x speed and grant passive Flow regeneration (+4.5% / sec).
+		AirExposureTimer = FMath::Max(0.0f, AirExposureTimer - 1.2f * DeltaSeconds);
+		bIsOverexposed = (AirExposureTimer > OverexposureStartSeconds);
 		OverexposureDecayAccum = 0.0f;
 		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + (WideDollyFlowRegenPerSec * 0.01f) * DeltaSeconds, -0.5f, 0.35f);
 	}
@@ -301,9 +305,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		{
 			AirExposureTimer = FMath::Min(OverexposureMaxSeconds, AirExposureTimer + DeltaSeconds);
 		}
-		else if (CurrentAltitude < 220.0f)
+		else
 		{
-			AirExposureTimer = FMath::Max(0.0f, AirExposureTimer - 2.5f * DeltaSeconds);
+			AirExposureTimer = FMath::Max(0.0f, AirExposureTimer - 1.2f * DeltaSeconds);
 		}
 
 		bIsOverexposed = (AirExposureTimer > OverexposureStartSeconds);
@@ -366,7 +370,11 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	Velocity.Y *= CrossPlaneDamp;
 	Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
 
-	if (bWide)
+	if (bIsDropCutSlamming)
+	{
+		Velocity.Z = -3600.0f;
+	}
+	else if (bWide)
 	{
 		Velocity.Z = 0.0f;
 	}
@@ -378,10 +386,17 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 	// Forward drag then terminal velocity clamp (allow brief overspeed from Drop-Cut Slam / Boost Strip to decay smoothly).
 	Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
-	const float MaxAllowedSpeed = (DropCutFlashTimer > 0.0f || DollyBoostFlashTimer > 0.0f)
-		? (TerminalVelocity + 400.0f)
+	const float MaxAllowedSpeed = (DropCutFlashTimer > 0.0f || DollyBoostFlashTimer > 0.0f || bIsDropCutSlamming)
+		? (TerminalVelocity + 450.0f)
 		: TerminalVelocity;
-	Velocity = Velocity.GetClampedToMaxSize(MaxAllowedSpeed);
+	if (!bIsDropCutSlamming)
+	{
+		Velocity = Velocity.GetClampedToMaxSize(MaxAllowedSpeed);
+	}
+	else
+	{
+		Velocity.X = FMath::Min(static_cast<float>(Velocity.X), MaxAllowedSpeed);
+	}
 
 	// Swept move. A blocking hit is resolved deterministically.
 	FHitResult Hit;
@@ -406,6 +421,42 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 			// Slow contact: slide along the surface.
 			Velocity = FVector::VectorPlaneProject(Velocity, Hit.ImpactNormal);
 		}
+	}
+
+	// Check for Drop-Cut Slam touchdown at Z <= 105.0f
+	if (bIsDropCutSlamming && GetActorLocation().Z <= 105.0f)
+	{
+		bIsDropCutSlamming = false;
+		const FVector Loc = GetActorLocation();
+		SetActorLocation(FVector(Loc.X, Loc.Y, 100.0f), true);
+		Velocity.Z = 0.0f;
+
+		// Touchdown thud: +10 deg FOV punch, -7 deg pitch nod, +850 u/s forward speed surge, +25 Flow, +300 * SpliceChain score
+		CurrentFOVPunch = DropCutFOVPunch;
+		SlamPitchPunch = -7.0f;
+		Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + DropCutSpeedImpulse, TerminalVelocity + 450.0f);
+		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.25f, -0.5f, 0.35f);
+		FlowRatio = FMath::Clamp(FlowRatio + 0.25f, 0.0f, 1.0f);
+		AirExposureTimer = 0.0f;
+		bIsOverexposed = false;
+		DropCutFlashTimer = 1.4f;
+
+		TryTriggerMatchCut(true);
+
+		if (UWorld* World = GetWorld())
+		{
+			if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+			{
+				GameMode->AddBonusScore(300.0f * static_cast<float>(SpliceChain), true);
+			}
+			if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+			{
+				FlowSubsystem->SetDropCutBannerTimer(1.4f);
+			}
+		}
+
+		PushTakeAndAspectToSubsystem();
+		TriggerAudioEvent(TEXT("OnHardCut"));
 	}
 
 	ApplyAspectClamp(DeltaSeconds);
@@ -437,8 +488,11 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	}
 
 	// Fast interpolation toward the clamped position: a punchy squeeze, not a one-frame teleport.
+	// Bypass soft vertical smoothing while bIsDropCutSlamming is driving Z down at 3600 u/s.
 	const float NewY = FMath::FInterpTo(static_cast<float>(Location.Y), ClampedY, DeltaSeconds, AspectClampInterpSpeed);
-	const float NewZ = FMath::FInterpTo(static_cast<float>(Location.Z), ClampedZ, DeltaSeconds, AspectClampInterpSpeed);
+	const float NewZ = bIsDropCutSlamming
+		? static_cast<float>(Location.Z)
+		: FMath::FInterpTo(static_cast<float>(Location.Z), ClampedZ, DeltaSeconds, AspectClampInterpSpeed);
 	AddActorWorldOffset(FVector(0.0f, NewY - Location.Y, NewZ - Location.Z), true);
 }
 
@@ -490,38 +544,31 @@ void AMegaJamFlowPawn::ToggleAspect()
 	bIsShotStale = false;
 	StaleDecayAccum = 0.0f;
 
-	// ---- Drop-Cut Slam: switching from Box_4_3 -> Wide_21_9 while airborne (Z > 300) ----
+	// ---- Drop-Cut Slam: switching from Box_4_3 -> Wide_21_9 while airborne (Z > 185.0f) ----
 	if (OldAspect == EMegaJamAspectMode::Box_4_3 && CurrentAspect == EMegaJamAspectMode::Wide_21_9 && PreSwitchZ > DropCutMinAltitude)
 	{
-		// Snap vertical downward velocity and slam onto the Z = 100.0f dolly plane
-		Velocity.Z = -3200.0f;
-		const FVector Loc = GetActorLocation();
-		SetActorLocation(FVector(Loc.X, Loc.Y, 100.0f), true);
-
-		// Grant +750.0f forward speed impulse (clamped to TerminalVelocity + 400.0f), +7.5 deg FOV punch, +20% Flow, +250 * SpliceChain score
-		Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + DropCutSpeedImpulse, TerminalVelocity + 400.0f);
-		CurrentFOVPunch = DropCutFOVPunch;
-		FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.20f, -0.5f, 0.35f);
-		FlowRatio = FMath::Clamp(FlowRatio + 0.20f, 0.0f, 1.0f);
+		// Arm visceral downward slam at 3600 u/s toward the Z = 100.0f dolly plane; touchdown at Z <= 105 fires the impact surge
+		bIsDropCutSlamming = true;
+		SlamPitchPunch = -7.0f;
+		Velocity.Z = -3600.0f;
 		AirExposureTimer = 0.0f;
 		bIsOverexposed = false;
-		DropCutFlashTimer = 1.3f;
-
-		TryTriggerMatchCut(true);
+		DropCutFlashTimer = 1.4f;
 
 		if (UWorld* World = GetWorld())
 		{
-			if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+			if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 			{
-				GameMode->AddBonusScore(250.0f * static_cast<float>(SpliceChain), true);
+				FlowSubsystem->SetDropCutBannerTimer(1.4f);
 			}
 		}
 
 		PushTakeAndAspectToSubsystem();
-		TriggerAudioEvent(TEXT("OnHardCut"));
+		TriggerAudioEvent(TEXT("OnAspectSwitch"));
 	}
 	else
 	{
+		bIsDropCutSlamming = false;
 		TryTriggerMatchCut(false);
 		PushTakeAndAspectToSubsystem();
 		TriggerAudioEvent(TEXT("OnAspectSwitch"));
@@ -554,12 +601,14 @@ void AMegaJamFlowPawn::ResetForRun()
 	FlowRatio = 0.0f;
 	SteerInput = FVector2D::ZeroVector;
 	CurrentFOVPunch = 0.0f;
+	SlamPitchPunch = 0.0f;
 	CurrentCameraRoll = 0.0f;
 	SpliceChain = 1;
 	AspectHoldTimer = 0.0f;
 	bIsShotStale = false;
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
+	bIsDropCutSlamming = false;
 	StaleDecayAccum = 0.0f;
 	OverexposureDecayAccum = 0.0f;
 	MatchCutFlashTimer = 0.0f;
@@ -775,6 +824,8 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	bIsShotStale = false;
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
+	bIsDropCutSlamming = false;
+	SlamPitchPunch = 0.0f;
 	StaleDecayAccum = 0.0f;
 	OverexposureDecayAccum = 0.0f;
 	MatchCutFlashTimer = 0.0f;

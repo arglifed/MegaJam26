@@ -166,15 +166,15 @@ public:
 	// ---- 21:9 Dolly vs. 4:3 Crane Push-Pull Tunables ----
 	/** Altitude threshold (cm) in Box_4_3 above which switching to Wide_21_9 triggers a Drop-Cut Slam. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float DropCutMinAltitude = 300.0f;
+	float DropCutMinAltitude = 185.0f;
 
 	/** Forward speed impulse (cm/s) granted on a Drop-Cut Slam. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float DropCutSpeedImpulse = 750.0f;
+	float DropCutSpeedImpulse = 850.0f;
 
 	/** Additive camera FOV punch (degrees) triggered on a Drop-Cut Slam. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float DropCutFOVPunch = 7.5f;
+	float DropCutFOVPunch = 10.0f;
 
 	/** Passive Flow regeneration rate (% per second) while riding the Wide_21_9 dolly rail. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
@@ -182,15 +182,15 @@ public:
 
 	/** Altitude (cm) in Box_4_3 above which AirExposureTimer accumulates. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float OverexposureAltitudeThreshold = 260.0f;
+	float OverexposureAltitudeThreshold = 175.0f;
 
 	/** Seconds of high-altitude Box_4_3 flight before bIsOverexposed triggers. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float OverexposureStartSeconds = 3.2f;
+	float OverexposureStartSeconds = 2.0f;
 
 	/** Maximum seconds on AirExposureTimer (past which SpliceChain decays). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float OverexposureMaxSeconds = 4.5f;
+	float OverexposureMaxSeconds = 3.2f;
 
 	/** Flow drain rate (% per second) while bIsOverexposed is active. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
@@ -413,9 +413,17 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
 	float AirExposureTimer = 0.0f;
 
-	/** True when AirExposureTimer > 3.2s, draining Flow and applying aerodynamic drag. */
+	/** True when AirExposureTimer > OverexposureStartSeconds (2.0s), draining Flow and applying aerodynamic drag. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
 	bool bIsOverexposed = false;
+
+	/** True while the pawn is diving down at 3600 u/s from Box_4_3 into the Z = 100.0f Wide_21_9 dolly rail. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
+	bool bIsDropCutSlamming = false;
+
+	/** Decaying camera pitch-nod (degrees) applied during a Drop-Cut Slam and springing back on touchdown. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
+	float SlamPitchPunch = 0.0f;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
 
