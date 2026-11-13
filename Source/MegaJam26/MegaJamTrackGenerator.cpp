@@ -447,6 +447,11 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 			? PickupISM.Get()
 			: PickupTakeB_ISM.Get();
 
+		if (Pickup.MagnetImmunityTimer > 0.0f)
+		{
+			Pickup.MagnetImmunityTimer = FMath::Max(0.0f, Pickup.MagnetImmunityTimer - DeltaSeconds);
+		}
+
 		if (Pickup.bHasBallisticVelocity)
 		{
 			Pickup.Location += Pickup.Velocity * DeltaSeconds;
@@ -457,23 +462,30 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 				Pickup.Location.Z = 110.0f;
 				Pickup.Velocity.Z = FMath::Abs(Pickup.Velocity.Z) * 0.45f;
 			}
-			// Gentle magnet pull once within 2.5x pickup radius so blasted frames swoop cleanly into the player
-			const float MagnetRange = EffectivePickupRadius * 2.5f;
-			if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= FMath::Square(MagnetRange))
-			{
-				Pickup.Location = FMath::VInterpTo(Pickup.Location, PawnLocation, DeltaSeconds, 11.0f);
-			}
 		}
 
-		if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= RadiusSq)
+		if (Pickup.MagnetImmunityTimer <= 0.0f)
 		{
-			if (PawnTake == Pickup.RequiredTake)
+			if (Pickup.bHasBallisticVelocity)
 			{
-				Pickup.bActive = false;
-				TargetISM->UpdateInstanceTransform(Pickup.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
-				BoundPawn->NotifyFilmFrameCollected();
-				bPickupsDirty = true;
-				continue;
+				// Gentle magnet pull once within 2.5x pickup radius so blasted frames swoop cleanly into the player
+				const float MagnetRange = EffectivePickupRadius * 2.5f;
+				if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= FMath::Square(MagnetRange))
+				{
+					Pickup.Location = FMath::VInterpTo(Pickup.Location, PawnLocation, DeltaSeconds, 11.0f);
+				}
+			}
+
+			if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= RadiusSq)
+			{
+				if (PawnTake == Pickup.RequiredTake)
+				{
+					Pickup.bActive = false;
+					TargetISM->UpdateInstanceTransform(Pickup.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
+					BoundPawn->NotifyFilmFrameCollected();
+					bPickupsDirty = true;
+					continue;
+				}
 			}
 		}
 
@@ -547,6 +559,7 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	{
 		PickupSlots[BurstIdx].bActive = false;
 		PickupSlots[BurstIdx].bHasBallisticVelocity = false;
+		PickupSlots[BurstIdx].MagnetImmunityTimer = 0.0f;
 		PickupSlots[BurstIdx].Velocity = FVector::ZeroVector;
 		PickupISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
 		PickupTakeB_ISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
@@ -1043,6 +1056,7 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 		PickupSlots[PoolIdx].RequiredTake = LineTake;
 		PickupSlots[PoolIdx].bActive = true;
 		PickupSlots[PoolIdx].bHasBallisticVelocity = false;
+		PickupSlots[PoolIdx].MagnetImmunityTimer = 0.0f;
 		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), Pos, RingScale), true, false, true);
 	};
 
@@ -1226,6 +1240,7 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 		}
 
 		// Piñata Radial Scatter: blast 4 Film Frames outward and upward before the pawn's magnet catches them
+		const float PawnSpeed = BoundPawn ? static_cast<float>(BoundPawn->GetFlowVelocity().X) : 2900.0f;
 		const int32 FramesToSpawn = 4;
 		for (int32 FrameIdx = 0; FrameIdx < FramesToSpawn; ++FrameIdx)
 		{
@@ -1237,13 +1252,17 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 			const int32 PoolIdx = BaseBurstIdx + (NextBurstPickupCursor % BurstPickupPoolSize);
 			++NextBurstPickupCursor;
 
-			const FVector ScatterVel = (FMath::VRand() * FMath::RandRange(800.0f, 1500.0f)) + FVector(0.0f, 0.0f, 800.0f);
+			const FVector ScatterVel(
+				PawnSpeed + FMath::RandRange(2000.0f, 4500.0f),
+				FMath::RandRange(-3500.0f, 3500.0f),
+				FMath::RandRange(2000.0f, 4000.0f));
 			PickupSlots[PoolIdx].Location = ImpactLocation;
 			PickupSlots[PoolIdx].Velocity = ScatterVel;
 			PickupSlots[PoolIdx].Scale = BurstRingScale;
 			PickupSlots[PoolIdx].RequiredTake = CurrentPawnTake;
 			PickupSlots[PoolIdx].bActive = true;
 			PickupSlots[PoolIdx].bHasBallisticVelocity = true;
+			PickupSlots[PoolIdx].MagnetImmunityTimer = 0.25f;
 
 			if (OtherPickupISM)
 			{
