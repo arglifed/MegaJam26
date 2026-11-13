@@ -43,7 +43,7 @@ It auto-plays on BeginPlay. Leave it empty and the game runs silently with no er
 
 ## 2. Modular Meshes
 
-**Location:** see the folder note at the end of this doc. The issue names `Content/MegaJam26/Art/`.
+**Location:** `Content/MegaJam26/Art/`
 
 ### Hard rules
 
@@ -94,9 +94,3 @@ These steps edit the shared binary assets `BP_FlowGameMode` and `BP_FlowPawn`. C
 - [ ] `BP_TrackGenerator` created and set on `BP_FlowGameMode`
 - [ ] `Score Meta Sound` assigned on `BP_FlowPawn`
 - [ ] Play `L_FlowTest`: check the cut crossfade, the graze, crash and victory stings, and that meshes have no offset or z-fighting
-
----
-
-## Folder note
-
-The issue says to use `Content/MegaJam26/Art/`, but the flat folder list in `AGENTS.md` §2 doesn't include `Art`. Either add `Art` to that list or put meshes in an existing folder. Settle this before importing so that nothing has to be moved or renamed later.

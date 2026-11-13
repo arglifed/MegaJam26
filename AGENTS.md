@@ -12,6 +12,7 @@
   * `Content/MegaJam26/VFX` (Materials, Material Parameter Collections, Niagara Systems)
   * `Content/MegaJam26/UI` (UMG Widgets: MainMenu, HUD, Pause, GameOver)
   * `Content/MegaJam26/Audio` (MetaSounds, Stems, Audio Synesthesia NRT assets)
+  * `Content/MegaJam26/Art` (Static Meshes, modular track pieces, set-piece props, textures)
   * `Content/MegaJam26/Maps`
 - **Zero Clutter:** Never place loose assets in the top-level `Content/` directory.
 - **No Modular Game Features:** Do NOT generate modular Game Feature plugins. Keep the project monolithic for a 96-hour jam timeline.
