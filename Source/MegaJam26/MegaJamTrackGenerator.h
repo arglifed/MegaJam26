@@ -44,6 +44,9 @@ struct FMegaJamFilmFramePickup
 
 	UPROPERTY()
 	bool bHasBallisticVelocity = false;
+
+	UPROPERTY()
+	float MagnetImmunityTimer = 0.0f;
 };
 
 /** Runtime state for a pooled set-piece instance (supports continuous rotation in Scene 3). */

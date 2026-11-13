@@ -595,7 +595,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	{
 		if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
 		{
-			ShreddedCount = TrackGen->SpliceObstaclesInFront(GetActorLocation(), 2500.0f, 600.0f);
+			ShreddedCount = TrackGen->SpliceObstaclesInFront(GetActorLocation(), 1200.0f, 600.0f);
 		}
 	}
 
@@ -620,7 +620,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		}
 
 		TriggerMicroHitstop(0.06f, 0.10f);
-		AddCameraTrauma(0.35f, 0.50f);
+		AddCameraTrauma(0.40f, 0.70f);
 		if (DirectorsCutEnterSound)
 		{
 			const float ChainPitch = FMath::Clamp(1.15f + 0.04f * static_cast<float>(SpliceChain), 1.15f, 1.45f);
