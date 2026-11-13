@@ -150,6 +150,19 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> WrapPromptText;
 
+	// ---- Pause Menu Slate (IsPaused() == true) ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> PauseCardBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PauseOption0Text;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PauseOption1Text;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> PauseOption2Text;
+
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamTrackGenerator> BoundTrackGenerator;
 

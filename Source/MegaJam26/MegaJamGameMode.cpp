@@ -272,6 +272,91 @@ void AMegaJamGameMode::RestartFullProduction()
 	StartProductionFromTitle();
 }
 
+void AMegaJamGameMode::RetakeCurrentAct()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(CrashRestartTimer);
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+
+	// Rewind RunTime to CurrentCheckpointTime without incrementing CurrentTakeNumber
+	RunTime = CurrentCheckpointTime;
+	CurrentMultiplier = 1.0f;
+
+	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		FlowPawn->ResetForRun();
+	}
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetFlowRatio(0.0f);
+		FlowSubsystem->SetCurrentMultiplier(1.0f);
+		FlowSubsystem->SetSpliceChain(1);
+		FlowSubsystem->SetAspectHoldTimer(0.0f);
+		FlowSubsystem->SetIsShotStale(false);
+		FlowSubsystem->SetAirExposureRatio(0.0f);
+		FlowSubsystem->SetIsOverexposed(false);
+		FlowSubsystem->SetDropCutBannerTimer(0.0f);
+	}
+
+	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		ClapperPawn->PlayRunStartSound();
+	}
+	OnClapperboard(CurrentTakeNumber);
+	SetRunState(EMegaJamRunState::PreRun);
+	StartRun();
+}
+
+void AMegaJamGameMode::WrapToTitleSlate()
+{
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(CrashRestartTimer);
+	}
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+
+	RunTime = 0.0f;
+	Score = 0.0f;
+	CurrentMultiplier = 1.0f;
+	CurrentTakeNumber = 1;
+	TotalFramesCollected = 0;
+	HighestSpliceChain = 1;
+	CurrentCheckpointTime = 0.0f;
+	CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
+
+	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		FlowPawn->ResetForRun();
+	}
+
+	if (World)
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->SetFlowRatio(0.0f);
+			FlowSubsystem->SetCurrentMultiplier(1.0f);
+			FlowSubsystem->SetSpliceChain(1);
+			FlowSubsystem->SetAspectHoldTimer(0.0f);
+			FlowSubsystem->SetIsShotStale(false);
+			FlowSubsystem->SetAirExposureRatio(0.0f);
+			FlowSubsystem->SetIsOverexposed(false);
+			FlowSubsystem->SetDropCutBannerTimer(0.0f);
+			FlowSubsystem->SetTotalFramesCollected(0);
+			FlowSubsystem->SetHighestSpliceChain(1);
+			FlowSubsystem->SetCurrentCheckpointTime(0.0f);
+		}
+	}
+
+	SetRunState(EMegaJamRunState::TitleScreen);
+}
+
 void AMegaJamGameMode::StartRun()
 {
 	RunTime = CurrentCheckpointTime;

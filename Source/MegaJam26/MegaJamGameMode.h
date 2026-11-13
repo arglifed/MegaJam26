@@ -48,6 +48,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void RestartFullProduction();
 
+	/** Rewinds cleanly to CurrentCheckpointTime / CurrentCheckpointScene without incrementing CurrentTakeNumber (Pause Menu option). */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void RetakeCurrentAct();
+
+	/** Returns to the Attract-Mode Clapperboard Title Screen (Pause Menu option). */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void WrapToTitleSlate();
+
 	/** Starts or resumes the run from CurrentCheckpointTime. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void StartRun();
