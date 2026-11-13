@@ -7,9 +7,11 @@
 #include "MegaJamTrackGenerator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
@@ -50,6 +52,11 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
 	VisualMesh->SetupAttachment(CollisionSphere);
 	VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	VehicleSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("VehicleSkeletalMesh"));
+	VehicleSkeletalMesh->SetupAttachment(CollisionSphere);
+	VehicleSkeletalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	VehicleSkeletalMesh->SetVisibility(false);
 
 	// Default visual: engine basic sphere (100 cm diameter, matches the 50 cm collision radius).
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
@@ -379,11 +386,19 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	bTriggeredVictorySting = false;
 
-	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive ----
+	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive + Anti-Camping Stale-Shot Decay ----
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
-	bIsShotStale = false;
-	AspectHoldTimer += DeltaSeconds;
+	CurrentShotDuration += DeltaSeconds;
+	AspectHoldTimer = CurrentShotDuration;
+	bIsShotStale = (CurrentShotDuration > StaleShotThreshold);
+
+	if (bIsShotStale)
+	{
+		// "Bored Director" penalty: drain FilmMeter at 25/sec and reset SpliceChain to x1 until aspect cut
+		FilmMeter = FMath::Max(0.0f, FilmMeter - 25.0f * DeltaSeconds);
+		SpliceChain = 1;
+	}
 
 	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
@@ -399,6 +414,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		if (FilmMeter <= 0.0f)
 		{
 			FilmMeter = 0.0f;
+			CurrentShotDuration = 0.0f;
+			AspectHoldTimer = 0.0f;
+			bIsShotStale = false;
 			SetAspectMode(EMegaJamAspectMode::Box_4_3);
 			if (FlowSubsystem)
 			{
@@ -435,8 +453,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 		FlowSubsystem->SetSpliceChain(SpliceChain);
-		FlowSubsystem->SetAspectHoldTimer(AspectHoldTimer);
-		FlowSubsystem->SetIsShotStale(false);
+		FlowSubsystem->SetAspectHoldTimer(CurrentShotDuration);
+		FlowSubsystem->SetIsShotStale(bIsShotStale);
 		FlowSubsystem->SetAirExposureRatio(0.0f);
 		FlowSubsystem->SetIsOverexposed(false);
 		FlowSubsystem->SetFilmMeter(FilmMeter);
@@ -678,6 +696,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 		bHasProcessedLaneInput = false;
 
 		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+		CurrentShotDuration = 0.0f;
 		AspectHoldTimer = 0.0f;
 		bIsShotStale = false;
 		bIsDropCutSlamming = false;
@@ -726,6 +745,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 		// Return to 4:3 Flight & Charge Mode
 		bHasProcessedLaneInput = false;
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
+		CurrentShotDuration = 0.0f;
 		AspectHoldTimer = 0.0f;
 		bIsShotStale = false;
 		bIsDropCutSlamming = false;
@@ -779,6 +799,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	}
 	CurrentCameraRoll = 0.0f;
 	SpliceChain = 1;
+	CurrentShotDuration = 0.0f;
 	AspectHoldTimer = 0.0f;
 	bIsShotStale = false;
 	AirExposureTimer = 0.0f;
@@ -1030,6 +1051,28 @@ void AMegaJamFlowPawn::PlayRunStartSound() const
 void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 {
 	ActiveMusicGenre = TargetGenre;
+
+	// Swap thematic vehicle skeletal mesh when mapped in SceneVehicleMeshes (Runner -> Horse -> Vintage Car)
+	if (const TObjectPtr<USkeletalMesh>* FoundVehicleMesh = SceneVehicleMeshes.Find(TargetGenre))
+	{
+		if (USkeletalMesh* NewMesh = FoundVehicleMesh->Get())
+		{
+			if (VehicleSkeletalMesh)
+			{
+				VehicleSkeletalMesh->SetSkeletalMesh(NewMesh);
+				VehicleSkeletalMesh->SetVisibility(true);
+				if (VisualMesh)
+				{
+					VisualMesh->SetVisibility(false);
+				}
+			}
+			else if (USkeletalMeshComponent* FallbackSkelComp = FindComponentByClass<USkeletalMeshComponent>())
+			{
+				FallbackSkelComp->SetSkeletalMesh(NewMesh);
+			}
+		}
+	}
+
 	if (!MusicAudioComponent)
 	{
 		return;
