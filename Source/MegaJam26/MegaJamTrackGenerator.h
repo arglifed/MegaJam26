@@ -312,6 +312,12 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> BoostStripMID;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> PickupMatA;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> PickupMatB;
+
+	UPROPERTY(Transient)
 	TArray<FMegaJamSetPieceSlot> SetPieceSlots;
 
 	UPROPERTY(Transient)

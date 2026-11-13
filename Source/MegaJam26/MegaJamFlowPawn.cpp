@@ -13,7 +13,11 @@
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "HAL/PlatformTime.h"
 #include "InputAction.h"
+#include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Misc/App.h"
 #include "Misc/PackageName.h"
 #include "Sound/SoundBase.h"
 
@@ -99,8 +103,25 @@ void AMegaJamFlowPawn::BeginPlay()
 		ScoreAudioComponent->Play();
 	}
 
+	if (VisualMesh)
+	{
+		PawnVisualMID = VisualMesh->CreateAndSetMaterialInstanceDynamic(0);
+	}
+
 	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
+	UpdatePawnDynamicMaterial(0.0f);
+}
+
+void AMegaJamFlowPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HitstopRealTimeRemaining > 0.0f)
+	{
+		HitstopRealTimeRemaining = 0.0f;
+		UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AMegaJamFlowPawn::EnsureFallbackInputActions()
@@ -185,6 +206,19 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	const float UnscaledDelta = FMath::Clamp(static_cast<float>(FApp::GetDeltaTime()), 0.0f, 0.1f);
+	if (HitstopRealTimeRemaining > 0.0f)
+	{
+		HitstopRealTimeRemaining -= UnscaledDelta;
+		if (HitstopRealTimeRemaining <= 0.0f)
+		{
+			HitstopRealTimeRemaining = 0.0f;
+			UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+		}
+	}
+
+	CameraTrauma = FMath::Max(0.0f, CameraTrauma - 2.4f * UnscaledDelta);
+	EmissiveBurstTimer = FMath::Max(0.0f, EmissiveBurstTimer - DeltaSeconds);
 	CurrentFOVPunch = FMath::FInterpTo(CurrentFOVPunch, 0.0f, DeltaSeconds, CutFOVPunchDecaySpeed);
 	if (!bIsDropCutSlamming)
 	{
@@ -202,8 +236,20 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			: 0.0f;
 		const float TargetRoll = LateralAlpha * MaxStrafeRoll;
 		CurrentCameraRoll = FMath::FInterpTo(CurrentCameraRoll, TargetRoll, DeltaSeconds, CameraRollInterpSpeed);
-		Camera->SetRelativeRotation(FRotator(SlamPitchPunch, 0.0f, CurrentCameraRoll));
+
+		// Damped high-frequency sinusoidal Pitch, Yaw, Roll, and vertical Z offsets using Trauma^2 scaling
+		const float Shake = CameraTrauma * CameraTrauma;
+		const double RealTime = FPlatformTime::Seconds();
+		const float ShakePitch = Shake * 3.8f * FMath::Sin(static_cast<float>(RealTime * 43.0));
+		const float ShakeYaw   = Shake * 3.2f * FMath::Cos(static_cast<float>(RealTime * 37.0));
+		const float ShakeRoll  = Shake * 5.0f * FMath::Sin(static_cast<float>(RealTime * 53.0));
+		const float ShakeZ     = Shake * 18.0f * FMath::Sin(static_cast<float>(RealTime * 61.0));
+
+		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll));
+		Camera->SetRelativeLocation(FVector(0.0f, 0.0f, ShakeZ));
 	}
+
+	UpdatePawnDynamicMaterial(DeltaSeconds);
 
 	if (bCrashed)
 	{
@@ -440,6 +486,10 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		AirExposureTimer = 0.0f;
 		bIsOverexposed = false;
 		DropCutFlashTimer = 1.4f;
+		EmissiveBurstTimer = 0.25f;
+
+		AddCameraTrauma(0.85f);
+		TriggerMicroHitstop(0.035f, 0.15f);
 
 		TryTriggerMatchCut(true);
 
@@ -522,6 +572,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	// Brief forward impulse. StepPhysics re-applies the terminal velocity clamp.
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
+	AddCameraTrauma(0.35f);
 
 	TryTriggerMatchCut();
 
@@ -602,6 +653,13 @@ void AMegaJamFlowPawn::ResetForRun()
 	SteerInput = FVector2D::ZeroVector;
 	CurrentFOVPunch = 0.0f;
 	SlamPitchPunch = 0.0f;
+	CameraTrauma = 0.0f;
+	EmissiveBurstTimer = 0.0f;
+	if (HitstopRealTimeRemaining > 0.0f)
+	{
+		HitstopRealTimeRemaining = 0.0f;
+		UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+	}
 	CurrentCameraRoll = 0.0f;
 	SpliceChain = 1;
 	AspectHoldTimer = 0.0f;
@@ -628,6 +686,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	{
 		Camera->SetFieldOfView(WideFOV);
 		Camera->SetRelativeRotation(FRotator::ZeroRotator);
+		Camera->SetRelativeLocation(FVector::ZeroVector);
 	}
 	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
@@ -681,6 +740,7 @@ bool AMegaJamFlowPawn::TryTriggerMatchCut(bool bForceMatchCut)
 
 	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 	MatchCutFlashTimer = 1.1f;
+	EmissiveBurstTimer = 0.25f;
 
 	// Refill Flow and forward momentum on a successful Match Cut.
 	Velocity.X = FMath::Max(static_cast<float>(Velocity.X), TerminalVelocity * 0.95f);
@@ -714,6 +774,8 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 	LastGrazeOrPickupTime = World->GetTimeSeconds();
 	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 	MatchCutFlashTimer = 0.9f;
+	EmissiveBurstTimer = 0.25f;
+	AddCameraTrauma(0.25f);
 
 	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + CutSpeedImpulse * 0.75f, TerminalVelocity);
 	FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.12f, -0.5f, 0.35f);
@@ -748,6 +810,7 @@ void AMegaJamFlowPawn::NotifyDollyBoostStripCollected()
 	DollyBoostFlashTimer = 1.0f;
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
+	AddCameraTrauma(0.25f);
 
 	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + 550.0f, TerminalVelocity + 300.0f);
 	FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.15f, -0.5f, 0.35f);
@@ -764,6 +827,63 @@ void AMegaJamFlowPawn::NotifyDollyBoostStripCollected()
 	}
 
 	TriggerAudioEvent(TEXT("OnGraze"));
+}
+
+void AMegaJamFlowPawn::AddCameraTrauma(float Amount)
+{
+	CameraTrauma = FMath::Clamp(CameraTrauma + FMath::Max(0.0f, Amount), 0.0f, 1.0f);
+}
+
+void AMegaJamFlowPawn::TriggerMicroHitstop(float RealDurationSeconds, float Dilation)
+{
+	HitstopRealTimeRemaining = FMath::Max(HitstopRealTimeRemaining, RealDurationSeconds);
+	UGameplayStatics::SetGlobalTimeDilation(this, FMath::Clamp(Dilation, 0.05f, 1.0f));
+}
+
+void AMegaJamFlowPawn::UpdatePawnDynamicMaterial(float DeltaSeconds)
+{
+	if (!PawnVisualMID)
+	{
+		return;
+	}
+
+	const float SpeedRatio = (TerminalVelocity > KINDA_SMALL_NUMBER && !bCrashed)
+		? FMath::Clamp(static_cast<float>(Velocity.X) / TerminalVelocity, 0.0f, 1.0f)
+		: 0.0f;
+	const float RealTime = static_cast<float>(FPlatformTime::Seconds());
+	const float BeatPulse = 1.0f + SpeedRatio * (0.35f + 0.35f * FMath::Sin(RealTime * (8.0f + SpeedRatio * 10.0f)));
+
+	// Smooth chain color shift: Cool Cyan (x1-x3) -> Warm Gold (x4-x6) -> Electric Magenta-White (x7-x8 MAX CHAIN)
+	const FLinearColor CyanTint(0.15f, 0.92f, 1.0f, 1.0f);
+	const FLinearColor GoldTint(1.0f, 0.82f, 0.15f, 1.0f);
+	const FLinearColor MagentaWhiteTint(1.0f, 0.42f, 0.98f, 1.0f);
+
+	FLinearColor ChainColor = CyanTint;
+	if (SpliceChain <= 3)
+	{
+		const float Alpha = FMath::Clamp(static_cast<float>(SpliceChain - 1) / 2.0f, 0.0f, 1.0f);
+		ChainColor = FMath::Lerp(CyanTint, FLinearColor(0.35f, 0.98f, 0.90f, 1.0f), Alpha);
+	}
+	else if (SpliceChain <= 6)
+	{
+		const float Alpha = FMath::Clamp(static_cast<float>(SpliceChain - 3) / 3.0f, 0.0f, 1.0f);
+		ChainColor = FMath::Lerp(CyanTint, GoldTint, Alpha);
+	}
+	else
+	{
+		const float Alpha = FMath::Clamp(static_cast<float>(SpliceChain - 6) / 2.0f, 0.0f, 1.0f);
+		ChainColor = FMath::Lerp(GoldTint, MagentaWhiteTint, Alpha);
+	}
+
+	const float BurstAlpha = FMath::Clamp(EmissiveBurstTimer / 0.25f, 0.0f, 1.0f);
+	const FLinearColor FinalTint = FMath::Lerp(ChainColor, FLinearColor(1.0f, 1.0f, 1.0f, 1.0f), BurstAlpha);
+	const float EmissiveMultiplier = FMath::Lerp(1.2f + FlowRatio * 2.2f, 6.0f, BurstAlpha) * BeatPulse;
+	const FLinearColor EmissiveVec = FinalTint * EmissiveMultiplier;
+
+	PawnVisualMID->SetVectorParameterValue(TEXT("Color"), FinalTint);
+	PawnVisualMID->SetVectorParameterValue(TEXT("BaseColor"), FinalTint);
+	PawnVisualMID->SetVectorParameterValue(TEXT("TakeColor"), EmissiveVec);
+	PawnVisualMID->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveVec);
 }
 
 void AMegaJamFlowPawn::PushAudioParameters() const
@@ -817,6 +937,12 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 #endif
 
 	bCrashed = true;
+	if (HitstopRealTimeRemaining > 0.0f)
+	{
+		HitstopRealTimeRemaining = 0.0f;
+		UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+	}
+	AddCameraTrauma(1.0f);
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
 	SpliceChain = 1;
@@ -961,6 +1087,7 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	}
 	GrazeTimes.Add(Key, Now);
 	LastGrazeOrPickupTime = Now;
+	AddCameraTrauma(0.25f);
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{

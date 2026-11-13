@@ -4,6 +4,7 @@
 
 #include "MegaJamFlowPawn.h"
 #include "MegaJamFlowSubsystem.h"
+#include "MegaJamPlayerController.h"
 #include "MegaJamTrackGenerator.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -314,6 +315,45 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		WrapSlot->SetZOrder(30);
 	}
 
+	// ---- Cinema Slate Pause Menu Card (IsPaused() == true) ----
+	PauseCardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("PauseCardBorder"));
+	PauseCardBorder->SetBrushColor(FLinearColor(0.012f, 0.012f, 0.018f, 0.94f));
+	PauseCardBorder->SetPadding(FMargin(52.0f, 36.0f));
+	PauseCardBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	UVerticalBox* PauseBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PauseBox"));
+
+	auto AddPauseLine = [this, PauseBox](FName Name, const FString& Text, int32 Size, const FLinearColor& Color, float BottomPad) -> UTextBlock*
+	{
+		UTextBlock* Block = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
+		Block->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", Size));
+		Block->SetColorAndOpacity(FSlateColor(Color));
+		Block->SetJustification(ETextJustify::Center);
+		Block->SetText(FText::FromString(Text));
+		if (UVerticalBoxSlot* BoxSlot = PauseBox->AddChildToVerticalBox(Block))
+		{
+			BoxSlot->SetHorizontalAlignment(HAlign_Center);
+			BoxSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, BottomPad));
+		}
+		return Block;
+	};
+
+	AddPauseLine(TEXT("PauseHeader"), TEXT("PRODUCTION PAUSED // CUT"), 30, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 22.0f);
+	PauseOption0Text = AddPauseLine(TEXT("PauseOpt0"), TEXT("▶ RESUME SHOOTING"), 20, FLinearColor(0.2f, 0.95f, 1.0f, 1.0f), 12.0f);
+	PauseOption1Text = AddPauseLine(TEXT("PauseOpt1"), TEXT("   RETAKE CURRENT ACT"), 20, FLinearColor(0.75f, 0.78f, 0.82f, 1.0f), 12.0f);
+	PauseOption2Text = AddPauseLine(TEXT("PauseOpt2"), TEXT("   WRAP TO TITLE SLATE"), 20, FLinearColor(0.75f, 0.78f, 0.82f, 1.0f), 20.0f);
+	AddPauseLine(TEXT("PauseHint"), TEXT("[W / S] SELECT   |   [SPACE / ENTER] CONFIRM   |   [ESC / P] RESUME"), 13, FLinearColor(0.65f, 0.68f, 0.72f, 1.0f), 0.0f);
+
+	PauseCardBorder->SetContent(PauseBox);
+	if (UCanvasPanelSlot* PauseSlot = RootCanvas->AddChildToCanvas(PauseCardBorder))
+	{
+		PauseSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+		PauseSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		PauseSlot->SetPosition(FVector2D(0.0f, 0.0f));
+		PauseSlot->SetAutoSize(true);
+		PauseSlot->SetZOrder(35);
+	}
+
 	return Super::RebuildWidget();
 }
 
@@ -622,6 +662,40 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		else
 		{
 			WrapCardBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	// 2.5 Cinema Slate Pause Menu (PC->IsPaused() == true)
+	const AMegaJamPlayerController* MegaJamPC = Cast<AMegaJamPlayerController>(GetOwningPlayer());
+	const bool bIsPaused = MegaJamPC ? MegaJamPC->IsPaused() : false;
+	if (PauseCardBorder)
+	{
+		if (bIsPaused)
+		{
+			PauseCardBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			const int32 SelectedIdx = MegaJamPC ? MegaJamPC->GetPauseMenuSelectionIndex() : 0;
+			const FLinearColor ActiveColor(0.2f, 0.95f, 1.0f, 1.0f);
+			const FLinearColor InactiveColor(0.75f, 0.78f, 0.82f, 1.0f);
+
+			if (PauseOption0Text)
+			{
+				PauseOption0Text->SetText(FText::FromString(SelectedIdx == 0 ? TEXT("▶ RESUME SHOOTING") : TEXT("   RESUME SHOOTING")));
+				PauseOption0Text->SetColorAndOpacity(FSlateColor(SelectedIdx == 0 ? ActiveColor : InactiveColor));
+			}
+			if (PauseOption1Text)
+			{
+				PauseOption1Text->SetText(FText::FromString(SelectedIdx == 1 ? TEXT("▶ RETAKE CURRENT ACT") : TEXT("   RETAKE CURRENT ACT")));
+				PauseOption1Text->SetColorAndOpacity(FSlateColor(SelectedIdx == 1 ? ActiveColor : InactiveColor));
+			}
+			if (PauseOption2Text)
+			{
+				PauseOption2Text->SetText(FText::FromString(SelectedIdx == 2 ? TEXT("▶ WRAP TO TITLE SLATE") : TEXT("   WRAP TO TITLE SLATE")));
+				PauseOption2Text->SetColorAndOpacity(FSlateColor(SelectedIdx == 2 ? ActiveColor : InactiveColor));
+			}
+		}
+		else
+		{
+			PauseCardBorder->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 

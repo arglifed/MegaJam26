@@ -11,6 +11,7 @@
 class UAudioComponent;
 class UCameraComponent;
 class UInputAction;
+class UMaterialInstanceDynamic;
 class USoundBase;
 class USpringArmComponent;
 class USphereComponent;
@@ -302,6 +303,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Aspect")
 	void NotifyDollyBoostStripCollected();
 
+	/** Adds procedural camera trauma (0..1) that drives high-frequency sinusoidal Pitch/Yaw/Roll/Z shake. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Camera")
+	void AddCameraTrauma(float Amount);
+
+	/** Triggers a brief unscaled micro-hitstop (time dilation dip) that automatically restores to 1.0f. */
+	void TriggerMicroHitstop(float RealDurationSeconds = 0.035f, float Dilation = 0.15f);
+
 	// ---- Dev Testing Hotkeys (F1 God Mode) ----
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Dev")
 	void ToggleGodMode();
@@ -356,6 +364,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** Integrates velocity and sweeps the pawn. Triggers HandleCrash on a fast blocking hit. */
 	virtual void StepPhysics(float DeltaSeconds);
@@ -369,6 +378,7 @@ protected:
 	void PushAudioParameters() const;
 	void TriggerAudioEvent(FName ParameterName) const;
 	bool TryTriggerMatchCut(bool bForceMatchCut = false);
+	void UpdatePawnDynamicMaterial(float DeltaSeconds);
 
 	// ---- Input hooks ----
 	virtual void Input_Steer(const FInputActionValue& Value);
@@ -424,6 +434,20 @@ protected:
 	/** Decaying camera pitch-nod (degrees) applied during a Drop-Cut Slam and springing back on touchdown. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Aspect")
 	float SlamPitchPunch = 0.0f;
+
+	/** Procedural camera trauma level (0.0f to 1.0f), decaying at 2.4f/sec. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Camera")
+	float CameraTrauma = 0.0f;
+
+	/** Unscaled real-time seconds remaining on a Drop-Cut Slam micro-hitstop. */
+	float HitstopRealTimeRemaining = 0.0f;
+
+	/** Remaining duration (s) for the white-hot emissive burst on Drop-Cut Slam / Match-Cut. */
+	float EmissiveBurstTimer = 0.0f;
+
+	/** Dynamic material instance on VisualMesh driven by FlowRatio and SpliceChain. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> PawnVisualMID;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
 

@@ -99,12 +99,12 @@ void AMegaJamTrackGenerator::BeginPlay()
 		MaterialB->SetVectorParameterValue(TEXT("TakeColor"), TakeBColor);
 		TakeB_ObstaclesISM->SetMaterial(0, MaterialB);
 
-		UMaterialInstanceDynamic* PickupMatA = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+		PickupMatA = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
 		PickupMatA->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
-		PickupMatA->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(1.0f, 0.85f, 0.2f, 1.0f));
+		PickupMatA->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.2f, 0.95f, 1.0f, 1.0f));
 		PickupISM->SetMaterial(0, PickupMatA);
 
-		UMaterialInstanceDynamic* PickupMatB = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+		PickupMatB = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
 		PickupMatB->SetScalarParameterValue(TEXT("TakeIndex"), 1.0f);
 		PickupMatB->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.25f, 0.95f, 1.0f, 1.0f));
 		PickupTakeB_ISM->SetMaterial(0, PickupMatB);
@@ -123,6 +123,12 @@ void AMegaJamTrackGenerator::BeginPlay()
 		BoostStripMID->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
 		BoostStripMID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.15f, 0.95f, 1.0f, 1.0f));
 		BoostStripISM->SetMaterial(0, BoostStripMID);
+	}
+	else
+	{
+		PickupMatA = PickupISM->CreateAndSetMaterialInstanceDynamic(0);
+		PickupMatB = PickupTakeB_ISM->CreateAndSetMaterialInstanceDynamic(0);
+		BoostStripMID = BoostStripISM->CreateAndSetMaterialInstanceDynamic(0);
 	}
 
 	if (AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>())
@@ -305,17 +311,65 @@ void AMegaJamTrackGenerator::UpdateSceneMaterials(float DeltaSeconds)
 	const FLinearColor TargetColor = GetSceneAccentColor(CurrentScene);
 	CurrentSceneColor = FMath::CInterpTo(CurrentSceneColor, TargetColor, DeltaSeconds, 3.5f);
 
+	const float ActiveTakeVal = (BoundPawn && BoundPawn->GetCurrentTake() == EMegaJamTakeState::DirectorsTake) ? 1.0f : 0.0f;
+
 	if (SetPieceMID)
 	{
-		const float ActiveTakeVal = (BoundPawn && BoundPawn->GetCurrentTake() == EMegaJamTakeState::DirectorsTake) ? 1.0f : 0.0f;
 		SetPieceMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
 		SetPieceMID->SetVectorParameterValue(TEXT("TakeColor"), CurrentSceneColor);
 	}
-	if (BoostStripMID)
+
+	// Dynamic Chain & Emissive Pulse for PickupISM / PickupTakeB_ISM and BoostStripISM:
+	// Shift smoothly from Cool Cyan (x1-x3) -> Warm Gold (x4-x6) -> Electric Magenta-White (x7-x8 MAX CHAIN),
+	// modulated by a rhythmic beat pulse scaled by SpeedRatio.
+	const int32 Chain = BoundPawn ? BoundPawn->GetSpliceChain() : 1;
+	const float FlowRatio = BoundPawn ? BoundPawn->GetFlowRatio() : 0.0f;
+	const float SpeedRatio = (BoundPawn && BoundPawn->TerminalVelocity > KINDA_SMALL_NUMBER && !BoundPawn->HasCrashed())
+		? FMath::Clamp(static_cast<float>(BoundPawn->GetFlowVelocity().X) / BoundPawn->TerminalVelocity, 0.0f, 1.0f)
+		: 0.0f;
+	const float TimeSec = GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds()) : 0.0f;
+	const float BeatPulse = 1.0f + SpeedRatio * (0.35f + 0.35f * FMath::Sin(TimeSec * (8.0f + SpeedRatio * 10.0f)));
+
+	const FLinearColor CyanTint(0.15f, 0.95f, 1.0f, 1.0f);
+	const FLinearColor GoldTint(1.0f, 0.85f, 0.18f, 1.0f);
+	const FLinearColor MagentaWhiteTint(1.0f, 0.45f, 1.0f, 1.0f);
+
+	FLinearColor ChainTint = CyanTint;
+	if (Chain <= 3)
 	{
-		const float ActiveTakeVal = (BoundPawn && BoundPawn->GetCurrentTake() == EMegaJamTakeState::DirectorsTake) ? 1.0f : 0.0f;
-		BoostStripMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
+		const float Alpha = FMath::Clamp(static_cast<float>(Chain - 1) / 2.0f, 0.0f, 1.0f);
+		ChainTint = FMath::Lerp(CyanTint, FLinearColor(0.35f, 1.0f, 0.88f, 1.0f), Alpha);
 	}
+	else if (Chain <= 6)
+	{
+		const float Alpha = FMath::Clamp(static_cast<float>(Chain - 3) / 3.0f, 0.0f, 1.0f);
+		ChainTint = FMath::Lerp(CyanTint, GoldTint, Alpha);
+	}
+	else
+	{
+		const float Alpha = FMath::Clamp(static_cast<float>(Chain - 6) / 2.0f, 0.0f, 1.0f);
+		ChainTint = FMath::Lerp(GoldTint, MagentaWhiteTint, Alpha);
+	}
+
+	const float EmissiveScale = (1.1f + FlowRatio * 1.4f) * BeatPulse;
+	const FLinearColor PulsedChainColor = ChainTint * EmissiveScale;
+
+	auto ApplyPulseToMID = [&](UMaterialInstanceDynamic* MID, float TakeIdxVal)
+	{
+		if (!MID)
+		{
+			return;
+		}
+		MID->SetScalarParameterValue(TEXT("TakeIndex"), TakeIdxVal);
+		MID->SetVectorParameterValue(TEXT("TakeColor"), PulsedChainColor);
+		MID->SetVectorParameterValue(TEXT("Color"), ChainTint);
+		MID->SetVectorParameterValue(TEXT("BaseColor"), ChainTint);
+		MID->SetVectorParameterValue(TEXT("EmissiveColor"), PulsedChainColor);
+	};
+
+	ApplyPulseToMID(BoostStripMID, ActiveTakeVal);
+	ApplyPulseToMID(PickupMatA, 0.0f);
+	ApplyPulseToMID(PickupMatB, 1.0f);
 }
 
 void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSeconds)
