@@ -28,6 +28,9 @@ struct FMegaJamFilmFramePickup
 	FVector Location = FVector::ZeroVector;
 
 	UPROPERTY()
+	FVector Velocity = FVector::ZeroVector;
+
+	UPROPERTY()
 	FVector Scale = FVector(1.2f, 1.2f, 1.2f);
 
 	UPROPERTY()
@@ -38,6 +41,9 @@ struct FMegaJamFilmFramePickup
 
 	UPROPERTY()
 	bool bActive = false;
+
+	UPROPERTY()
+	bool bHasBallisticVelocity = false;
 };
 
 /** Runtime state for a pooled set-piece instance (supports continuous rotation in Scene 3). */

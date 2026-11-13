@@ -5,7 +5,9 @@
 #include "MegaJamFlowPawn.h"
 #include "MegaJamFlowSubsystem.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/PointLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -445,6 +447,24 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 			? PickupISM.Get()
 			: PickupTakeB_ISM.Get();
 
+		if (Pickup.bHasBallisticVelocity)
+		{
+			Pickup.Location += Pickup.Velocity * DeltaSeconds;
+			Pickup.Velocity.Z -= 2200.0f * DeltaSeconds;
+			Pickup.Location.Y = FMath::Clamp(static_cast<float>(Pickup.Location.Y), -CorridorHalfWidth + 120.0f, CorridorHalfWidth - 120.0f);
+			if (Pickup.Location.Z < 110.0f)
+			{
+				Pickup.Location.Z = 110.0f;
+				Pickup.Velocity.Z = FMath::Abs(Pickup.Velocity.Z) * 0.45f;
+			}
+			// Gentle magnet pull once within 2.5x pickup radius so blasted frames swoop cleanly into the player
+			const float MagnetRange = EffectivePickupRadius * 2.5f;
+			if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= FMath::Square(MagnetRange))
+			{
+				Pickup.Location = FMath::VInterpTo(Pickup.Location, PawnLocation, DeltaSeconds, 11.0f);
+			}
+		}
+
 		if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= RadiusSq)
 		{
 			if (PawnTake == Pickup.RequiredTake)
@@ -526,6 +546,8 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	for (int32 BurstIdx = BaseBurstIdx; BurstIdx < PickupSlots.Num(); ++BurstIdx)
 	{
 		PickupSlots[BurstIdx].bActive = false;
+		PickupSlots[BurstIdx].bHasBallisticVelocity = false;
+		PickupSlots[BurstIdx].Velocity = FVector::ZeroVector;
 		PickupISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
 		PickupTakeB_ISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
 	}
@@ -1016,9 +1038,11 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	{
 		const int32 PoolIdx = BasePickupIdx + SubIdx;
 		PickupSlots[PoolIdx].Location = Pos;
+		PickupSlots[PoolIdx].Velocity = FVector::ZeroVector;
 		PickupSlots[PoolIdx].Scale = RingScale;
 		PickupSlots[PoolIdx].RequiredTake = LineTake;
 		PickupSlots[PoolIdx].bActive = true;
+		PickupSlots[PoolIdx].bHasBallisticVelocity = false;
 		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), Pos, RingScale), true, false, true);
 	};
 
@@ -1182,8 +1206,27 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 		bObstaclesDirty = true;
 		++ShreddedCount;
 
-		const FVector BurstOrigin = bHitA ? HitCenterA : HitCenterB;
-		const int32 FramesToSpawn = 4; // 3 to 5 Film Frames in a 3D arc along the player's flight path
+		const FVector ImpactLocation = bHitA ? HitCenterA : HitCenterB;
+
+		// Flashbulb strobe: 150,000-lumen single-frame burst at ImpactLocation
+		if (UWorld* World = GetWorld())
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			if (APointLight* Flash = World->SpawnActor<APointLight>(ImpactLocation, FRotator::ZeroRotator, SpawnParams))
+			{
+				if (UPointLightComponent* LightComp = Flash->PointLightComponent)
+				{
+					LightComp->SetMobility(EComponentMobility::Movable);
+					LightComp->SetIntensity(150000.0f);
+					LightComp->SetAttenuationRadius(2500.0f);
+				}
+				Flash->SetLifeSpan(0.15f);
+			}
+		}
+
+		// Piñata Radial Scatter: blast 4 Film Frames outward and upward before the pawn's magnet catches them
+		const int32 FramesToSpawn = 4;
 		for (int32 FrameIdx = 0; FrameIdx < FramesToSpawn; ++FrameIdx)
 		{
 			if (BaseBurstIdx + BurstPickupPoolSize > PickupSlots.Num())
@@ -1194,19 +1237,13 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 			const int32 PoolIdx = BaseBurstIdx + (NextBurstPickupCursor % BurstPickupPoolSize);
 			++NextBurstPickupCursor;
 
-			const float Alpha = static_cast<float>(FrameIdx) / static_cast<float>(FramesToSpawn - 1); // 0..1
-			const float OffsetX = FMath::Lerp(-140.0f, 380.0f, Alpha);
-			const float ArcZ = FMath::Sin(Alpha * PI) * 85.0f;
-			const float SpreadY = (FrameIdx - 1.5f) * 35.0f;
-			const FVector FramePos(
-				BurstOrigin.X + OffsetX,
-				FMath::Clamp(static_cast<float>(PawnLocation.Y * 0.65f + BurstOrigin.Y * 0.35f + SpreadY), -760.0f, 760.0f),
-				FMath::Clamp(static_cast<float>(PawnLocation.Z * 0.55f + BurstOrigin.Z * 0.45f + ArcZ), 120.0f, 800.0f));
-
-			PickupSlots[PoolIdx].Location = FramePos;
+			const FVector ScatterVel = (FMath::VRand() * FMath::RandRange(800.0f, 1500.0f)) + FVector(0.0f, 0.0f, 800.0f);
+			PickupSlots[PoolIdx].Location = ImpactLocation;
+			PickupSlots[PoolIdx].Velocity = ScatterVel;
 			PickupSlots[PoolIdx].Scale = BurstRingScale;
 			PickupSlots[PoolIdx].RequiredTake = CurrentPawnTake;
 			PickupSlots[PoolIdx].bActive = true;
+			PickupSlots[PoolIdx].bHasBallisticVelocity = true;
 
 			if (OtherPickupISM)
 			{
@@ -1214,7 +1251,7 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 			}
 			if (TargetPickupISM)
 			{
-				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), FramePos, BurstRingScale), true, false, true);
+				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), ImpactLocation, BurstRingScale), true, false, true);
 			}
 			bPickupsDirty = true;
 		}

@@ -619,7 +619,8 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 			FlowSubsystem->SetFilmMeter(FilmMeter);
 		}
 
-		AddCameraTrauma(0.20f);
+		TriggerMicroHitstop(0.06f, 0.10f);
+		AddCameraTrauma(0.35f, 0.50f);
 		if (DirectorsCutEnterSound)
 		{
 			const float ChainPitch = FMath::Clamp(1.15f + 0.04f * static_cast<float>(SpliceChain), 1.15f, 1.45f);
