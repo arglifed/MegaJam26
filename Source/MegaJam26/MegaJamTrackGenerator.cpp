@@ -49,6 +49,7 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	SetPieceISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("SetPieceISM"));
 	PickupISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PickupISM"));
 	PickupTakeB_ISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PickupTakeB_ISM"));
+	BoostStripISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BoostStripISM"));
 	WrapArchISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WrapArchISM"));
 
 	ConfigureISM(FloorISM, TrackRoot, true, false);
@@ -59,6 +60,7 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	ConfigureISM(SetPieceISM, TrackRoot, false, false);
 	ConfigureISM(PickupISM, TrackRoot, false, false);
 	ConfigureISM(PickupTakeB_ISM, TrackRoot, false, false);
+	ConfigureISM(BoostStripISM, TrackRoot, false, false);
 	ConfigureISM(WrapArchISM, TrackRoot, false, false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -116,6 +118,11 @@ void AMegaJamTrackGenerator::BeginPlay()
 		WrapArchMID->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
 		WrapArchMID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(1.0f, 0.85f, 0.15f, 1.0f));
 		WrapArchISM->SetMaterial(0, WrapArchMID);
+
+		BoostStripMID = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+		BoostStripMID->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
+		BoostStripMID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.15f, 0.95f, 1.0f, 1.0f));
+		BoostStripISM->SetMaterial(0, BoostStripMID);
 	}
 
 	if (AMegaJamGameMode* GameMode = GetWorld()->GetAuthGameMode<AMegaJamGameMode>())
@@ -228,6 +235,7 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 		SetPieceISM->MarkRenderStateDirty();
 		PickupISM->MarkRenderStateDirty();
 		PickupTakeB_ISM->MarkRenderStateDirty();
+		BoostStripISM->MarkRenderStateDirty();
 	}
 }
 
@@ -303,6 +311,11 @@ void AMegaJamTrackGenerator::UpdateSceneMaterials(float DeltaSeconds)
 		SetPieceMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
 		SetPieceMID->SetVectorParameterValue(TEXT("TakeColor"), CurrentSceneColor);
 	}
+	if (BoostStripMID)
+	{
+		const float ActiveTakeVal = (BoundPawn && BoundPawn->GetCurrentTake() == EMegaJamTakeState::DirectorsTake) ? 1.0f : 0.0f;
+		BoostStripMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
+	}
 }
 
 void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSeconds)
@@ -377,6 +390,35 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 		PickupISM->MarkRenderStateDirty();
 		PickupTakeB_ISM->MarkRenderStateDirty();
 	}
+
+	// 3. Outer-Wing Dolly Boost Strips (21:9 Required): collect when riding outer lanes in Wide_21_9
+	if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && BoundPawn->GetAspectMode() == EMegaJamAspectMode::Wide_21_9)
+	{
+		bool bStripsDirty = false;
+		for (int32 Index = 0; Index < BoostStripSlots.Num(); ++Index)
+		{
+			FMegaJamDollyBoostStrip& Strip = BoostStripSlots[Index];
+			if (!Strip.bActive)
+			{
+				continue;
+			}
+
+			if (FMath::Abs(PawnLocation.X - Strip.Location.X) <= 280.0f &&
+				FMath::Abs(PawnLocation.Y - Strip.Location.Y) <= 185.0f &&
+				PawnLocation.Z <= 240.0f)
+			{
+				Strip.bActive = false;
+				BoostStripISM->UpdateInstanceTransform(Strip.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
+				BoundPawn->NotifyDollyBoostStripCollected();
+				bStripsDirty = true;
+			}
+		}
+
+		if (bStripsDirty)
+		{
+			BoostStripISM->MarkRenderStateDirty();
+		}
+	}
 }
 
 void AMegaJamTrackGenerator::RebuildTrack()
@@ -407,6 +449,7 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	SetPieceISM->MarkRenderStateDirty();
 	PickupISM->MarkRenderStateDirty();
 	PickupTakeB_ISM->MarkRenderStateDirty();
+	BoostStripISM->MarkRenderStateDirty();
 
 	ApplyTakeCollision(BoundPawn->GetCurrentTake());
 
@@ -483,12 +526,14 @@ void AMegaJamTrackGenerator::CreatePools()
 	const int32 ObstacleSlots = Pool * Rows * ObstaclesPerRow;
 	const int32 TotalSetPieceSlots = Pool * SetPiecesPerChunk;
 	const int32 TotalPickupSlots = Pool * PickupsPerChunk;
+	const int32 TotalBoostStripSlots = Pool * BoostStripsPerChunk;
 
 	FloorISM->SetStaticMesh(FloorTileMesh ? FloorTileMesh.Get() : BlockMesh.Get());
 	WallISM->SetStaticMesh(WallSegmentMesh ? WallSegmentMesh.Get() : BlockMesh.Get());
 	TakeA_ObstaclesISM->SetStaticMesh(ObstacleTakeAMesh ? ObstacleTakeAMesh.Get() : BlockMesh.Get());
 	TakeB_ObstaclesISM->SetStaticMesh(ObstacleTakeBMesh ? ObstacleTakeBMesh.Get() : BlockMesh.Get());
 	SetPieceISM->SetStaticMesh(SoundstageTrussMesh ? SoundstageTrussMesh.Get() : BlockMesh.Get());
+	BoostStripISM->SetStaticMesh(BlockMesh.Get());
 	WrapArchISM->SetStaticMesh(ApertureRingMesh ? ApertureRingMesh.Get() : BlockMesh.Get());
 
 	UStaticMesh* ResolvedPickupMesh = FilmFramePickupMesh
@@ -498,7 +543,7 @@ void AMegaJamTrackGenerator::CreatePools()
 	PickupTakeB_ISM->SetStaticMesh(ResolvedPickupMesh);
 
 	UInstancedStaticMeshComponent* All[] = {
-		FloorISM, WallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, WrapArchISM
+		FloorISM, WallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, BoostStripISM, WrapArchISM
 	};
 	for (UInstancedStaticMeshComponent* ISM : All)
 	{
@@ -532,6 +577,14 @@ void AMegaJamTrackGenerator::CreatePools()
 		PickupTakeB_ISM->AddInstance(MakeHiddenInstanceTransform(), true);
 		PickupSlots[Index] = FMegaJamFilmFramePickup();
 		PickupSlots[Index].PoolIndex = Index;
+	}
+
+	BoostStripSlots.SetNum(TotalBoostStripSlots);
+	for (int32 Index = 0; Index < TotalBoostStripSlots; ++Index)
+	{
+		BoostStripISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		BoostStripSlots[Index] = FMegaJamDollyBoostStrip();
+		BoostStripSlots[Index].PoolIndex = Index;
 	}
 
 	for (int32 Index = 0; Index < WrapArchParts; ++Index)
@@ -569,6 +622,39 @@ int32 AMegaJamTrackGenerator::SceneIndexAtTime(float RunTimeSeconds) const
 	return 3; // Final Cut
 }
 
+bool AMegaJamTrackGenerator::IsHazardChunkForScene(int32 ChunkIndex, EMegaJamFilmScene ChunkScene) const
+{
+	const int32 Mod3 = ((ChunkIndex % 3) + 3) % 3;
+	const int32 Mod2 = ((ChunkIndex % 2) + 2) % 2;
+
+	switch (ChunkScene)
+	{
+	case EMegaJamFilmScene::Soundstage:
+		// Act I (0-35s): 1 hazard chunk followed by 2 clean runway chunks
+		return (Mod3 == 0);
+	case EMegaJamFilmScene::OverpassNight:
+		// Act II (35-75s): 1 hazard chunk followed by 1 clean runway chunk
+		return (Mod2 == 0);
+	case EMegaJamFilmScene::CuttingRoom:
+	case EMegaJamFilmScene::FinalCut:
+	default:
+		// Acts III & IV (75-150s): 2 hazard chunks followed by 1 clean runway chunk
+		return (Mod3 != 2);
+	}
+}
+
+int32 AMegaJamTrackGenerator::GetHazardArchetypeForChunk(int32 ChunkIndex) const
+{
+	// Deterministic cycle across the 4 clean set-piece archetypes:
+	// 0 = Color-Splice Gate
+	// 1 = 21:9 Center-Median Split Blockade
+	// 2 = 21:9 Overhead Ceiling Gate
+	// 3 = 4:3 Vertical Shaft
+	FRandomStream ArchetypeStream(Seed + ChunkIndex * 4999);
+	const int32 BaseCycle = ((ChunkIndex % 4) + 4) % 4;
+	return (BaseCycle + ArchetypeStream.RandHelper(2)) % 4;
+}
+
 void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 {
 	const int32 Slot = SlotOf(ChunkIndex);
@@ -586,7 +672,6 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	WallISM->UpdateInstanceTransform(Slot * 2 + 1,
 		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 500.0f), WallScale), true, false, true);
 
-	float Density = 0.0f;
 	int32 ProjectedSceneIdx = 0;
 	float ProjectedTime = GetRunTimeSeconds();
 	const bool bTitleOrCompleted = BoundGameMode && !BoundGameMode->IsPlaying();
@@ -597,19 +682,22 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		const float Speed = FMath::Max(static_cast<float>(BoundPawn->GetFlowVelocity().X), MinProjectionSpeed);
 		ProjectedTime = GetRunTimeSeconds() + FMath::Max(0.0f, ChunkCenterX - PawnX) / Speed;
 		ProjectedSceneIdx = bTitleOrCompleted ? 0 : SceneIndexAtTime(ProjectedTime);
-		const float SceneScale = FMath::Lerp(0.55f, 1.0f, static_cast<float>(ProjectedSceneIdx) / 3.0f);
-		const float FlowScale = FMath::Lerp(0.68f, 1.0f, BoundPawn->GetFlowRatio());
-		Density = FMath::Clamp(MaxObstacleDensity * SceneScale * FlowScale, 0.0f, 1.0f);
 	}
 
 	const EMegaJamFilmScene ChunkScene = static_cast<EMegaJamFilmScene>(ProjectedSceneIdx);
 	FRandomStream Stream(Seed + ChunkIndex * 7919);
 
+	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || ProjectedTime >= 147.5f || bTitleOrCompleted);
+	const bool bIsHazardChunk = !bInSafeOrFinishZone && IsHazardChunkForScene(ChunkIndex, ChunkScene);
+	const int32 HazardArchetype = GetHazardArchetypeForChunk(ChunkIndex);
+
 	PopulateSetPiecesForChunk(Slot, ChunkIndex, ChunkStartX, ChunkCenterX, ChunkScene, Stream);
-	PopulatePickupsForChunk(Slot, ChunkIndex, ChunkStartX, ChunkScene, Stream);
+	PopulatePickupsForChunk(Slot, ChunkIndex, ChunkStartX, ChunkScene, bIsHazardChunk, HazardArchetype, Stream);
+	PopulateBoostStripsForChunk(Slot, ChunkIndex, ChunkStartX, bIsHazardChunk, HazardArchetype, Stream);
 
 	const float RowLength = ChunkLength / Rows;
 
+	// Clear all obstacle slots in this chunk first
 	for (int32 Row = 0; Row < Rows; ++Row)
 	{
 		const int32 BaseObstacleIndex = (Slot * Rows + Row) * ObstaclesPerRow;
@@ -618,218 +706,117 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + SubIdx, MakeHiddenInstanceTransform(), true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + SubIdx, MakeHiddenInstanceTransform(), true, false, true);
 		}
+	}
 
-		const float PatternRoll = Stream.FRand();
-		const float PresentRoll = Stream.FRand();
-		const float TakeRoll = Stream.FRand();
-		const float LateralRoll = Stream.FRand();
-		const float HeightRoll = Stream.FRand();
-		const float AirTakeRoll = Stream.FRand();
-		const float AirLateralRoll = Stream.FRand();
-		const float AirZRoll = Stream.FRand();
-
-		// On the Title Screen, place decorative side-lane Take A / B blocks so the attract camera glides cleanly down the center!
-		if (bTitleOrCompleted)
+	// On the Title Screen, place decorative side-lane Take A / B blocks so the attract camera glides cleanly down the center!
+	if (bTitleOrCompleted)
+	{
+		for (int32 Row = 0; Row < Rows; Row += 2)
 		{
-			if (Row % 2 == 0)
-			{
-				const float RowCenterX = ChunkStartX + (Row + 0.5f) * RowLength;
-				const float SideY = (Row == 0) ? -640.0f : 640.0f;
-				const FTransform SideBlock(FRotator::ZeroRotator, FVector(RowCenterX, SideY, 120.0f), FVector(2.0f, 3.2f, 2.4f));
-				UInstancedStaticMeshComponent* Target = (Row == 0) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-				Target->UpdateInstanceTransform(BaseObstacleIndex, SideBlock, true, false, true);
-			}
-			continue;
+			const int32 BaseObstacleIndex = (Slot * Rows + Row) * ObstaclesPerRow;
+			const float RowCenterX = ChunkStartX + (Row + 0.5f) * RowLength;
+			const float SideY = (Row == 0) ? -640.0f : 640.0f;
+			const FTransform SideBlock(FRotator::ZeroRotator, FVector(RowCenterX, SideY, 120.0f), FVector(2.0f, 3.2f, 2.4f));
+			UInstancedStaticMeshComponent* Target = (Row == 0) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+			Target->UpdateInstanceTransform(BaseObstacleIndex, SideBlock, true, false, true);
 		}
+		return;
+	}
 
-		// Keep start/checkpoint runway and the 148s Final Cut finish stretch clear of obstacles!
-		if (ChunkIndex < SafeUntilChunkIndex || ProjectedTime >= 147.5f || PresentRoll >= Density)
+	// Breathing Runway Chunks (and start/finish safe zones) contain zero lethal blocks!
+	if (!bIsHazardChunk)
+	{
+		return;
+	}
+
+	// Strict 1-Archetype-Per-Hazard-Chunk rule: place the single telegraphed set-piece at the center of the chunk
+	const int32 CenterRow = FMath::Clamp(Rows / 2, 0, Rows - 1);
+	const int32 BaseObstacleIndex = (Slot * Rows + CenterRow) * ObstaclesPerRow;
+	const float HazardX = ChunkCenterX;
+	const float TakeRoll = Stream.FRand();
+	const float HeightRoll = Stream.FRand();
+
+	switch (HazardArchetype)
+	{
+	case 0:
+	{
+		// Archetype 1 — Color-Splice Gate:
+		// A single pair of side-by-side Take A and Take B floor blocks (player matches color or Hard Cuts).
+		const bool bLeftIsTakeA = (TakeRoll < 0.5f);
+		const FTransform LeftGateBlock(
+			FRotator::ZeroRotator,
+			FVector(HazardX, -380.0f, 140.0f),
+			FVector(ObstacleSize / 100.0f, 7.2f, 2.8f));
+		const FTransform RightGateBlock(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 380.0f, 140.0f),
+			FVector(ObstacleSize / 100.0f, 7.2f, 2.8f));
+
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? LeftGateBlock : RightGateBlock, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? RightGateBlock : LeftGateBlock, true, false, true);
+		break;
+	}
+
+	case 1:
+	{
+		// Archetype 2 — 21:9 Center-Median Split Blockade:
+		// Central monolith (Y: [-450, 450], Z: [0, 930]) with open outer wings (Y = +/-700) lined with cyan Dolly Boost Strips.
+		// Zero extra obstacles on this chunk!
+		const FTransform CentralMonolith(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 0.0f, 465.0f),
+			FVector(ObstacleSize / 100.0f, 9.0f, 9.3f));
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralMonolith, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralMonolith, true, false, true);
+		break;
+	}
+
+	case 2:
+	{
+		// Archetype 3 — 21:9 Overhead Ceiling Gate:
+		// Upper barrier (Y: [-900, 900], Z: [310, 930] -> center Z = 620, height 620) leaving the entire floor (Z < 310) open.
+		const FTransform CeilingGateTransform(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 0.0f, 620.0f),
+			FVector(ObstacleSize / 100.0f, 18.0f, 6.2f));
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
+		break;
+	}
+
+	case 3:
+	default:
+	{
+		// Archetype 4 — 4:3 Vertical Shaft:
+		// Outer blockers (Y: [-900, -480] and [480, 900]) with a wide center opening containing a clean arc of 3 high Film Frames.
+		// Zero interior hurdles in Acts I-II; at most 1 single low or high hurdle in Acts III-IV.
+		const FTransform LeftOuterBlocker(
+			FRotator::ZeroRotator,
+			FVector(HazardX, -690.0f, 450.0f),
+			FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
+		const FTransform RightOuterBlocker(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 690.0f, 450.0f),
+			FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
+
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
+
+		if (ChunkScene == EMegaJamFilmScene::CuttingRoom || ChunkScene == EMegaJamFilmScene::FinalCut)
 		{
-			continue;
+			const bool bLowHurdle = (HeightRoll < 0.65f);
+			const float HurdleZ = bLowHurdle ? 125.0f : 680.0f;
+			const FTransform ShaftHurdle(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 0.0f, HurdleZ),
+				FVector(ObstacleSize / 100.0f, 8.8f, 2.4f));
+			UInstancedStaticMeshComponent* HurdleTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+			HurdleTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, ShaftHurdle, true, false, true);
 		}
-
-		const float RowCenterX = ChunkStartX + (Row + 0.5f) * RowLength;
-
-		// Helper lambdas for reusable gate & shaft patterns
-		auto SpawnCeilingGate21_9 = [&]()
-		{
-			// Overhead Ceiling Gate (21:9 Required): bottom clearance raised to Z = 290 (center Z = 610, height 640 -> Z: [290, 930])
-			// so ducking into Wide_21_9 (Z <= 200) clears reliably without head-clips!
-			const FTransform CeilingGateTransform(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, 0.0f, 610.0f),
-				FVector(ObstacleSize / 100.0f, 18.0f, 6.4f));
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
-
-			// Only add a secondary low block in Acts III-IV so Acts I-II let players focus cleanly on the 21:9 duck.
-			if (ChunkScene == EMegaJamFilmScene::CuttingRoom || ChunkScene == EMegaJamFilmScene::FinalCut)
-			{
-				const float LowLateral = (LateralRoll < 0.5f) ? -540.0f : 540.0f;
-				const FTransform LowBlockTransform(
-					FRotator::ZeroRotator,
-					FVector(RowCenterX, LowLateral, 95.0f),
-					FVector(ObstacleSize / 100.0f, 4.4f, 1.9f));
-				UInstancedStaticMeshComponent* LowTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-				LowTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, LowBlockTransform, true, false, true);
-			}
-		};
-
-		auto SpawnVerticalShaft4_3 = [&]()
-		{
-			// Narrow Vertical Shaft (4:3 Required): center opening widened to Y: [-480, 480]
-			// Outer blockers span Y: [-900, -480] (center -690, width 420) and Y: [480, 900] (center +690, width 420).
-			const FTransform LeftOuterBlocker(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, -690.0f, 450.0f),
-				FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
-			const FTransform RightOuterBlocker(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, 690.0f, 450.0f),
-				FVector(ObstacleSize / 100.0f, 4.2f, 9.0f));
-
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeftOuterBlocker, true, false, true);
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, RightOuterBlocker, true, false, true);
-
-			// Reduce simultaneous interior hurdles in Acts I-II; only place interior shaft hurdles in Acts III-IV.
-			if (ChunkScene == EMegaJamFilmScene::CuttingRoom || ChunkScene == EMegaJamFilmScene::FinalCut)
-			{
-				const bool bLowHurdle = (HeightRoll < 0.55f);
-				const float HurdleZ = bLowHurdle ? 130.0f : 660.0f;
-				const FTransform ShaftHurdle(
-					FRotator::ZeroRotator,
-					FVector(RowCenterX, 0.0f, HurdleZ),
-					FVector(ObstacleSize / 100.0f, 8.8f, 2.5f));
-
-				UInstancedStaticMeshComponent* HurdleTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-				HurdleTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, ShaftHurdle, true, false, true);
-			}
-		};
-
-		// ---- ACT-SPECIFIC LEVEL PACING ----
-		switch (ChunkScene)
-		{
-		case EMegaJamFilmScene::Soundstage:
-		{
-			// Act I (Soundstage, 0-35s): Clean single-lane Take A/B blocks and spaced 21:9 / 4:3 intro gates
-			if (Row == 2 && (ChunkIndex % 3 == 0))
-			{
-				if ((ChunkIndex / 3) % 2 == 0)
-				{
-					SpawnCeilingGate21_9();
-				}
-				else
-				{
-					SpawnVerticalShaft4_3();
-				}
-				break;
-			}
-
-			const float Height = FMath::Lerp(static_cast<float>(ObstacleHeightRange.X), static_cast<float>(ObstacleHeightRange.Y), HeightRoll);
-			const float LaneY = (LateralRoll < 0.33f) ? -520.0f : ((LateralRoll < 0.66f) ? 0.0f : 520.0f);
-			const FTransform BlockTransform(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, LaneY, Height * 0.5f),
-				FVector(ObstacleSize / 100.0f, 3.4f, Height / 100.0f));
-			UInstancedStaticMeshComponent* Target = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			Target->UpdateInstanceTransform(BaseObstacleIndex, BlockTransform, true, false, true);
-			break;
-		}
-
-		case EMegaJamFilmScene::OverpassNight:
-		{
-			// Act II (OverpassNight, 35-75s): Faster staggered dual-lane highway blocks + elevated overpass crossbeams
-			if (Row == 1 && PatternRoll < 0.28f)
-			{
-				SpawnCeilingGate21_9();
-				break;
-			}
-
-			const float Height = FMath::Lerp(200.0f, 320.0f, HeightRoll);
-			const float LeftLaneY = FMath::Lerp(-720.0f, -180.0f, LateralRoll);
-			const float RightLaneY = FMath::Lerp(180.0f, 720.0f, AirLateralRoll);
-
-			const FTransform LeftBlock(FRotator::ZeroRotator, FVector(RowCenterX, LeftLaneY, Height * 0.5f), FVector(ObstacleSize / 100.0f, 3.2f, Height / 100.0f));
-			const FTransform RightBlock(FRotator::ZeroRotator, FVector(RowCenterX, RightLaneY, Height * 0.5f), FVector(ObstacleSize / 100.0f, 3.2f, Height / 100.0f));
-
-			// Staggered dual-lane Take A & Take B blocks + elevated overpass crossbeam
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, (TakeRoll < 0.5f) ? LeftBlock : RightBlock, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, (TakeRoll < 0.5f) ? RightBlock : LeftBlock, true, false, true);
-
-			const FTransform OverpassBeam(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, 0.0f, FMath::Lerp(380.0f, 680.0f, AirZRoll)),
-				FVector(ObstacleSize / 100.0f, 9.0f, 1.8f));
-			UInstancedStaticMeshComponent* BeamTarget = (AirTakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			BeamTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, OverpassBeam, true, false, true);
-			break;
-		}
-
-		case EMegaJamFilmScene::CuttingRoom:
-		{
-			// Act III (CuttingRoom, 75-115s): Rapid-splice rhythmic patterns (Take A -> Take B -> Take A) + narrow 4:3 vertical shafts
-			if (Row == 3 && PatternRoll < 0.45f)
-			{
-				SpawnVerticalShaft4_3();
-				break;
-			}
-
-			// Rhythmic alternating Take walls across the center lane forcing rapid A -> B -> A cuts
-			const bool bRowTakeA = ((ChunkIndex * Rows + Row) % 2 == 0);
-			UInstancedStaticMeshComponent* RhythmicTarget = bRowTakeA ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			const FTransform RhythmicBarrier(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, FMath::Lerp(-280.0f, 280.0f, LateralRoll), 180.0f),
-				FVector(ObstacleSize / 100.0f, 7.8f, 3.6f));
-			RhythmicTarget->UpdateInstanceTransform(BaseObstacleIndex, RhythmicBarrier, true, false, true);
-
-			// High-altitude counter-take air block
-			UInstancedStaticMeshComponent* AirTarget = bRowTakeA ? TakeB_ObstaclesISM.Get() : TakeA_ObstaclesISM.Get();
-			const FTransform AirBlock(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, FMath::Lerp(-380.0f, 380.0f, AirLateralRoll), FMath::Lerp(420.0f, 760.0f, AirZRoll)),
-				FVector(ObstacleSize / 100.0f, 4.5f, 2.5f));
-			AirTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, AirBlock, true, false, true);
-			break;
-		}
-
-		case EMegaJamFilmScene::FinalCut:
-		default:
-		{
-			// Act IV (FinalCut, 115-150s): High-intensity climax combining back-to-back 21:9 ceiling gates, 4:3 shafts, and air obstacles
-			if (Row == 1 && PatternRoll < 0.45f)
-			{
-				SpawnCeilingGate21_9();
-				break;
-			}
-			if (Row == 3 && PatternRoll < 0.45f)
-			{
-				SpawnVerticalShaft4_3();
-				break;
-			}
-
-			const float Height = FMath::Lerp(220.0f, 340.0f, HeightRoll);
-			const float Lateral = FMath::Lerp(-ObstacleLateralRange, ObstacleLateralRange, LateralRoll);
-			const FTransform GroundObstacleTransform(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, Lateral, Height * 0.5f),
-				FVector(ObstacleSize / 100.0f, 4.0f, Height / 100.0f));
-			UInstancedStaticMeshComponent* GroundTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			GroundTarget->UpdateInstanceTransform(BaseObstacleIndex, GroundObstacleTransform, true, false, true);
-
-			const float AirY = FMath::Lerp(-420.0f, 420.0f, AirLateralRoll);
-			const float AirZ = FMath::Lerp(static_cast<float>(AirObstacleZRange.X), static_cast<float>(AirObstacleZRange.Y), AirZRoll);
-			const FTransform AirObstacleTransform(
-				FRotator::ZeroRotator,
-				FVector(RowCenterX, AirY, AirZ),
-				FVector(ObstacleSize / 100.0f, 4.2f, 2.6f));
-			UInstancedStaticMeshComponent* AirTarget = (AirTakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			AirTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, AirObstacleTransform, true, false, true);
-			break;
-		}
-		}
+		break;
+	}
 	}
 }
 
@@ -900,6 +887,8 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	int32 ChunkIndex,
 	float ChunkStartX,
 	EMegaJamFilmScene ChunkScene,
+	bool bIsHazardChunk,
+	int32 HazardArchetype,
 	FRandomStream& Stream)
 {
 	const int32 BasePickupIdx = Slot * PickupsPerChunk;
@@ -917,38 +906,101 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	}
 
 	const FVector RingScale(1.35f, 1.35f, 0.28f);
+	const EMegaJamTakeState LineTake = (Stream.FRand() < 0.5f) ? EMegaJamTakeState::StudioTake : EMegaJamTakeState::DirectorsTake;
+	UInstancedStaticMeshComponent* TargetISM = (LineTake == EMegaJamTakeState::StudioTake) ? PickupISM.Get() : PickupTakeB_ISM.Get();
 
-	// Pickup 0: Outer-Wing Frame (accessible in Act I at +/-580, full +/-700 slaloms in Acts II-IV)
+	auto PlaceFrame = [&](int32 SubIdx, const FVector& Pos)
 	{
-		const int32 PoolIdx = BasePickupIdx;
-		const float WingOffset = (ChunkScene == EMegaJamFilmScene::Soundstage) ? 580.0f : 700.0f;
-		const float WingY = ((ChunkIndex % 2 == 0) ? -1.0f : 1.0f) * WingOffset;
-		const EMegaJamTakeState Take = (Stream.FRand() < 0.5f) ? EMegaJamTakeState::StudioTake : EMegaJamTakeState::DirectorsTake;
-		const FVector PickupPos(ChunkStartX + ChunkLength * 0.35f, WingY, 130.0f);
-
-		PickupSlots[PoolIdx].Location = PickupPos;
+		const int32 PoolIdx = BasePickupIdx + SubIdx;
+		PickupSlots[PoolIdx].Location = Pos;
 		PickupSlots[PoolIdx].Scale = RingScale;
-		PickupSlots[PoolIdx].RequiredTake = Take;
+		PickupSlots[PoolIdx].RequiredTake = LineTake;
 		PickupSlots[PoolIdx].bActive = true;
+		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), Pos, RingScale), true, false, true);
+	};
 
-		UInstancedStaticMeshComponent* TargetISM = (Take == EMegaJamTakeState::StudioTake) ? PickupISM.Get() : PickupTakeB_ISM.Get();
-		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), PickupPos, RingScale), true, false, true);
+	// Check if the NEXT chunk is a 21:9 Overhead Ceiling Gate (Archetype 2) so this runway chunk sets up a Drop-Cut Slam!
+	const bool bNextIsCeilingGate = IsHazardChunkForScene(ChunkIndex + 1, ChunkScene) && (GetHazardArchetypeForChunk(ChunkIndex + 1) == 2);
+
+	if ((bIsHazardChunk && HazardArchetype == 3) || (!bIsHazardChunk && bNextIsCeilingGate))
+	{
+		// 4:3 Vertical Shaft OR Runway preceding a 21:9 Ceiling Gate:
+		// Spawn a clean arc of 3 high Film Frames (Z = 520 - 640) along Y = 0 to reward climbing in 4:3 and arming a Drop-Cut Slam!
+		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.28f, 0.0f, 520.0f));
+		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.50f, 0.0f, 640.0f));
+		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.72f, 0.0f, 560.0f));
+	}
+	else if (bIsHazardChunk && HazardArchetype == 2)
+	{
+		// On a 21:9 Overhead Ceiling Gate chunk, place high approach frames before the gate (X = 0.20) and low dolly frames under the gate (Z = 120)
+		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.18f, 0.0f, 560.0f));
+		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.50f, 0.0f, 120.0f));
+		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.78f, 0.0f, 120.0f));
+	}
+	else if (!bIsHazardChunk)
+	{
+		// Clean Breathing Runway Chunk: alternating high 4:3 arc or wide 21:9 outer-wing line
+		if (ChunkIndex % 2 == 0)
+		{
+			const float WingY = ((ChunkIndex / 2) % 2 == 0) ? -680.0f : 680.0f;
+			PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.25f, WingY, 130.0f));
+			PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.50f, WingY, 130.0f));
+			PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.75f, WingY, 130.0f));
+		}
+		else
+		{
+			PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.28f, 0.0f, 540.0f));
+			PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.52f, 0.0f, 620.0f));
+			PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.76f, 0.0f, 540.0f));
+		}
+	}
+}
+
+void AMegaJamTrackGenerator::PopulateBoostStripsForChunk(
+	int32 Slot,
+	int32 ChunkIndex,
+	float ChunkStartX,
+	bool bIsHazardChunk,
+	int32 HazardArchetype,
+	FRandomStream& Stream)
+{
+	const int32 BaseStripIdx = Slot * BoostStripsPerChunk;
+	for (int32 SubIdx = 0; SubIdx < BoostStripsPerChunk; ++SubIdx)
+	{
+		const int32 PoolIdx = BaseStripIdx + SubIdx;
+		BoostStripSlots[PoolIdx].bActive = false;
+		BoostStripISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
 	}
 
-	// Pickup 1: High-Altitude Frame (Requires Box_4_3 because Wide_21_9 clamps Z to 200)
+	if (ChunkIndex < SafeUntilChunkIndex || (BoundGameMode && !BoundGameMode->IsPlaying()))
 	{
-		const int32 PoolIdx = BasePickupIdx + 1;
-		const float HighY = Stream.FRandRange(-350.0f, 350.0f);
-		const float HighZ = (ChunkScene == EMegaJamFilmScene::FinalCut) ? 660.0f : 620.0f;
-		const EMegaJamTakeState Take = (Stream.FRand() < 0.5f) ? EMegaJamTakeState::StudioTake : EMegaJamTakeState::DirectorsTake;
-		const FVector PickupPos(ChunkStartX + ChunkLength * 0.80f, HighY, HighZ);
+		return;
+	}
 
-		PickupSlots[PoolIdx].Location = PickupPos;
-		PickupSlots[PoolIdx].Scale = RingScale;
-		PickupSlots[PoolIdx].RequiredTake = Take;
-		PickupSlots[PoolIdx].bActive = true;
+	// Spawn glowing cyan outer-wing Dolly Boost Strips (Y = +/-700, Z = 18) on 21:9 Center-Median Blockades and Breathing Runway Chunks
+	if (bIsHazardChunk && HazardArchetype != 1)
+	{
+		return;
+	}
 
-		UInstancedStaticMeshComponent* TargetISM = (Take == EMegaJamTakeState::StudioTake) ? PickupISM.Get() : PickupTakeB_ISM.Get();
-		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), PickupPos, RingScale), true, false, true);
+	const FVector StripScale(5.2f, 1.55f, 0.16f);
+	const float StripX = bIsHazardChunk ? (ChunkStartX + ChunkLength * 0.50f) : (ChunkStartX + ChunkLength * 0.45f);
+
+	// Left Outer Wing Dolly Boost Strip (Y = -700, Z = 18 -> requires Wide_21_9)
+	{
+		const int32 PoolIdx = BaseStripIdx;
+		const FVector StripPos(StripX, -700.0f, 18.0f);
+		BoostStripSlots[PoolIdx].Location = StripPos;
+		BoostStripSlots[PoolIdx].bActive = true;
+		BoostStripISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
+	}
+
+	// Right Outer Wing Dolly Boost Strip (Y = +700, Z = 18 -> requires Wide_21_9)
+	{
+		const int32 PoolIdx = BaseStripIdx + 1;
+		const FVector StripPos(StripX, 700.0f, 18.0f);
+		BoostStripSlots[PoolIdx].Location = StripPos;
+		BoostStripSlots[PoolIdx].bActive = true;
+		BoostStripISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
 	}
 }

@@ -20,6 +20,8 @@ void UMegaJamFlowSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	DropCutBannerTimer = FMath::Max(0.0f, DropCutBannerTimer - DeltaTime);
+
 	PushToMaterialParameterCollection();
 	OnFlowStateUpdated.Broadcast(FlowRatio, CurrentMultiplier, AudioEnvelopeValue);
 }
@@ -77,6 +79,21 @@ void UMegaJamFlowSubsystem::SetHighestSpliceChain(int32 NewHighestChain)
 void UMegaJamFlowSubsystem::SetCurrentCheckpointTime(float NewCheckpointTime)
 {
 	CurrentCheckpointTime = FMath::Max(0.0f, NewCheckpointTime);
+}
+
+void UMegaJamFlowSubsystem::SetAirExposureRatio(float NewExposureRatio)
+{
+	AirExposureRatio = FMath::Clamp(NewExposureRatio, 0.0f, 1.0f);
+}
+
+void UMegaJamFlowSubsystem::SetIsOverexposed(bool bNewOverexposed)
+{
+	bIsOverexposed = bNewOverexposed;
+}
+
+void UMegaJamFlowSubsystem::SetDropCutBannerTimer(float NewTimer)
+{
+	DropCutBannerTimer = FMath::Max(0.0f, NewTimer);
 }
 
 void UMegaJamFlowSubsystem::SetFlowMPC(UMaterialParameterCollection* InFlowMPC)
