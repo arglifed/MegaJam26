@@ -366,9 +366,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Aspect")
 	void NotifyDollyBoostStripCollected();
 
-	/** Adds procedural camera trauma (0..1) that drives high-frequency sinusoidal Pitch/Yaw/Roll/Z shake. */
+	/** Adds procedural camera trauma (0..1) up to an optional ceiling cap (MaxCap) to drive high-frequency Pitch/Yaw/Roll/Z shake. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Camera")
-	void AddCameraTrauma(float Amount);
+	void AddCameraTrauma(float Amount, float MaxCap = 1.0f);
 
 	/** Triggers a brief unscaled micro-hitstop (time dilation dip) that automatically restores to 1.0f. */
 	void TriggerMicroHitstop(float RealDurationSeconds = 0.035f, float Dilation = 0.15f);

@@ -776,7 +776,7 @@ bool AMegaJamFlowPawn::TryTriggerOnBeatCut()
 	FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
 	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 	EmissiveBurstTimer = 0.25f;
-	AddCameraTrauma(0.35f);
+	AddCameraTrauma(0.11f, 0.22f);
 
 	FlowSubsystem->SetOnBeatFlashTimer(1.1f);
 	FlowSubsystem->SetFilmMeter(FilmMeter);
@@ -857,7 +857,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 	MatchCutFlashTimer = 0.9f;
 	EmissiveBurstTimer = 0.25f;
-	AddCameraTrauma(0.25f);
+	AddCameraTrauma(0.055f, 0.16f);
 
 	const float MaxCap = IsInBulletTimeOverdrive() ? OverdriveSpeed : MaxFlightSpeed;
 	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + CutSpeedImpulse * 0.75f, MaxCap);
@@ -903,7 +903,7 @@ void AMegaJamFlowPawn::NotifyDollyBoostStripCollected()
 	DollyBoostFlashTimer = 1.0f;
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
-	AddCameraTrauma(0.25f);
+	AddCameraTrauma(0.14f, 0.30f);
 
 	Velocity.X = FMath::Min(static_cast<float>(Velocity.X) + 550.0f, OverdriveSpeed + 250.0f);
 	FlowBonusOffset = FMath::Clamp(FlowBonusOffset + 0.15f, 0.0f, 0.35f);
@@ -1039,9 +1039,13 @@ void AMegaJamFlowPawn::OnMusicFinished()
 	}
 }
 
-void AMegaJamFlowPawn::AddCameraTrauma(float Amount)
+void AMegaJamFlowPawn::AddCameraTrauma(float Amount, float MaxCap)
 {
-	CameraTrauma = FMath::Clamp(CameraTrauma + FMath::Max(0.0f, Amount), 0.0f, 1.0f);
+	const float ClampedCap = FMath::Clamp(MaxCap, 0.0f, 1.0f);
+	if (CameraTrauma < ClampedCap)
+	{
+		CameraTrauma = FMath::Min(ClampedCap, CameraTrauma + FMath::Max(0.0f, Amount));
+	}
 }
 
 void AMegaJamFlowPawn::TriggerMicroHitstop(float RealDurationSeconds, float Dilation)
@@ -1301,7 +1305,7 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	GrazeTimes.Add(Key, Now);
 	LastGrazeOrPickupTime = Now;
 	FilmMeter = FMath::Clamp(FilmMeter + 10.0f, 0.0f, 100.0f);
-	AddCameraTrauma(0.25f);
+	AddCameraTrauma(0.14f, 0.30f);
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
