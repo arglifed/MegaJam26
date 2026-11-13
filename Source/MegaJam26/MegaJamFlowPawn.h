@@ -57,6 +57,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
 
+	/** Optional thematic skeletal mesh component swapped dynamically per scene genre via SceneVehicleMeshes. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")
+	TObjectPtr<USkeletalMeshComponent> VehicleSkeletalMesh;
+
+	/** Per-scene vehicle skeletal meshes (Runner -> Horse -> Vintage Car, etc.) swapped on genre transition. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Art")
+	TMap<EMegaJamSceneGenre, TObjectPtr<USkeletalMesh>> SceneVehicleMeshes;
+
 	/** Chase camera boom. Does not use controller rotation. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<USpringArmComponent> SpringArm;
@@ -114,9 +122,9 @@ public:
 	TObjectPtr<USoundBase> DirectorsCutExitSound;
 
 	// ---- Physics tunables ----
-	/** Forward acceleration (cm/s^2). Tuned for crisp arcade gate readability. */
+	/** Forward acceleration (cm/s^2). Tuned for aggressive high-speed arcade readability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float Acceleration = 3000.0f;
+	float Acceleration = 3800.0f;
 
 	/** Exponential forward velocity damping (1/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -134,9 +142,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float VerticalStrafeMultiplier = 1.30f;
 
-	/** Maximum speed (cm/s). Maps to FlowRatio = 1. Tuned for comfortable Act I-IV escalation. */
+	/** Maximum speed (cm/s). Maps to FlowRatio = 1. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float TerminalVelocity = 4500.0f;
+	float TerminalVelocity = 5200.0f;
 
 	/** Radius of the near-miss detector (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -175,9 +183,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
 	float MatchCutBonusBase = 150.0f;
 
-	/** Seconds spent continuously in the same Aspect Mode before the shot becomes stale. */
+	/** Seconds spent continuously in the same Aspect Mode before the shot becomes stale (5.5s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
-	float StaleShotThreshold = 6.5f;
+	float StaleShotThreshold = 5.5f;
 
 	/** Seconds between -1 SpliceChain decay ticks while bIsShotStale is true. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
@@ -205,17 +213,17 @@ public:
 	float WideStrafeMultiplier = 1.65f;
 
 	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive Tunables ----
-	/** Target forward cruise velocity (cm/s) in 4:3 Flight & Charge Mode. */
+	/** Base forward cruise velocity (cm/s) in 4:3 Flight & Charge Mode (+25% speed bump). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
-	float CruiseSpeed = 2900.0f;
+	float CruiseSpeed = 3800.0f;
 
 	/** Maximum forward speed (cm/s) while in 4:3 Flight & Charge Mode. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
-	float MaxFlightSpeed = 3600.0f;
+	float MaxFlightSpeed = 4500.0f;
 
-	/** Forward rail velocity (cm/s) during 21:9 Bullet-Time Overdrive (+35% surge). */
+	/** Forward rail velocity (cm/s) during 21:9 Bullet-Time Overdrive. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
-	float OverdriveSpeed = 4500.0f;
+	float OverdriveSpeed = 5200.0f;
 
 	/** Minimum Film Meter required to activate 21:9 Director's Cut Overdrive. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
@@ -257,6 +265,14 @@ public:
 	/** FInterpTo speed used to squeeze the pawn into new bounds after an aspect switch. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float AspectClampInterpSpeed = 30.0f;
+
+	/** Active discrete magnetic lane index in 21:9 mode (0 = Far Left -700, 1 = Mid Left -350, 2 = Center 0, 3 = Mid Right +350, 4 = Far Right +700). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	int32 CurrentLane = 2;
+
+	/** Fixed lateral distance (cm) between adjacent 21:9 magnetic lanes (lanes at Y = -700, -350, 0, 350, 700). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float LaneWidthY = 350.0f;
 
 	/** Camera field of view in Wide_21_9 mode (degrees). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
@@ -509,7 +525,11 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
 	float AspectHoldTimer = 0.0f;
 
-	/** True when AspectHoldTimer exceeds StaleShotThreshold (6.5s). */
+	/** Anti-camping timer tracking continuous duration in the active Aspect Mode (resets on cut). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
+	float CurrentShotDuration = 0.0f;
+
+	/** True when CurrentShotDuration exceeds StaleShotThreshold (5.5s). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
 	bool bIsShotStale = false;
 
@@ -544,6 +564,9 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> PawnVisualMID;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
+
+	/** Latch to prevent sliding across multiple 21:9 lanes from a single held stick/key press. */
+	bool bHasProcessedLaneInput = false;
 
 	/** Current decaying additive FOV punch from TriggerHardCut / Drop-Cut Slam. */
 	float CurrentFOVPunch = 0.0f;

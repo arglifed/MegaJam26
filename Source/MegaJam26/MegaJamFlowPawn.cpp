@@ -7,9 +7,11 @@
 #include "MegaJamTrackGenerator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
@@ -50,6 +52,11 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
 	VisualMesh->SetupAttachment(CollisionSphere);
 	VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	VehicleSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("VehicleSkeletalMesh"));
+	VehicleSkeletalMesh->SetupAttachment(CollisionSphere);
+	VehicleSkeletalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	VehicleSkeletalMesh->SetVisibility(false);
 
 	// Default visual: engine basic sphere (100 cm diameter, matches the 50 cm collision radius).
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
@@ -379,11 +386,19 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	bTriggeredVictorySting = false;
 
-	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive ----
+	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive + Anti-Camping Stale-Shot Decay ----
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
-	bIsShotStale = false;
-	AspectHoldTimer += DeltaSeconds;
+	CurrentShotDuration += DeltaSeconds;
+	AspectHoldTimer = CurrentShotDuration;
+	bIsShotStale = (CurrentShotDuration > StaleShotThreshold);
+
+	if (bIsShotStale)
+	{
+		// "Bored Director" penalty: drain FilmMeter at 25/sec and reset SpliceChain to x1 until aspect cut
+		FilmMeter = FMath::Max(0.0f, FilmMeter - 25.0f * DeltaSeconds);
+		SpliceChain = 1;
+	}
 
 	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
@@ -399,6 +414,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		if (FilmMeter <= 0.0f)
 		{
 			FilmMeter = 0.0f;
+			CurrentShotDuration = 0.0f;
+			AspectHoldTimer = 0.0f;
+			bIsShotStale = false;
 			SetAspectMode(EMegaJamAspectMode::Box_4_3);
 			if (FlowSubsystem)
 			{
@@ -435,8 +453,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	{
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 		FlowSubsystem->SetSpliceChain(SpliceChain);
-		FlowSubsystem->SetAspectHoldTimer(AspectHoldTimer);
-		FlowSubsystem->SetIsShotStale(false);
+		FlowSubsystem->SetAspectHoldTimer(CurrentShotDuration);
+		FlowSubsystem->SetIsShotStale(bIsShotStale);
 		FlowSubsystem->SetAirExposureRatio(0.0f);
 		FlowSubsystem->SetIsOverexposed(false);
 		FlowSubsystem->SetFilmMeter(FilmMeter);
@@ -450,23 +468,27 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	const bool bWide = CurrentAspect == EMegaJamAspectMode::Wide_21_9;
 
 	// Strafe. IA_Steer.X is always lateral (+Y / -Y).
-	// Wide_21_9: stronger lateral force on horizontal cinema rail (Z = 140).
-	// Box_4_3:   full 2D free-flight across Y and Z.
+	// Wide_21_9: 5-lane magnetic rail system (Y = -700, -350, 0, 350, 700) on horizontal cinema rail (Z = 140).
+	// Box_4_3:   full 2D analog free-flight across Y and Z.
 	const float LateralAccel = StrafeForce * (bWide ? WideStrafeMultiplier : 1.0f);
 	const float VerticalAccel = StrafeForce * VerticalStrafeMultiplier;
 
 	const float CrossPlaneDamp = FMath::Exp(-LateralDamping * DeltaSeconds);
-	Velocity.Y *= CrossPlaneDamp;
-	Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
 
 	if (bWide)
 	{
+		const float CurrentY = static_cast<float>(GetActorLocation().Y);
+		const float TargetLaneY = static_cast<float>(CurrentLane - 2) * LaneWidthY;
+		const float NextY = FMath::FInterpTo(CurrentY, TargetLaneY, DeltaSeconds, 18.0f);
+		Velocity.Y = (DeltaSeconds > KINDA_SMALL_NUMBER) ? ((NextY - CurrentY) / DeltaSeconds) : 0.0f;
 		Velocity.Z = 0.0f;
 		// Bullet-Time Overdrive: surge and sustain OverdriveSpeed (4500 u/s)
 		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), OverdriveSpeed, DeltaSeconds, 9.0f);
 	}
 	else
 	{
+		Velocity.Y *= CrossPlaneDamp;
+		Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
 		Velocity.Z *= CrossPlaneDamp;
 		Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
 
@@ -668,7 +690,13 @@ void AMegaJamFlowPawn::ToggleAspect()
 			return;
 		}
 
+		// Lock onto the nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
+		const float EntryY = static_cast<float>(GetActorLocation().Y);
+		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
+		bHasProcessedLaneInput = false;
+
 		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+		CurrentShotDuration = 0.0f;
 		AspectHoldTimer = 0.0f;
 		bIsShotStale = false;
 		bIsDropCutSlamming = false;
@@ -715,7 +743,9 @@ void AMegaJamFlowPawn::ToggleAspect()
 	else
 	{
 		// Return to 4:3 Flight & Charge Mode
+		bHasProcessedLaneInput = false;
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
+		CurrentShotDuration = 0.0f;
 		AspectHoldTimer = 0.0f;
 		bIsShotStale = false;
 		bIsDropCutSlamming = false;
@@ -756,6 +786,8 @@ void AMegaJamFlowPawn::ResetForRun()
 	FlowRatio = 0.0f;
 	FilmMeter = 50.0f;
 	SteerInput = FVector2D::ZeroVector;
+	CurrentLane = 2;
+	bHasProcessedLaneInput = false;
 	CurrentFOVPunch = 0.0f;
 	SlamPitchPunch = 0.0f;
 	CameraTrauma = 0.0f;
@@ -767,6 +799,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	}
 	CurrentCameraRoll = 0.0f;
 	SpliceChain = 1;
+	CurrentShotDuration = 0.0f;
 	AspectHoldTimer = 0.0f;
 	bIsShotStale = false;
 	AirExposureTimer = 0.0f;
@@ -1018,6 +1051,28 @@ void AMegaJamFlowPawn::PlayRunStartSound() const
 void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 {
 	ActiveMusicGenre = TargetGenre;
+
+	// Swap thematic vehicle skeletal mesh when mapped in SceneVehicleMeshes (Runner -> Horse -> Vintage Car)
+	if (const TObjectPtr<USkeletalMesh>* FoundVehicleMesh = SceneVehicleMeshes.Find(TargetGenre))
+	{
+		if (USkeletalMesh* NewMesh = FoundVehicleMesh->Get())
+		{
+			if (VehicleSkeletalMesh)
+			{
+				VehicleSkeletalMesh->SetSkeletalMesh(NewMesh);
+				VehicleSkeletalMesh->SetVisibility(true);
+				if (VisualMesh)
+				{
+					VisualMesh->SetVisibility(false);
+				}
+			}
+			else if (USkeletalMeshComponent* FallbackSkelComp = FindComponentByClass<USkeletalMeshComponent>())
+			{
+				FallbackSkelComp->SetSkeletalMesh(NewMesh);
+			}
+		}
+	}
+
 	if (!MusicAudioComponent)
 	{
 		return;
@@ -1275,6 +1330,35 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 void AMegaJamFlowPawn::Input_Steer(const FInputActionValue& Value)
 {
 	SteerInput = Value.Get<FVector2D>();
+
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	{
+		const float AxisValue = static_cast<float>(SteerInput.X);
+		if (AxisValue > 0.5f && !bHasProcessedLaneInput)
+		{
+			const int32 NewLane = FMath::Min(4, CurrentLane + 1);
+			bHasProcessedLaneInput = true;
+			if (NewLane != CurrentLane)
+			{
+				CurrentLane = NewLane;
+				TriggerAudioEvent(TEXT("OnGraze"));
+			}
+		}
+		else if (AxisValue < -0.5f && !bHasProcessedLaneInput)
+		{
+			const int32 NewLane = FMath::Max(0, CurrentLane - 1);
+			bHasProcessedLaneInput = true;
+			if (NewLane != CurrentLane)
+			{
+				CurrentLane = NewLane;
+				TriggerAudioEvent(TEXT("OnGraze"));
+			}
+		}
+		else if (FMath::Abs(AxisValue) < 0.2f)
+		{
+			bHasProcessedLaneInput = false;
+		}
+	}
 }
 
 void AMegaJamFlowPawn::Input_Boost(const FInputActionValue& Value)
@@ -1323,6 +1407,7 @@ void AMegaJamFlowPawn::Input_Brake(const FInputActionValue& Value)
 void AMegaJamFlowPawn::Input_SteerReleased()
 {
 	SteerInput = FVector2D::ZeroVector;
+	bHasProcessedLaneInput = false;
 }
 
 void AMegaJamFlowPawn::ToggleGodMode()

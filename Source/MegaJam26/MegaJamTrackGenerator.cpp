@@ -53,6 +53,7 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	PickupISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PickupISM"));
 	PickupTakeB_ISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PickupTakeB_ISM"));
 	BoostStripISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BoostStripISM"));
+	LaneRailsISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LaneRailsISM"));
 	WrapArchISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WrapArchISM"));
 
 	ConfigureISM(FloorISM, TrackRoot, true, false);
@@ -64,6 +65,7 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	ConfigureISM(PickupISM, TrackRoot, false, false);
 	ConfigureISM(PickupTakeB_ISM, TrackRoot, false, false);
 	ConfigureISM(BoostStripISM, TrackRoot, false, false);
+	ConfigureISM(LaneRailsISM, TrackRoot, false, false);
 	ConfigureISM(WrapArchISM, TrackRoot, false, false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -126,6 +128,12 @@ void AMegaJamTrackGenerator::BeginPlay()
 		BoostStripMID->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
 		BoostStripMID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.15f, 0.95f, 1.0f, 1.0f));
 		BoostStripISM->SetMaterial(0, BoostStripMID);
+
+		LaneRailMID = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+		LaneRailMID->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
+		LaneRailMID->SetScalarParameterValue(TEXT("Opacity"), 0.35f);
+		LaneRailMID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.12f, 0.72f, 0.95f, 1.0f));
+		LaneRailsISM->SetMaterial(0, LaneRailMID);
 	}
 	else
 	{
@@ -134,6 +142,7 @@ void AMegaJamTrackGenerator::BeginPlay()
 		PickupMatA = PickupISM->CreateAndSetMaterialInstanceDynamic(0);
 		PickupMatB = PickupTakeB_ISM->CreateAndSetMaterialInstanceDynamic(0);
 		BoostStripMID = BoostStripISM->CreateAndSetMaterialInstanceDynamic(0);
+		LaneRailMID = LaneRailsISM->CreateAndSetMaterialInstanceDynamic(0);
 	}
 
 	if (UWorld* World = GetWorld())
@@ -262,6 +271,7 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 		PickupISM->MarkRenderStateDirty();
 		PickupTakeB_ISM->MarkRenderStateDirty();
 		BoostStripISM->MarkRenderStateDirty();
+		LaneRailsISM->MarkRenderStateDirty();
 	}
 }
 
@@ -391,6 +401,18 @@ void AMegaJamTrackGenerator::UpdateSceneMaterials(float DeltaSeconds)
 	ApplyPulseToMID(BoostStripMID, ActiveTakeVal);
 	ApplyPulseToMID(PickupMatA, 0.0f);
 	ApplyPulseToMID(PickupMatB, 1.0f);
+
+	if (LaneRailMID)
+	{
+		const bool bWide = BoundPawn && BoundPawn->GetAspectMode() == EMegaJamAspectMode::Wide_21_9;
+		const float RailPulse = (bWide ? 0.55f : 0.22f) * (0.80f + 0.20f * FMath::Sin(TimeSec * 8.0f));
+		const FLinearColor RailColor = FLinearColor(0.15f, 0.85f, 1.0f, 1.0f) * RailPulse;
+		LaneRailMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
+		LaneRailMID->SetScalarParameterValue(TEXT("Opacity"), bWide ? 0.60f : 0.25f);
+		LaneRailMID->SetVectorParameterValue(TEXT("TakeColor"), RailColor);
+		LaneRailMID->SetVectorParameterValue(TEXT("Color"), RailColor);
+		LaneRailMID->SetVectorParameterValue(TEXT("EmissiveColor"), RailColor);
+	}
 }
 
 void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSeconds)
@@ -574,6 +596,7 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	PickupISM->MarkRenderStateDirty();
 	PickupTakeB_ISM->MarkRenderStateDirty();
 	BoostStripISM->MarkRenderStateDirty();
+	LaneRailsISM->MarkRenderStateDirty();
 
 	ApplyTakeCollision(BoundPawn->GetCurrentTake());
 
@@ -686,6 +709,7 @@ void AMegaJamTrackGenerator::CreatePools()
 	TakeB_ObstaclesISM->SetStaticMesh(ObstacleTakeBMesh ? ObstacleTakeBMesh.Get() : BlockMesh.Get());
 	SetPieceISM->SetStaticMesh(SoundstageTrussMesh ? SoundstageTrussMesh.Get() : BlockMesh.Get());
 	BoostStripISM->SetStaticMesh(BlockMesh.Get());
+	LaneRailsISM->SetStaticMesh(BlockMesh.Get());
 	WrapArchISM->SetStaticMesh(ApertureRingMesh ? ApertureRingMesh.Get() : BlockMesh.Get());
 
 	UStaticMesh* ResolvedPickupMesh = FilmFramePickupMesh
@@ -695,7 +719,7 @@ void AMegaJamTrackGenerator::CreatePools()
 	PickupTakeB_ISM->SetStaticMesh(ResolvedPickupMesh);
 
 	UInstancedStaticMeshComponent* All[] = {
-		FloorISM, WallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, BoostStripISM, WrapArchISM
+		FloorISM, WallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, BoostStripISM, LaneRailsISM, WrapArchISM
 	};
 	for (UInstancedStaticMeshComponent* ISM : All)
 	{
@@ -737,6 +761,11 @@ void AMegaJamTrackGenerator::CreatePools()
 		BoostStripISM->AddInstance(MakeHiddenInstanceTransform(), true);
 		BoostStripSlots[Index] = FMegaJamDollyBoostStrip();
 		BoostStripSlots[Index].PoolIndex = Index;
+	}
+
+	for (int32 Index = 0; Index < Pool * LaneRailsPerChunk; ++Index)
+	{
+		LaneRailsISM->AddInstance(MakeHiddenInstanceTransform(), true);
 	}
 
 	for (int32 Index = 0; Index < WrapArchParts; ++Index)
@@ -810,6 +839,17 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -CorridorHalfWidth, 500.0f), WallScale), true, false, true);
 	WallISM->UpdateInstanceTransform(Slot * 2 + 1,
 		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 500.0f), WallScale), true, false, true);
+
+	// 5 Visual Magnetic Floor Rails at exact lane Y-coordinates (-700, -350, 0, 350, 700)
+	const FVector RailScale(ChunkLength / 100.0f, 0.14f, 0.04f);
+	for (int32 LaneIdx = 0; LaneIdx < LaneRailsPerChunk; ++LaneIdx)
+	{
+		const float LaneY = static_cast<float>(LaneIdx - 2) * 350.0f;
+		LaneRailsISM->UpdateInstanceTransform(
+			Slot * LaneRailsPerChunk + LaneIdx,
+			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, LaneY, 2.0f), RailScale),
+			true, false, true);
+	}
 
 	const bool bTitleOrCompleted = BoundGameMode && !BoundGameMode->IsPlaying();
 	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
@@ -885,16 +925,16 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	case 0:
 	{
 		// Archetype 0 — Color-Splice Twin Gate:
-		// Side-by-side Take A and Take B gates spanning floor + mid-air (player matches Take color or Hard Cuts).
+		// Aligned to 5-lane centers: Left Gate on Lane 1 (Y = -350), Right Gate on Lane 3 (Y = +350), Center Gate on Lane 2 (Y = 0).
 		const bool bLeftIsTakeA = (TakeRoll < 0.5f);
 		const FTransform LeftGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, -400.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 7.2f, 5.2f));
+			FVector(HazardX, -350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.0f, 5.2f));
 		const FTransform RightGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 400.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 7.2f, 5.2f));
+			FVector(HazardX, 350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.0f, 5.2f));
 
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? LeftGateBlock : RightGateBlock, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? RightGateBlock : LeftGateBlock, true, false, true);
@@ -904,13 +944,26 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	case 1:
 	{
 		// Archetype 1 — Action Split Pillars:
-		// Central pillar (Y: [-340, 340], Z: [0, 860]) with wide open outer lanes (Y = +/-680) lined with cyan Dolly Boost Strips.
+		// Central pillar on Lane 2 (Y = 0.0f) and flanking Take-specific pillars on Lanes 1 & 3 (Y = -350.0f, +350.0f),
+		// with outer Lanes 0 & 4 (Y = -700.0f, +700.0f) lined with cyan Dolly Boost Strips.
 		const FTransform CentralPillar(
 			FRotator::ZeroRotator,
 			FVector(HazardX, 0.0f, 430.0f),
-			FVector(ObstacleSize / 100.0f, 6.8f, 8.6f));
+			FVector(ObstacleSize / 100.0f, 3.2f, 8.6f));
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
+
+		const bool bMidLeftIsTakeA = (TakeRoll < 0.5f);
+		const FTransform MidLeftPillar(
+			FRotator::ZeroRotator,
+			FVector(HazardX, -350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 3.2f, 5.2f));
+		const FTransform MidRightPillar(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 350.0f, 260.0f),
+			FVector(ObstacleSize / 100.0f, 3.2f, 5.2f));
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidLeftPillar : MidRightPillar, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidRightPillar : MidLeftPillar, true, false, true);
 		break;
 	}
 
@@ -1062,26 +1115,32 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 
 	if (!bIsHazardChunk)
 	{
-		// Flight Charge Runway: sweeping 5-frame 3D arc across Y and Z designed for 4:3 free-flight scooping!
+		// Flight Charge Runway: sweeping 5-frame 3D arc aligned with the 5 lane centers (-700, -350, 0, 350, 700)
 		const float SideSign = ((ChunkIndex / 2) % 2 == 0) ? 1.0f : -1.0f;
-		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.16f, -480.0f * SideSign, 240.0f));
-		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.33f, -240.0f * SideSign, 480.0f));
+		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.16f, -700.0f * SideSign, 240.0f));
+		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.33f, -350.0f * SideSign, 480.0f));
 		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.50f,    0.0f,            640.0f));
-		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.67f,  240.0f * SideSign, 480.0f));
-		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.84f,  480.0f * SideSign, 240.0f));
+		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.67f,  350.0f * SideSign, 480.0f));
+		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.84f,  700.0f * SideSign, 240.0f));
 	}
 	else
 	{
-		// Action Gauntlet: dense horizontal Z = 140.0f frame cluster designed to be carved through in 21:9 Bullet-Time Overdrive!
-		const float LaneY = (HazardArchetype == 1)
-			? ((ChunkIndex % 4 == 0) ? -680.0f : 680.0f)
-			: ((HazardArchetype == 0) ? ((ChunkIndex % 4 == 0) ? -380.0f : 380.0f) : 0.0f);
+		// Aerial Lens Hoops (10-frame ring at Z = 620.0f):
+		// High above the Z = 140 widescreen rail so players must pop back into 4:3 analog flight to fuel 21:9 Overdrive!
+		const float HoopCenterX = ChunkStartX + ChunkLength * 0.50f;
+		const float HoopCenterY = (HazardArchetype == 1)
+			? ((ChunkIndex % 4 == 0) ? -700.0f : 700.0f)
+			: ((HazardArchetype == 0) ? ((ChunkIndex % 4 == 0) ? -350.0f : 350.0f) : 0.0f);
+		constexpr float HoopCenterZ = 620.0f;
+		constexpr float HoopRadius = 185.0f;
 
-		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.18f, LaneY, 140.0f));
-		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.34f, LaneY, 140.0f));
-		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.50f, LaneY, 140.0f));
-		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.66f, LaneY, 140.0f));
-		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.82f, LaneY, 140.0f));
+		for (int32 RingIdx = 0; RingIdx < PickupsPerChunk; ++RingIdx)
+		{
+			const float AngleRad = (static_cast<float>(RingIdx) / static_cast<float>(PickupsPerChunk)) * 2.0f * PI;
+			const float FrameY = HoopCenterY + FMath::Cos(AngleRad) * HoopRadius;
+			const float FrameZ = HoopCenterZ + FMath::Sin(AngleRad) * HoopRadius;
+			PlaceFrame(RingIdx, FVector(HoopCenterX, FrameY, FrameZ));
+		}
 	}
 }
 

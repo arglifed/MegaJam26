@@ -137,6 +137,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> BoostStripISM;
 
+	/** Non-colliding emissive floor rails for the 5 discrete 21:9 magnetic lanes (Y = -700, -350, 0, 350, 700). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> LaneRailsISM;
+
 	// ---- Modular Art Mesh Slots (fall back to Cube / Cylinder when null) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
 	TObjectPtr<UStaticMesh> ObstacleTakeAMesh;
@@ -291,7 +295,8 @@ protected:
 private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
-	static constexpr int32 PickupsPerChunk = 5;
+	static constexpr int32 PickupsPerChunk = 10;
+	static constexpr int32 LaneRailsPerChunk = 5;
 	static constexpr int32 BurstPickupPoolSize = 30;
 	static constexpr int32 BoostStripsPerChunk = 2;
 	static constexpr int32 WrapArchParts = 5;
@@ -336,6 +341,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> BoostStripMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> LaneRailMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> PickupMatA;
