@@ -292,11 +292,11 @@ void AMegaJamTrackGenerator::UpdateFinalCutWrapArch()
 		? BoundGameMode->GetDistanceMeters()
 		: FMath::Max(0.0f, static_cast<float>(BoundPawn->GetActorLocation().X) / 100.0f);
 
-	if (CurrentDistMeters >= 1520.0f && !bWrapArchSpawned)
+	if (CurrentDistMeters >= 3320.0f && !bWrapArchSpawned)
 	{
 		bWrapArchSpawned = true;
-		// Golden Wrap Arch at 1,740m (174,000 cm) framing the 1,800m finish line
-		const float ArchX = 174000.0f;
+		// Golden Wrap Arch at 3,540m (354,000 cm) framing the 3,600m finish line
+		const float ArchX = 354000.0f;
 
 		WrapArchISM->UpdateInstanceTransform(0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
 		WrapArchISM->UpdateInstanceTransform(1, FTransform(FRotator::ZeroRotator, FVector(ArchX, 880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
@@ -404,7 +404,7 @@ void AMegaJamTrackGenerator::UpdateSceneMaterials(float DeltaSeconds)
 
 	if (LaneRailMID)
 	{
-		const bool bWide = BoundPawn && BoundPawn->GetAspectMode() == EMegaJamAspectMode::Wide_21_9;
+		const bool bWide = BoundPawn && BoundPawn->IsInBulletTimeOverdrive();
 		const float RailPulse = (bWide ? 0.55f : 0.22f) * (0.80f + 0.20f * FMath::Sin(TimeSec * 8.0f));
 		const FLinearColor RailColor = FLinearColor(0.15f, 0.85f, 1.0f, 1.0f) * RailPulse;
 		LaneRailMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
@@ -449,7 +449,7 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 	// 2. Rotate active Film Frame pickups and check pawn proximity for collection
 	// Double pickup magnet radius (380 cm) when 21:9 Bullet-Time Overdrive is active!
 	const FVector PawnLocation = BoundPawn->GetActorLocation();
-	const float EffectivePickupRadius = (BoundPawn->GetAspectMode() == EMegaJamAspectMode::Wide_21_9)
+	const float EffectivePickupRadius = BoundPawn->IsInBulletTimeOverdrive()
 		? 380.0f
 		: PickupCollectionRadius;
 	const float RadiusSq = FMath::Square(EffectivePickupRadius);
@@ -855,25 +855,26 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	const bool bTitleOrCompleted = BoundGameMode && !BoundGameMode->IsPlaying();
 	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
 
-	// Subtle visual progression along the 1,800m Action vertical slice
+	// Visual progression across Scene 01 (0m-1,800m Action) and Scene 02 (1,800m-3,600m Western Standoff)
 	EMegaJamFilmScene ChunkScene = EMegaJamFilmScene::Soundstage;
-	if (ChunkDistMeters >= 1350.0f)
+	if (ChunkDistMeters >= 2700.0f)
 	{
 		ChunkScene = EMegaJamFilmScene::FinalCut;
 	}
-	else if (ChunkDistMeters >= 900.0f)
+	else if (ChunkDistMeters >= 1800.0f)
 	{
 		ChunkScene = EMegaJamFilmScene::CuttingRoom;
 	}
-	else if (ChunkDistMeters >= 450.0f)
+	else if (ChunkDistMeters >= 900.0f)
 	{
 		ChunkScene = EMegaJamFilmScene::OverpassNight;
 	}
 
 	FRandomStream Stream(Seed + ChunkIndex * 7919);
 
-	// Keep chunks before SafeUntilChunkIndex and beyond 1,680m (Golden Wrap Arch finish stretch) obstacle-free
-	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || ChunkDistMeters >= 1680.0f || bTitleOrCompleted);
+	// Keep chunks before SafeUntilChunkIndex, around the 1,800m Clapperboard transition, and beyond 3,480m (Golden Wrap Arch finish stretch) obstacle-free
+	const bool bInSceneTransitionZone = (ChunkDistMeters >= 1720.0f && ChunkDistMeters < 1920.0f);
+	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || bInSceneTransitionZone || ChunkDistMeters >= 3480.0f || bTitleOrCompleted);
 	const bool bIsHazardChunk = !bInSafeOrFinishZone && IsHazardChunkForScene(ChunkIndex, ChunkScene);
 	const int32 HazardArchetype = GetHazardArchetypeForChunk(ChunkIndex);
 
@@ -915,11 +916,44 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		return;
 	}
 
-	// Action Gauntlets: clean, telegraphed Take A / Take B laser & blockade formations
+	// Action Gauntlets & Scene 02 Western Standoff Barricades
 	const int32 CenterRow = FMath::Clamp(Rows / 2, 0, Rows - 1);
 	const int32 BaseObstacleIndex = (Slot * Rows + CenterRow) * ObstaclesPerRow;
 	const float HazardX = ChunkCenterX;
 	const float TakeRoll = Stream.FRand();
+
+	// Scene 02 (DistanceMeters >= 1800.0f): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space!
+	if (ChunkDistMeters >= 1800.0f)
+	{
+		const FTransform MainTimberBarricade(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 0.0f, 180.0f),
+			FVector(ObstacleSize / 100.0f, 18.2f, 3.6f));
+		const FTransform UpperRailCrossbeam(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 0.0f, 430.0f),
+			FVector(ObstacleSize / 100.0f, 18.2f, 2.2f));
+		const FTransform FlankingPostLeft(
+			FRotator::ZeroRotator,
+			FVector(HazardX, -700.0f, 360.0f),
+			FVector(ObstacleSize / 100.0f, 2.8f, 7.2f));
+		const FTransform FlankingPostRight(
+			FRotator::ZeroRotator,
+			FVector(HazardX, 700.0f, 360.0f),
+			FVector(ObstacleSize / 100.0f, 2.8f, 7.2f));
+
+		// Place the primary standoff barricade across both Take A and Take B so the center standoff lane must be cleaved with Quick-Draw Beat-Slash
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, MainTimberBarricade, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, MainTimberBarricade, true, false, true);
+
+		const bool bUpperIsTakeA = (TakeRoll < 0.5f);
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? UpperRailCrossbeam : FlankingPostLeft, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? FlankingPostLeft : UpperRailCrossbeam, true, false, true);
+
+		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
+		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
+		return;
+	}
 
 	switch (HazardArchetype)
 	{
@@ -1354,4 +1388,157 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 	}
 
 	return ShreddedCount;
+}
+
+int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float ForwardMaxX, float HalfWidthY)
+{
+	if (!bPoolsCreated || !TakeA_ObstaclesISM || !TakeB_ObstaclesISM)
+	{
+		return 0;
+	}
+
+	const EMegaJamTakeState CurrentPawnTake = BoundPawn ? BoundPawn->GetCurrentTake() : EMegaJamTakeState::StudioTake;
+	UInstancedStaticMeshComponent* TargetPickupISM = (CurrentPawnTake == EMegaJamTakeState::StudioTake)
+		? PickupISM.Get()
+		: PickupTakeB_ISM.Get();
+	UInstancedStaticMeshComponent* OtherPickupISM = (CurrentPawnTake == EMegaJamTakeState::StudioTake)
+		? PickupTakeB_ISM.Get()
+		: PickupISM.Get();
+
+	const int32 TotalObstacleInstances = TakeA_ObstaclesISM->GetInstanceCount();
+	int32 CleavedCount = 0;
+	bool bObstaclesDirty = false;
+	bool bPickupsDirty = false;
+
+	auto TryCleaveInstance = [&](UInstancedStaticMeshComponent* ISM, int32 InstanceIdx, FVector& OutHitCenter) -> bool
+	{
+		if (!ISM || InstanceIdx >= ISM->GetInstanceCount())
+		{
+			return false;
+		}
+
+		FTransform InstTransform;
+		if (!ISM->GetInstanceTransform(InstanceIdx, InstTransform, true))
+		{
+			return false;
+		}
+
+		const FVector Scale = InstTransform.GetScale3D();
+		if (Scale.SizeSquared() < 0.01f)
+		{
+			return false;
+		}
+
+		const FVector Loc = InstTransform.GetLocation();
+		if (Loc.Z < -1000.0f)
+		{
+			return false;
+		}
+
+		const FVector HalfExtent = Scale.GetAbs() * 50.0f;
+		if (Loc.X + HalfExtent.X < ForwardMinX || Loc.X - HalfExtent.X > ForwardMaxX)
+		{
+			return false;
+		}
+
+		if (Loc.Y - HalfExtent.Y > HalfWidthY || Loc.Y + HalfExtent.Y < -HalfWidthY)
+		{
+			return false;
+		}
+
+		ISM->UpdateInstanceTransform(InstanceIdx, MakeHiddenInstanceTransform(), true, false, true);
+		OutHitCenter = FVector(Loc.X, FMath::Clamp(static_cast<float>(Loc.Y), -HalfWidthY, HalfWidthY), FMath::Clamp(static_cast<float>(Loc.Z), 140.0f, 760.0f));
+		return true;
+	};
+
+	const int32 BaseBurstIdx = PoolSize() * PickupsPerChunk;
+	const FVector BurstRingScale(1.45f, 1.45f, 0.30f);
+
+	for (int32 InstanceIdx = 0; InstanceIdx < TotalObstacleInstances; ++InstanceIdx)
+	{
+		FVector HitCenterA = FVector::ZeroVector;
+		FVector HitCenterB = FVector::ZeroVector;
+		const bool bHitA = TryCleaveInstance(TakeA_ObstaclesISM, InstanceIdx, HitCenterA);
+		const bool bHitB = TryCleaveInstance(TakeB_ObstaclesISM, InstanceIdx, HitCenterB);
+
+		if (!bHitA && !bHitB)
+		{
+			continue;
+		}
+
+		bObstaclesDirty = true;
+		++CleavedCount;
+
+		const FVector ImpactLocation = bHitA ? HitCenterA : HitCenterB;
+
+		if (UWorld* World = GetWorld())
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			if (APointLight* Flash = World->SpawnActor<APointLight>(ImpactLocation, FRotator::ZeroRotator, SpawnParams))
+			{
+				if (UPointLightComponent* LightComp = Flash->PointLightComponent)
+				{
+					LightComp->SetMobility(EComponentMobility::Movable);
+					LightComp->SetIntensity(150000.0f);
+					LightComp->SetAttenuationRadius(2500.0f);
+				}
+				Flash->SetLifeSpan(0.15f);
+			}
+		}
+
+		const float PawnSpeed = BoundPawn ? static_cast<float>(BoundPawn->GetFlowVelocity().X) : 3800.0f;
+		const int32 FramesToSpawn = 4;
+		for (int32 FrameIdx = 0; FrameIdx < FramesToSpawn; ++FrameIdx)
+		{
+			if (BaseBurstIdx + BurstPickupPoolSize > PickupSlots.Num())
+			{
+				break;
+			}
+
+			const int32 PoolIdx = BaseBurstIdx + (NextBurstPickupCursor % BurstPickupPoolSize);
+			++NextBurstPickupCursor;
+
+			const FVector ScatterVel(
+				PawnSpeed + FMath::RandRange(2000.0f, 4500.0f),
+				FMath::RandRange(-3500.0f, 3500.0f),
+				FMath::RandRange(2000.0f, 4000.0f));
+			PickupSlots[PoolIdx].Location = ImpactLocation;
+			PickupSlots[PoolIdx].Velocity = ScatterVel;
+			PickupSlots[PoolIdx].Scale = BurstRingScale;
+			PickupSlots[PoolIdx].RequiredTake = CurrentPawnTake;
+			PickupSlots[PoolIdx].bActive = true;
+			PickupSlots[PoolIdx].bHasBallisticVelocity = true;
+			PickupSlots[PoolIdx].MagnetImmunityTimer = 0.25f;
+
+			if (OtherPickupISM)
+			{
+				OtherPickupISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+			}
+			if (TargetPickupISM)
+			{
+				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), ImpactLocation, BurstRingScale), true, false, true);
+			}
+			bPickupsDirty = true;
+		}
+	}
+
+	if (bObstaclesDirty)
+	{
+		TakeA_ObstaclesISM->MarkRenderStateDirty();
+		TakeB_ObstaclesISM->MarkRenderStateDirty();
+	}
+	if (bPickupsDirty)
+	{
+		if (PickupISM)
+		{
+			PickupISM->MarkRenderStateDirty();
+		}
+		if (PickupTakeB_ISM)
+		{
+			PickupTakeB_ISM->MarkRenderStateDirty();
+		}
+	}
+
+	return CleavedCount;
 }

@@ -8,6 +8,7 @@
 #include "MegaJamTypes.h"
 #include "MegaJamCinemaHUD.generated.h"
 
+class AMegaJamFlowPawn;
 class AMegaJamTrackGenerator;
 class UBorder;
 class UCanvasPanel;
@@ -40,6 +41,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|HUD")
 	float LetterboxBarHeight = 88.0f;
 
+	/** Target height (px) of top and bottom letterbox bars when in UltraPanavision_276_1 (2.76:1) mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|HUD")
+	float UltraPanavisionBarHeight = 132.0f;
+
 	/** Target width (px) of left and right pillarbox bars when in Box_4_3 mode. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|HUD")
 	float PillarboxBarWidth = 220.0f;
@@ -67,7 +72,11 @@ protected:
 	UFUNCTION()
 	void HandleFilmSceneChanged(EMegaJamFilmScene NewScene);
 
+	UFUNCTION()
+	void HandleClapperboardSnapped();
+
 	void BindToTrackGenerator();
+	void BindToPawn();
 	static FString GetSceneSluglineText(EMegaJamFilmScene Scene);
 	static FString GetActProgressLabel(EMegaJamFilmScene Scene);
 	static void ComputeCriticRating(int32 FinalScore, int32 MaxChain, int32 FramesSpliced, int32 TakesUsed, FString& OutStars, FString& OutQuote);
@@ -176,13 +185,24 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> PauseOption2Text;
 
+	// ---- Full-Screen Clapperboard Stunt Transition Blackout (0.4s) ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> ClapperboardBlackoutOverlay;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ClapperboardBlackoutText;
+
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamTrackGenerator> BoundTrackGenerator;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AMegaJamFlowPawn> BoundPawn;
 
 	float CurrentLetterboxHeight = 88.0f;
 	float CurrentPillarboxWidth = 0.0f;
 	float ActionFlashTimer = 0.0f;
 	float SceneSluglineTimer = 0.0f;
+	float ClapperboardBlackoutTimer = 0.0f;
 	int32 LastObservedTakeNumber = 0;
 	int32 LastObservedSceneIndex = -1;
 };

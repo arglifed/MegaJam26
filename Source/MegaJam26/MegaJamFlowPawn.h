@@ -23,6 +23,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTakeCut, EMegaJamTakeState, NewTa
 /** Fired when the framing mode toggles. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAspectChanged, EMegaJamAspectMode, NewAspect);
 
+/** Fired when the mid-air Clapperboard stunt transition snaps between scenes. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnClapperboardSnapped);
+
 /**
  * Raw C++ physics pawn. No ACharacter / CharacterMovementComponent.
  * Velocity is integrated in Tick() and applied with a swept AddActorWorldOffset.
@@ -278,6 +281,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float WideFOV = 100.0f;
 
+	/** Camera field of view in UltraPanavision_276_1 mode (degrees). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
+	float UltraPanavisionFOV = 106.0f;
+
 	/** Camera field of view in Box_4_3 mode (degrees). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float BoxFOV = 82.0f;
@@ -372,7 +379,10 @@ public:
 	float GetFilmMeter() const { return FilmMeter; }
 
 	UFUNCTION(BlueprintPure, Category="MegaJam|Overdrive")
-	bool IsInBulletTimeOverdrive() const { return CurrentAspect == EMegaJamAspectMode::Wide_21_9; }
+	bool IsInBulletTimeOverdrive() const
+	{
+		return CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1;
+	}
 
 	/** Called by AMegaJamTrackGenerator when the pawn collects an active-take Film Frame pickup. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Chain")
@@ -411,6 +421,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void ExecuteEditorSplice();
 
+	/** Executes the Scene 02 Western Quick-Draw Beat-Slash while in UltraPanavision_276_1 aspect mode. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void ExecuteWesternBeatSlash();
+
+	/** Triggers the mid-air Clapperboard stunt transition into NextGenre (vertical launch, 0.25s hitstop, blackout slate, mesh & music swap). */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void TriggerClapperboardTransition(EMegaJamSceneGenre NextGenre);
+
 	/** Minimum cooldown (seconds) between ExecuteEditorSplice calls to prevent macro-spamming. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Flow")
 	float EditorSpliceCooldown = 0.25f;
@@ -448,6 +466,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnAspectChanged OnAspectChanged;
+
+	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
+	FOnClapperboardSnapped OnClapperboardSnapped;
 
 	// ---- Reactive events ----
 	/** Fired when the near-miss detector first overlaps an obstacle. */

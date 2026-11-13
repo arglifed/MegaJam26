@@ -278,6 +278,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
 	int32 SpliceObstaclesInFront(const FVector& PawnLocation, float ForwardRange = 2500.0f, float SpliceRadius = 600.0f);
 
+	/**
+	 * Scene 02 Quick-Draw Beat-Slash: cleaves all Take A / Take B barricades and obstacles overlapping [ForwardMinX, ForwardMaxX]
+	 * within [-HalfWidthY, +HalfWidthY], spawning a radial scatter of collectible Film Frames. Returns the number of obstacles cleaved.
+	 */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
+	int32 CleaveObstaclesInRange(float ForwardMinX, float ForwardMaxX, float HalfWidthY);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -52,6 +52,8 @@ void AMegaJamGameMode::BeginPlay()
 	{
 		RunTime = 0.0f;
 		DistanceMeters = 0.0f;
+		CurrentCheckpointDistanceMeters = 0.0f;
+		ActiveSceneGenre = EMegaJamSceneGenre::Action;
 		ParTimeBonusAwarded = 0;
 		Score = 0.0f;
 		CurrentMultiplier = 1.0f;
@@ -100,11 +102,27 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 	// Take Clock runs continuously while playing
 	RunTime += DeltaSeconds;
 
-	// Track distance traveled in meters along +X from SceneStartOriginX (0m to 1,800m)
-	if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	// Track distance traveled in meters along +X from SceneStartOriginX (0m to 3,600m)
+	AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (FlowPawn)
 	{
-		const float PawnX = static_cast<float>(PlayerPawn->GetActorLocation().X);
+		const float PawnX = static_cast<float>(FlowPawn->GetActorLocation().X);
 		DistanceMeters = FMath::Max(0.0f, (PawnX - SceneStartOriginX) / 100.0f);
+	}
+
+	// Scene 02 Transition at 1,800m: trigger mid-air Clapperboard Stunt Transition into Western Standoff
+	if (DistanceMeters >= 1800.0f && ActiveSceneGenre == EMegaJamSceneGenre::Action)
+	{
+		ActiveSceneGenre = EMegaJamSceneGenre::Western;
+		CurrentCheckpointDistanceMeters = 1800.0f;
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		}
+		if (FlowPawn)
+		{
+			FlowPawn->TriggerClapperboardTransition(EMegaJamSceneGenre::Western);
+		}
 	}
 
 	// Multiplier decays back toward 1 unless refreshed by grazes.
@@ -180,19 +198,28 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 		return;
 	}
 
-	// Warp pawn forward to 1,710m (just ahead of the 1,740m Golden Wrap Arch)
-	DistanceMeters = 1710.0f;
-	const float TargetWorldX = SceneStartOriginX + 171000.0f;
+	// Step cleanly: < 1750.0f -> warp to 1,760m (pre-Scene 02 transition); otherwise -> warp to 3,510m (pre-Wrap Arch)
+	const bool bWarpToScene02Transition = (DistanceMeters < 1750.0f);
+	DistanceMeters = bWarpToScene02Transition ? 1760.0f : 3510.0f;
+	const float TargetWorldX = SceneStartOriginX + DistanceMeters * 100.0f;
+
+	if (!bWarpToScene02Transition && ActiveSceneGenre == EMegaJamSceneGenre::Action)
+	{
+		ActiveSceneGenre = EMegaJamSceneGenre::Western;
+		CurrentCheckpointDistanceMeters = 1800.0f;
+	}
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->SetActorLocation(FVector(TargetWorldX, 0.0f, 140.0f), false, nullptr, ETeleportType::TeleportPhysics);
 		FlowPawn->ClearCrashStateForDebugSkip();
+		FlowPawn->SyncSceneMusicTrack(ActiveSceneGenre);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
 		FlowSubsystem->SetDistanceMeters(DistanceMeters);
+		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
 	}
 
 	SetRunState(EMegaJamRunState::Playing);
@@ -205,8 +232,10 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 
 	if (GEngine)
 	{
-		GEngine->AddOnScreenDebugMessage(202603, 2.5f, FColor::Green,
-			TEXT("DEV HOTKEY [F7]: WARPED TO 1,710m (PRE-WRAP ARCH)"), true, FVector2D(1.3f, 1.3f));
+		const FString WarpMsg = bWarpToScene02Transition
+			? TEXT("DEV HOTKEY [F7]: WARPED TO 1,760m (PRE-SCENE 02 CLAPPERBOARD)")
+			: TEXT("DEV HOTKEY [F7]: WARPED TO 3,510m (PRE-WRAP ARCH)");
+		GEngine->AddOnScreenDebugMessage(202603, 2.5f, FColor::Green, WarpMsg, true, FVector2D(1.3f, 1.3f));
 	}
 #endif
 }
@@ -228,6 +257,8 @@ void AMegaJamGameMode::StartProductionFromTitle()
 	HighestSpliceChain = 1;
 	CurrentCheckpointTime = 0.0f;
 	CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
+	CurrentCheckpointDistanceMeters = 0.0f;
+	ActiveSceneGenre = EMegaJamSceneGenre::Action;
 	RunTime = 0.0f;
 	DistanceMeters = 0.0f;
 
@@ -241,6 +272,7 @@ void AMegaJamGameMode::StartProductionFromTitle()
 	{
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
+			FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
 			FlowSubsystem->SetFlowRatio(0.0f);
 			FlowSubsystem->SetCurrentMultiplier(1.0f);
 			FlowSubsystem->SetSpliceChain(1);
@@ -286,16 +318,31 @@ void AMegaJamGameMode::RetakeCurrentAct()
 	World->GetTimerManager().ClearTimer(CrashRestartTimer);
 	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 
-	// Reset cleanly to the current Scene's start distance (0m for Scene 01) without incrementing CurrentTakeNumber
-	RunTime = 0.0f;
-	DistanceMeters = 0.0f;
+	// Reset cleanly to the current Scene's start distance (0m for Scene 01, 1800m for Scene 02) without incrementing CurrentTakeNumber
+	if (CurrentCheckpointDistanceMeters <= 0.0f)
+	{
+		RunTime = 0.0f;
+	}
+	DistanceMeters = CurrentCheckpointDistanceMeters;
 	ParTimeBonusAwarded = 0;
 	CurrentMultiplier = 1.0f;
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+	}
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
 		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
+		if (CurrentCheckpointDistanceMeters > 0.0f)
+		{
+			FlowPawn->SetActorLocation(
+				FVector(SceneStartOriginX + CurrentCheckpointDistanceMeters * 100.0f, 0.0f, 140.0f),
+				false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		FlowPawn->SyncSceneMusicTrack(ActiveSceneGenre);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -309,7 +356,7 @@ void AMegaJamGameMode::RetakeCurrentAct()
 		FlowSubsystem->SetIsOverexposed(false);
 		FlowSubsystem->SetDropCutBannerTimer(0.0f);
 		FlowSubsystem->SetOnBeatFlashTimer(0.0f);
-		FlowSubsystem->SetDistanceMeters(0.0f);
+		FlowSubsystem->SetDistanceMeters(DistanceMeters);
 		FlowSubsystem->SetFilmMeter(50.0f);
 		FlowSubsystem->SetHazardTimeScale(1.0f);
 	}
@@ -342,6 +389,16 @@ void AMegaJamGameMode::WrapToTitleSlate()
 	HighestSpliceChain = 1;
 	CurrentCheckpointTime = 0.0f;
 	CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
+	CurrentCheckpointDistanceMeters = 0.0f;
+	ActiveSceneGenre = EMegaJamSceneGenre::Action;
+
+	if (World)
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		}
+	}
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
@@ -376,8 +433,11 @@ void AMegaJamGameMode::WrapToTitleSlate()
 
 void AMegaJamGameMode::StartRun()
 {
-	RunTime = 0.0f;
-	DistanceMeters = 0.0f;
+	if (CurrentCheckpointDistanceMeters <= 0.0f)
+	{
+		RunTime = 0.0f;
+	}
+	DistanceMeters = CurrentCheckpointDistanceMeters;
 	CurrentMultiplier = 1.0f;
 
 	EnsureTrackGeneratorSpawned();
@@ -397,15 +457,30 @@ void AMegaJamGameMode::ResetRun()
 	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 	++CurrentTakeNumber;
 
-	// Rewind to the current Scene's start distance (0m for Scene 01)
-	RunTime = 0.0f;
-	DistanceMeters = 0.0f;
+	// Rewind to the current Scene's start distance (0m for Scene 01, 1800m for Scene 02)
+	if (CurrentCheckpointDistanceMeters <= 0.0f)
+	{
+		RunTime = 0.0f;
+	}
+	DistanceMeters = CurrentCheckpointDistanceMeters;
 	CurrentMultiplier = 1.0f;
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+	}
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
 		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
+		if (CurrentCheckpointDistanceMeters > 0.0f)
+		{
+			FlowPawn->SetActorLocation(
+				FVector(SceneStartOriginX + CurrentCheckpointDistanceMeters * 100.0f, 0.0f, 140.0f),
+				false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		FlowPawn->SyncSceneMusicTrack(ActiveSceneGenre);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -419,7 +494,7 @@ void AMegaJamGameMode::ResetRun()
 		FlowSubsystem->SetIsOverexposed(false);
 		FlowSubsystem->SetDropCutBannerTimer(0.0f);
 		FlowSubsystem->SetOnBeatFlashTimer(0.0f);
-		FlowSubsystem->SetDistanceMeters(0.0f);
+		FlowSubsystem->SetDistanceMeters(DistanceMeters);
 		FlowSubsystem->SetFilmMeter(50.0f);
 		FlowSubsystem->SetHazardTimeScale(1.0f);
 	}
