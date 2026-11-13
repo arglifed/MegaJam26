@@ -73,25 +73,33 @@ public:
 	TObjectPtr<USoundBase> ScoreMetaSound;
 
 	// ---- Physics tunables ----
-	/** Forward acceleration (cm/s^2). */
+	/** Forward acceleration (cm/s^2). Tuned ~15% lower so patterns remain readable at high speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float Acceleration = 4000.0f;
+	float Acceleration = 3400.0f;
 
-	/** Exponential velocity damping (1/s). */
+	/** Exponential forward velocity damping (1/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float Drag = 0.5f;
 
-	/** Lateral / vertical steering acceleration (cm/s^2). */
+	/** Extra lateral/vertical damping (1/s) so lane and altitude snaps feel crisp rather than floaty. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float StrafeForce = 3000.0f;
+	float LateralDamping = 4.2f;
 
-	/** Maximum speed (cm/s). Maps to FlowRatio = 1. */
+	/** Lateral steering acceleration (cm/s^2). Boosted +25% for responsive lane changes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float TerminalVelocity = 6000.0f;
+	float StrafeForce = 3750.0f;
+
+	/** Multiplier applied to vertical climb/dive acceleration in Box_4_3 mode (+30%). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
+	float VerticalStrafeMultiplier = 1.30f;
+
+	/** Maximum speed (cm/s). Maps to FlowRatio = 1. Tuned ~15% lower for readable Act I-IV escalation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
+	float TerminalVelocity = 5100.0f;
 
 	/** Radius of the near-miss detector (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float GrazeRadius = 200.0f;
+	float GrazeRadius = 220.0f;
 
 	/** DEPRECATED: unused since IA_Boost became the hard cut. Kept so existing Blueprint defaults do not break. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -111,12 +119,12 @@ public:
 
 	/** Forward speed added on every hard cut (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
-	float CutSpeedImpulse = 600.0f;
+	float CutSpeedImpulse = 510.0f;
 
 	// ---- Match-Cut Chain & Stale-Shot Mechanics ----
 	/** Maximum time (s) after grazing an obstacle or collecting a Film Frame in which a Hard Cut or Aspect Switch triggers a Match Cut. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
-	float MatchCutWindow = 1.2f;
+	float MatchCutWindow = 1.5f;
 
 	/** Maximum SpliceChain value. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
@@ -128,7 +136,7 @@ public:
 
 	/** Seconds spent continuously in the same Aspect Mode before the shot becomes stale. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
-	float StaleShotThreshold = 5.5f;
+	float StaleShotThreshold = 6.5f;
 
 	/** Seconds between -1 SpliceChain decay ticks while bIsShotStale is true. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
@@ -239,6 +247,19 @@ public:
 	/** Called by AMegaJamTrackGenerator when the pawn collects an active-take Film Frame pickup. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Chain")
 	void NotifyFilmFrameCollected();
+
+	// ---- Dev Testing Hotkeys (F1 God Mode) ----
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Dev")
+	void ToggleGodMode();
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Dev")
+	bool IsGodModeEnabled() const { return bGodModeEnabled; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Dev")
+	int32 GetGodModeSimulatedHits() const { return GodModeSimulatedHits; }
+
+	/** Clears crash state without teleporting back to origin (used by F2 DebugSkipToNextAct). */
+	void ClearCrashStateForDebugSkip();
 
 	// ---- Director's Cut actions ----
 	/** Toggles the take, adds CutSpeedImpulse and fires OnTakeCut. Returns false when on cooldown or not in a live run. */
@@ -356,6 +377,17 @@ protected:
 
 	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
 	bool bTriggeredVictorySting = false;
+
+	/** Dev God Mode flag (toggled by F1 in non-shipping builds). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Dev")
+	bool bGodModeEnabled = false;
+
+	/** Number of fatal hits absorbed while bGodModeEnabled is active. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Dev")
+	int32 GodModeSimulatedHits = 0;
+
+	/** World time of the last simulated hit in God Mode to prevent per-frame multi-counting. */
+	double LastGodModeHitTime = -1000.0;
 
 	/** Transform captured in BeginPlay, restored by ResetForRun. */
 	FTransform SpawnTransform;

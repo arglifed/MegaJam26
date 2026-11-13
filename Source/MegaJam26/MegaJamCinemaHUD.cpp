@@ -92,20 +92,37 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		TLSlot->SetZOrder(10);
 	}
 
+	// Dev God Mode Badge (only visible when bGodModeEnabled is true)
+	DevBadgeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DevBadgeText"));
+	DevBadgeText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	DevBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.72f, 0.12f, 1.0f)));
+	DevBadgeText->SetShadowOffset(FVector2D(1.5f, 1.5f));
+	DevBadgeText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+	DevBadgeText->SetText(FText::FromString(TEXT("[DEV: GOD MODE | HITS: 0]")));
+	DevBadgeText->SetVisibility(ESlateVisibility::Collapsed);
+	if (UCanvasPanelSlot* DevSlot = RootCanvas->AddChildToCanvas(DevBadgeText))
+	{
+		DevSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
+		DevSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+		DevSlot->SetPosition(FVector2D(36.0f, 54.0f));
+		DevSlot->SetAutoSize(true);
+		DevSlot->SetZOrder(10);
+	}
+
 	// Top-Center Act Progress Readout & Progress Bar (visible during active gameplay)
 	ActProgressBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ActProgressBorder"));
 	ActProgressBorder->SetBrushColor(FLinearColor(0.04f, 0.04f, 0.04f, 0.78f));
-	ActProgressBorder->SetPadding(FMargin(16.0f, 6.0f));
+	ActProgressBorder->SetPadding(FMargin(14.0f, 5.0f));
 
 	UVerticalBox* ActBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ActBox"));
 	ActProgressText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ActProgressText"));
-	ActProgressText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	ActProgressText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 12));
 	ActProgressText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.25f, 1.0f)));
 	ActProgressText->SetJustification(ETextJustify::Center);
 	ActProgressText->SetText(FText::FromString(TEXT("ACT I / IV  —  INT. SOUNDSTAGE (0%)")));
 	if (UVerticalBoxSlot* TextSlot = ActBox->AddChildToVerticalBox(ActProgressText))
 	{
-		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
 		TextSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 
@@ -122,8 +139,8 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		ActSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		ActSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		ActSlot->SetPosition(FVector2D(0.0f, 18.0f));
-		ActSlot->SetSize(FVector2D(360.0f, 48.0f));
+		ActSlot->SetPosition(FVector2D(0.0f, 78.0f));
+		ActSlot->SetSize(FVector2D(280.0f, 44.0f));
 		ActSlot->SetAutoSize(false);
 		ActSlot->SetZOrder(12);
 	}
@@ -178,7 +195,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		SlugSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		SlugSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		SlugSlot->SetPosition(FVector2D(0.0f, 96.0f));
+		SlugSlot->SetPosition(FVector2D(0.0f, 130.0f));
 		SlugSlot->SetAutoSize(true);
 		SlugSlot->SetZOrder(15);
 	}
@@ -627,6 +644,21 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			const bool bRecBlink = FMath::Fmod(World->GetTimeSeconds(), 1.0) < 0.65;
 			const TCHAR* RecDot = bRecBlink ? TEXT("●") : TEXT("○");
 			TopLeftText->SetText(FText::FromString(FString::Printf(TEXT("REC %s TAKE %02d  //  %s"), RecDot, TakeNumber, *Timecode)));
+		}
+	}
+
+	if (DevBadgeText)
+	{
+		if (FlowPawn && FlowPawn->IsGodModeEnabled())
+		{
+			DevBadgeText->SetVisibility(ESlateVisibility::HitTestInvisible);
+			DevBadgeText->SetText(FText::FromString(FString::Printf(
+				TEXT("[DEV: GOD MODE | HITS: %d]"),
+				FlowPawn->GetGodModeSimulatedHits())));
+		}
+		else
+		{
+			DevBadgeText->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 

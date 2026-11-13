@@ -6,6 +6,7 @@
 #include "MegaJamFlowSubsystem.h"
 #include "MegaJamPlayerController.h"
 #include "MegaJamTrackGenerator.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -139,6 +140,82 @@ void AMegaJamGameMode::NotifyCheckpointReached(EMegaJamFilmScene NewScene, float
 	{
 		FlowSubsystem->SetCurrentCheckpointTime(CurrentCheckpointTime);
 	}
+}
+
+void AMegaJamGameMode::DebugSkipToNextAct()
+{
+#if !UE_BUILD_SHIPPING
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(CrashRestartTimer);
+
+	if (RunState == EMegaJamRunState::TitleScreen || RunState == EMegaJamRunState::Completed)
+	{
+		StartProductionFromTitle();
+		return;
+	}
+
+	float TargetTime = 0.0f;
+	EMegaJamFilmScene TargetScene = EMegaJamFilmScene::Soundstage;
+	FString MilestoneName = TEXT("ACT I // 00:00 (SOUNDSTAGE)");
+
+	if (RunTime < 35.0f)
+	{
+		TargetTime = 35.0f;
+		TargetScene = EMegaJamFilmScene::OverpassNight;
+		MilestoneName = TEXT("ACT II // 00:35 (OVERPASS NIGHT)");
+	}
+	else if (RunTime < 75.0f)
+	{
+		TargetTime = 75.0f;
+		TargetScene = EMegaJamFilmScene::CuttingRoom;
+		MilestoneName = TEXT("ACT III // 01:15 (CUTTING ROOM)");
+	}
+	else if (RunTime < 115.0f)
+	{
+		TargetTime = 115.0f;
+		TargetScene = EMegaJamFilmScene::FinalCut;
+		MilestoneName = TEXT("ACT IV // 01:55 (THE FINAL CUT)");
+	}
+	else if (RunTime < 147.0f)
+	{
+		TargetTime = 147.0f;
+		TargetScene = EMegaJamFilmScene::FinalCut;
+		MilestoneName = TEXT("PRE-WRAP GATE // 02:27 (FINAL ARCH)");
+	}
+
+	RunTime = TargetTime;
+	CurrentCheckpointTime = (TargetTime >= 115.0f) ? 115.0f : TargetTime;
+	CurrentCheckpointScene = TargetScene;
+
+	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		FlowPawn->ClearCrashStateForDebugSkip();
+	}
+
+	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+	{
+		FlowSubsystem->SetCurrentCheckpointTime(CurrentCheckpointTime);
+	}
+
+	SetRunState(EMegaJamRunState::Playing);
+
+	if (AMegaJamTrackGenerator* Generator = Cast<AMegaJamTrackGenerator>(
+		UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
+	{
+		Generator->RebuildTrack();
+	}
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(202603, 2.5f, FColor::Green,
+			FString::Printf(TEXT("DEV HOTKEY [F7]: SKIPPED TO %s"), *MilestoneName), true, FVector2D(1.3f, 1.3f));
+	}
+#endif
 }
 
 void AMegaJamGameMode::StartProductionFromTitle()

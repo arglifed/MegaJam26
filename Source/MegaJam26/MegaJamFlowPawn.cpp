@@ -27,8 +27,9 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
+	// Forgiving arcade hurtbox: 35 cm collision radius (~30% smaller than the 50 cm visual mesh radius).
 	CollisionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionSphere"));
-	CollisionSphere->InitSphereRadius(50.0f);
+	CollisionSphere->InitSphereRadius(35.0f);
 	CollisionSphere->SetCollisionProfileName(TEXT("Pawn"));
 	CollisionSphere->SetSimulatePhysics(false);
 	RootComponent = CollisionSphere;
@@ -306,20 +307,27 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 	// Strafe. IA_Steer.X is always lateral (+Y / -Y).
 	// Wide_21_9: stronger lateral force, vertical steering locked.
-	// Box_4_3:   IA_Steer.Y steers vertically (+Z / -Z).
-	const float StrafeNow = StrafeForce * (bWide ? WideStrafeMultiplier : 1.0f);
-	Velocity.Y += SteerInput.X * StrafeNow * DeltaSeconds;
+	// Box_4_3:   IA_Steer.Y steers vertically (+Z / -Z) with +30% vertical responsiveness.
+	const float LateralAccel = StrafeForce * (bWide ? WideStrafeMultiplier : 1.0f);
+	const float VerticalAccel = StrafeForce * VerticalStrafeMultiplier;
+
+	// Tighter lateral/vertical velocity damping when steering is neutral or counter-steering
+	const float CrossPlaneDamp = FMath::Exp(-LateralDamping * DeltaSeconds);
+	Velocity.Y *= CrossPlaneDamp;
+	Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
+
 	if (bWide)
 	{
 		Velocity.Z = 0.0f;
 	}
 	else
 	{
-		Velocity.Z += SteerInput.Y * StrafeNow * DeltaSeconds;
+		Velocity.Z *= CrossPlaneDamp;
+		Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
 	}
 
-	// Drag then terminal velocity clamp.
-	Velocity *= FMath::Exp(-Drag * DeltaSeconds);
+	// Forward drag then terminal velocity clamp.
+	Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
 	Velocity = Velocity.GetClampedToMaxSize(TerminalVelocity);
 
 	// Swept move. A blocking hit is resolved deterministically.
@@ -333,11 +341,18 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		if (ClosingSpeed >= CrashSpeedThreshold)
 		{
 			HandleCrash(Hit.GetActor());
-			return;
+			if (bCrashed)
+			{
+				return;
+			}
+			// In God Mode (bCrashed remains false), phase past the obstacle so the pawn never snags.
+			AddActorWorldOffset(FVector(240.0f, 0.0f, 0.0f), false);
 		}
-
-		// Slow contact: slide along the surface.
-		Velocity = FVector::VectorPlaneProject(Velocity, Hit.ImpactNormal);
+		else
+		{
+			// Slow contact: slide along the surface.
+			Velocity = FVector::VectorPlaneProject(Velocity, Hit.ImpactNormal);
+		}
 	}
 
 	ApplyAspectClamp(DeltaSeconds);
@@ -605,6 +620,24 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 		return;
 	}
 
+#if !UE_BUILD_SHIPPING
+	if (bGodModeEnabled)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			const double Now = World->GetTimeSeconds();
+			if (Now - LastGodModeHitTime >= 0.35)
+			{
+				LastGodModeHitTime = Now;
+				++GodModeSimulatedHits;
+				TriggerAudioEvent(TEXT("OnCrashed"));
+			}
+		}
+		Velocity.X = FMath::Max(static_cast<float>(Velocity.X), TerminalVelocity * 0.65f);
+		return;
+	}
+#endif
+
 	bCrashed = true;
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
@@ -684,6 +717,33 @@ void AMegaJamFlowPawn::Input_Brake(const FInputActionValue& Value)
 void AMegaJamFlowPawn::Input_SteerReleased()
 {
 	SteerInput = FVector2D::ZeroVector;
+}
+
+void AMegaJamFlowPawn::ToggleGodMode()
+{
+#if !UE_BUILD_SHIPPING
+	bGodModeEnabled = !bGodModeEnabled;
+	if (bGodModeEnabled)
+	{
+		GodModeSimulatedHits = 0;
+		bCrashed = false;
+	}
+	if (GEngine)
+	{
+		const FString Msg = bGodModeEnabled
+			? TEXT("DEV HOTKEY [F6]: GOD MODE ENABLED")
+			: TEXT("DEV HOTKEY [F6]: GOD MODE DISABLED");
+		GEngine->AddOnScreenDebugMessage(202602, 2.5f, FColor::Yellow, Msg, true, FVector2D(1.3f, 1.3f));
+	}
+#endif
+}
+
+void AMegaJamFlowPawn::ClearCrashStateForDebugSkip()
+{
+	bCrashed = false;
+	Velocity = FVector(TerminalVelocity * 0.7f, 0.0f, 0.0f);
+	const FVector Loc = GetActorLocation();
+	SetActorLocation(FVector(Loc.X, 0.0f, 130.0f), false, nullptr, ETeleportType::TeleportPhysics);
 }
 
 void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

@@ -66,6 +66,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void NotifyCheckpointReached(EMegaJamFilmScene NewScene, float CheckpointTime);
 
+	/** Dev hotkey (F7 in non-shipping builds): skips to the next Act milestone (0s -> 35s -> 75s -> 115s -> 147s). */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Dev")
+	void DebugSkipToNextAct();
+
 	/** Current run time as MM:SS:FF at 24 fps. */
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	FString GetFormattedTimecode() const;
