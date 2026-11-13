@@ -97,6 +97,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
 	TObjectPtr<USoundBase> CrashSound;
 
+	/** Per-scene music tracks mapped across all 5 genre scenes (Action, Western, Noir, Chase, Montage). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TMap<EMegaJamSceneGenre, TObjectPtr<USoundBase>> SceneMusicTracks;
+
+	/** Active genre track currently playing on MusicAudioComponent. */
+	UPROPERTY(BlueprintReadOnly, Category="Audio")
+	EMegaJamSceneGenre ActiveMusicGenre = EMegaJamSceneGenre::Action;
+
+	/** 2D one-shot played when entering 21:9 Director's Cut (defaults to SW_SFX_PositiveRise). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> DirectorsCutEnterSound;
+
+	/** 2D one-shot played when exiting 21:9 Director's Cut back to 4:3 (defaults to SW_SFX_ClapperboardHit). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> DirectorsCutExitSound;
+
 	// ---- Physics tunables ----
 	/** Forward acceleration (cm/s^2). Tuned for crisp arcade gate readability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -386,6 +402,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	virtual void ResetForRun();
 
+	/** Alias for ResetForRun. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void ResetPawnState() { ResetForRun(); }
+
+	/** Synchronizes MusicAudioComponent with the target scene genre's mapped music wave. */
+	UFUNCTION(BlueprintCallable, Category="Audio")
+	void SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre);
+
 	/** Plays RunStartSound. Called by the GameMode alongside OnClapperboard. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Audio")
 	void PlayRunStartSound() const;
@@ -427,6 +451,7 @@ protected:
 
 	void PushTakeAndAspectToSubsystem() const;
 	void PushAudioParameters() const;
+	void UpdateDynamicMusicModulation(float UnscaledDelta);
 	void TriggerAudioEvent(FName ParameterName) const;
 	void PlayOneShot(USoundBase* Sound) const;
 	bool TryTriggerMatchCut(bool bForceMatchCut = false);
@@ -544,6 +569,12 @@ protected:
 
 	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
 	bool bTriggeredVictorySting = false;
+
+	/** Smoothly interpolated pitch multiplier for MusicAudioComponent. */
+	float CurrentMusicPitch = 1.0f;
+
+	/** Smoothly interpolated volume multiplier for MusicAudioComponent. */
+	float CurrentMusicVolume = 0.90f;
 
 	/** Dev God Mode flag (toggled by F1 in non-shipping builds). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Dev")

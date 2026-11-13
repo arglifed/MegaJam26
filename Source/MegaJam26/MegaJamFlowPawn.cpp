@@ -27,6 +27,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
 AMegaJamFlowPawn::AMegaJamFlowPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bTickEvenWhenPaused = true;
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -82,16 +83,30 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	MusicAudioComponent->bIsUISound = true;
 
 	// Default sounds live in C++ so BP_FlowPawn inherits them without a binary edit. Override or clear per Blueprint.
-	static ConstructorHelpers::FObjectFinder<USoundBase> MusicFinder(TEXT("/Game/MegaJam26/Audio/SW_Music_TooClever.SW_Music_TooClever"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> MusicActionFinder(TEXT("/Game/MegaJam26/Audio/SW_Music_TooClever.SW_Music_TooClever"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> MusicWesternFinder(TEXT("/Game/MegaJam26/Audio/SW_Music_Brixxx.SW_Music_Brixxx"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> MusicNoirFinder(TEXT("/Game/MegaJam26/Audio/SW_Music_LucidDreaming.SW_Music_LucidDreaming"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> MusicChaseFinder(TEXT("/Game/MegaJam26/Audio/SW_Music_Outbreak.SW_Music_Outbreak"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> MusicMontageFinder(TEXT("/Game/MegaJam26/Audio/SW_Music_TheSnatcher.SW_Music_TheSnatcher"));
+
 	static ConstructorHelpers::FObjectFinder<USoundBase> RunStartFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_ClapperboardHit.SW_SFX_ClapperboardHit"));
 	static ConstructorHelpers::FObjectFinder<USoundBase> FilmFrameFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_FuturisticSell.SW_SFX_FuturisticSell"));
 	static ConstructorHelpers::FObjectFinder<USoundBase> DollyBoostFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_PositiveRise.SW_SFX_PositiveRise"));
 	static ConstructorHelpers::FObjectFinder<USoundBase> CrashFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_VocalCut.SW_SFX_VocalCut"));
-	MusicTrack = MusicFinder.Object;
+
+	MusicTrack = MusicActionFinder.Object;
+	SceneMusicTracks.Add(EMegaJamSceneGenre::Action, MusicActionFinder.Object);
+	SceneMusicTracks.Add(EMegaJamSceneGenre::Western, MusicWesternFinder.Object);
+	SceneMusicTracks.Add(EMegaJamSceneGenre::Noir, MusicNoirFinder.Object);
+	SceneMusicTracks.Add(EMegaJamSceneGenre::Chase, MusicChaseFinder.Object);
+	SceneMusicTracks.Add(EMegaJamSceneGenre::Montage, MusicMontageFinder.Object);
+
 	RunStartSound = RunStartFinder.Object;
 	FilmFramePickupSound = FilmFrameFinder.Object;
 	DollyBoostStripSound = DollyBoostFinder.Object;
 	CrashSound = CrashFinder.Object;
+	DirectorsCutEnterSound = DollyBoostFinder.Object;
+	DirectorsCutExitSound = RunStartFinder.Object;
 }
 
 void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
@@ -121,11 +136,13 @@ void AMegaJamFlowPawn::BeginPlay()
 		ScoreAudioComponent->Play();
 	}
 
-	if (MusicAudioComponent && MusicTrack)
+	if (MusicAudioComponent)
 	{
-		MusicAudioComponent->SetSound(MusicTrack);
+		MusicAudioComponent->OnAudioFinished.RemoveDynamic(this, &AMegaJamFlowPawn::OnMusicFinished);
 		MusicAudioComponent->OnAudioFinished.AddDynamic(this, &AMegaJamFlowPawn::OnMusicFinished);
-		MusicAudioComponent->Play();
+		const UMegaJamFlowSubsystem* FlowSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+		const EMegaJamSceneGenre InitialGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : EMegaJamSceneGenre::Action;
+		SyncSceneMusicTrack(InitialGenre);
 	}
 
 	if (VisualMesh)
@@ -232,6 +249,20 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	const float UnscaledDelta = FMath::Clamp(static_cast<float>(FApp::GetDeltaTime()), 0.0f, 0.1f);
+	if (UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr)
+	{
+		if (FlowSub->ActiveGenre != ActiveMusicGenre)
+		{
+			SyncSceneMusicTrack(FlowSub->ActiveGenre);
+		}
+	}
+	UpdateDynamicMusicModulation(UnscaledDelta);
+
+	if (UGameplayStatics::IsGamePaused(this))
+	{
+		return;
+	}
+
 	if (HitstopRealTimeRemaining > 0.0f)
 	{
 		HitstopRealTimeRemaining -= UnscaledDelta;
@@ -362,6 +393,10 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			if (FlowSubsystem)
 			{
 				FlowSubsystem->SetHazardTimeScale(1.0f);
+			}
+			if (DirectorsCutExitSound)
+			{
+				UGameplayStatics::PlaySound2D(this, DirectorsCutExitSound, 0.50f, 0.85f);
 			}
 			TriggerAudioEvent(TEXT("OnAspectSwitch"));
 		}
@@ -588,6 +623,10 @@ void AMegaJamFlowPawn::ToggleAspect()
 		}
 
 		PushTakeAndAspectToSubsystem();
+		if (DirectorsCutEnterSound)
+		{
+			UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.05f, 1.25f);
+		}
 		TriggerAudioEvent(TEXT("OnHardCut"));
 		TriggerAudioEvent(TEXT("OnAspectSwitch"));
 
@@ -611,6 +650,10 @@ void AMegaJamFlowPawn::ToggleAspect()
 		}
 
 		PushTakeAndAspectToSubsystem();
+		if (DirectorsCutExitSound)
+		{
+			UGameplayStatics::PlaySound2D(this, DirectorsCutExitSound, 0.50f, 0.85f);
+		}
 		TriggerAudioEvent(TEXT("OnAspectSwitch"));
 
 		if (GEngine)
@@ -688,6 +731,11 @@ void AMegaJamFlowPawn::ResetForRun()
 			FlowSubsystem->SetFlowRatio(0.0f);
 			FlowSubsystem->SetFilmMeter(FilmMeter);
 			FlowSubsystem->SetHazardTimeScale(1.0f);
+			SyncSceneMusicTrack(FlowSubsystem->ActiveGenre);
+		}
+		else
+		{
+			SyncSceneMusicTrack(EMegaJamSceneGenre::Action);
 		}
 	}
 }
@@ -739,6 +787,12 @@ bool AMegaJamFlowPawn::TryTriggerOnBeatCut()
 		const float OverdriveMult = IsInBulletTimeOverdrive() ? 2.0f : 1.0f;
 		GameMode->AddBonusScore(200.0f * static_cast<float>(SpliceChain) * OverdriveMult, true);
 		GameMode->NotifySpliceChainUpdated(SpliceChain);
+	}
+
+	if (USoundBase* BeatSound = FilmFramePickupSound ? FilmFramePickupSound.Get() : DirectorsCutEnterSound.Get())
+	{
+		const float ChainPitch = FMath::Clamp(1.18f + 0.04f * static_cast<float>(SpliceChain), 1.18f, 1.46f);
+		UGameplayStatics::PlaySound2D(this, BeatSound, 0.95f, ChainPitch);
 	}
 
 	TriggerAudioEvent(TEXT("OnHardCut"));
@@ -813,7 +867,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 		: 0.0f;
 
 	// Check 128 BPM On-Beat Cut window (±0.16s) when scooping a Film Frame
-	TryTriggerOnBeatCut();
+	const bool bTriggeredOnBeat = TryTriggerOnBeatCut();
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
@@ -829,7 +883,10 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 		FlowSubsystem->SetFilmMeter(FilmMeter);
 	}
 
-	PlayOneShot(FilmFramePickupSound);
+	if (!bTriggeredOnBeat)
+	{
+		PlayOneShot(FilmFramePickupSound);
+	}
 	TriggerAudioEvent(TEXT("OnGraze"));
 }
 
@@ -881,10 +938,102 @@ void AMegaJamFlowPawn::PlayRunStartSound() const
 	PlayOneShot(RunStartSound);
 }
 
+void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
+{
+	ActiveMusicGenre = TargetGenre;
+	if (!MusicAudioComponent)
+	{
+		return;
+	}
+
+	USoundBase* DesiredSound = nullptr;
+	if (const TObjectPtr<USoundBase>* FoundTrack = SceneMusicTracks.Find(TargetGenre))
+	{
+		DesiredSound = FoundTrack->Get();
+	}
+	if (!DesiredSound)
+	{
+		DesiredSound = MusicTrack;
+	}
+
+	if (!DesiredSound)
+	{
+		return;
+	}
+
+	if (MusicAudioComponent->Sound != DesiredSound || !MusicAudioComponent->IsPlaying())
+	{
+		MusicAudioComponent->SetSound(DesiredSound);
+		MusicAudioComponent->SetPitchMultiplier(CurrentMusicPitch);
+		MusicAudioComponent->SetVolumeMultiplier(CurrentMusicVolume);
+		MusicAudioComponent->Play();
+	}
+}
+
+void AMegaJamFlowPawn::UpdateDynamicMusicModulation(float UnscaledDelta)
+{
+	if (!MusicAudioComponent)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	const AMegaJamGameMode* GameMode = World ? World->GetAuthGameMode<AMegaJamGameMode>() : nullptr;
+	const EMegaJamRunState RunState = GameMode ? GameMode->GetRunState() : EMegaJamRunState::Playing;
+
+	float TargetPitch = 1.0f;
+	float TargetVolume = 0.90f;
+
+	if (UGameplayStatics::IsGamePaused(this))
+	{
+		// Tactile reel-hold damping while PRODUCTION PAUSED // CUT is open
+		TargetPitch = 0.76f;
+		TargetVolume = 0.42f;
+	}
+	else if (RunState == EMegaJamRunState::TitleScreen)
+	{
+		TargetPitch = 0.96f;
+		TargetVolume = 0.68f;
+	}
+	else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	{
+		if (ActiveMusicGenre == EMegaJamSceneGenre::Action)
+		{
+			// Bullet-Time Overdrive: distinct slow-mo tape drag without muddy distortion
+			TargetPitch = 0.86f;
+			TargetVolume = 1.05f;
+		}
+		else if (ActiveMusicGenre == EMegaJamSceneGenre::Chase)
+		{
+			// Fast-Forward Smash
+			TargetPitch = 1.12f;
+			TargetVolume = 1.05f;
+		}
+		else
+		{
+			// Western / Noir / Montage widescreen states
+			TargetPitch = 0.94f;
+			TargetVolume = 1.0f;
+		}
+	}
+	else
+	{
+		// 4:3 Normal Flight with subtle chain escalation
+		TargetPitch = 1.0f + FMath::Clamp(static_cast<float>(SpliceChain - 1) * 0.005f, 0.0f, 0.035f);
+		TargetVolume = 0.90f;
+	}
+
+	CurrentMusicPitch = FMath::FInterpTo(CurrentMusicPitch, TargetPitch, UnscaledDelta, 8.0f);
+	CurrentMusicVolume = FMath::FInterpTo(CurrentMusicVolume, TargetVolume, UnscaledDelta, 8.0f);
+
+	MusicAudioComponent->SetPitchMultiplier(CurrentMusicPitch);
+	MusicAudioComponent->SetVolumeMultiplier(CurrentMusicVolume);
+}
+
 void AMegaJamFlowPawn::OnMusicFinished()
 {
-	// Only loop while the music hasn't been swapped out or cleared at runtime.
-	if (MusicAudioComponent && MusicTrack && MusicAudioComponent->Sound == MusicTrack)
+	// Loop whichever scene track is currently assigned on MusicAudioComponent.
+	if (MusicAudioComponent && MusicAudioComponent->Sound)
 	{
 		MusicAudioComponent->Play();
 	}
