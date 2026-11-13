@@ -72,6 +72,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
 	TObjectPtr<USoundBase> ScoreMetaSound;
 
+	/** Audio component for the background music track. Separate from the MetaSound score. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Audio")
+	TObjectPtr<UAudioComponent> MusicAudioComponent;
+
+	/** Music started in BeginPlay and looped for the whole session (keeps playing through crash resets). Clear it to disable. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
+	TObjectPtr<USoundBase> MusicTrack;
+
+	/** 2D one-shot each time a run starts (from the title screen and after every crash reset). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
+	TObjectPtr<USoundBase> RunStartSound;
+
+	/** 2D one-shot when a Film Frame pickup is collected. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
+	TObjectPtr<USoundBase> FilmFramePickupSound;
+
+	/** 2D one-shot when a Dolly Boost strip is collected. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
+	TObjectPtr<USoundBase> DollyBoostStripSound;
+
+	/** 2D one-shot on a real crash (not God Mode's simulated hits). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
+	TObjectPtr<USoundBase> CrashSound;
+
 	// ---- Physics tunables ----
 	/** Forward acceleration (cm/s^2). Tuned for crisp arcade gate readability. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
@@ -331,6 +355,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	virtual void ResetForRun();
 
+	/** Plays RunStartSound. Called by the GameMode alongside OnClapperboard. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Audio")
+	void PlayRunStartSound() const;
+
 	// ---- Delegates ----
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnTakeCut OnTakeCut;
@@ -368,7 +396,12 @@ protected:
 	void PushTakeAndAspectToSubsystem() const;
 	void PushAudioParameters() const;
 	void TriggerAudioEvent(FName ParameterName) const;
+	void PlayOneShot(USoundBase* Sound) const;
 	bool TryTriggerMatchCut(bool bForceMatchCut = false);
+
+	/** Restarts MusicTrack when it ends so it loops. */
+	UFUNCTION()
+	void OnMusicFinished();
 
 	// ---- Input hooks ----
 	virtual void Input_Steer(const FInputActionValue& Value);

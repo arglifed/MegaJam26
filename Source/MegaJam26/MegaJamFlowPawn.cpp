@@ -14,8 +14,10 @@
 #include "EnhancedInputComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/PackageName.h"
 #include "Sound/SoundBase.h"
+#include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
 
@@ -70,6 +72,23 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	ScoreAudioComponent->SetupAttachment(CollisionSphere);
 	ScoreAudioComponent->bAutoActivate = false;
 	ScoreAudioComponent->bIsUISound = true;
+
+	MusicAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("MusicAudioComponent"));
+	MusicAudioComponent->SetupAttachment(CollisionSphere);
+	MusicAudioComponent->bAutoActivate = false;
+	MusicAudioComponent->bIsUISound = true;
+
+	// Default sounds live in C++ so BP_FlowPawn inherits them without a binary edit. Override or clear per Blueprint.
+	static ConstructorHelpers::FObjectFinder<USoundBase> MusicFinder(TEXT("/Game/MegaJam26/Audio/SW_Music_TooClever.SW_Music_TooClever"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> RunStartFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_ClapperboardHit.SW_SFX_ClapperboardHit"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> FilmFrameFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_FuturisticSell.SW_SFX_FuturisticSell"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> DollyBoostFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_PositiveRise.SW_SFX_PositiveRise"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> CrashFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_VocalCut.SW_SFX_VocalCut"));
+	MusicTrack = MusicFinder.Object;
+	RunStartSound = RunStartFinder.Object;
+	FilmFramePickupSound = FilmFrameFinder.Object;
+	DollyBoostStripSound = DollyBoostFinder.Object;
+	CrashSound = CrashFinder.Object;
 }
 
 void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
@@ -97,6 +116,13 @@ void AMegaJamFlowPawn::BeginPlay()
 	{
 		ScoreAudioComponent->SetSound(ScoreMetaSound);
 		ScoreAudioComponent->Play();
+	}
+
+	if (MusicAudioComponent && MusicTrack)
+	{
+		MusicAudioComponent->SetSound(MusicTrack);
+		MusicAudioComponent->OnAudioFinished.AddDynamic(this, &AMegaJamFlowPawn::OnMusicFinished);
+		MusicAudioComponent->Play();
 	}
 
 	PushTakeAndAspectToSubsystem();
@@ -733,6 +759,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 		FlowSubsystem->SetSpliceChain(SpliceChain);
 	}
 
+	PlayOneShot(FilmFramePickupSound);
 	TriggerAudioEvent(TEXT("OnGraze"));
 }
 
@@ -763,7 +790,30 @@ void AMegaJamFlowPawn::NotifyDollyBoostStripCollected()
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 	}
 
+	PlayOneShot(DollyBoostStripSound);
 	TriggerAudioEvent(TEXT("OnGraze"));
+}
+
+void AMegaJamFlowPawn::PlayOneShot(USoundBase* Sound) const
+{
+	if (Sound)
+	{
+		UGameplayStatics::PlaySound2D(this, Sound);
+	}
+}
+
+void AMegaJamFlowPawn::PlayRunStartSound() const
+{
+	PlayOneShot(RunStartSound);
+}
+
+void AMegaJamFlowPawn::OnMusicFinished()
+{
+	// Only loop while the music hasn't been swapped out or cleared at runtime.
+	if (MusicAudioComponent && MusicTrack && MusicAudioComponent->Sound == MusicTrack)
+	{
+		MusicAudioComponent->Play();
+	}
 }
 
 void AMegaJamFlowPawn::PushAudioParameters() const
@@ -835,6 +885,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	LastGrazeOrPickupTime = -1000.0;
 	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
+	PlayOneShot(CrashSound);
 	TriggerAudioEvent(TEXT("OnCrashed"));
 
 	if (UWorld* World = GetWorld())
