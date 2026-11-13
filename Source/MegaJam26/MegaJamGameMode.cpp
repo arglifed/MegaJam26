@@ -38,6 +38,12 @@ void AMegaJamGameMode::BeginPlay()
 		FlowSubsystem->SetTotalFramesCollected(0);
 		FlowSubsystem->SetHighestSpliceChain(1);
 		FlowSubsystem->SetCurrentCheckpointTime(0.0f);
+		FlowSubsystem->SetDistanceMeters(0.0f);
+		FlowSubsystem->SetTargetDistanceMeters(TargetDistanceMeters);
+		FlowSubsystem->SetParTimeSeconds(SceneParTimeSeconds);
+		FlowSubsystem->SetFilmMeter(50.0f);
+		FlowSubsystem->SetHazardTimeScale(1.0f);
+		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
 	}
 
 	EnsureTrackGeneratorSpawned();
@@ -45,6 +51,8 @@ void AMegaJamGameMode::BeginPlay()
 	if (bStartOnTitleScreen)
 	{
 		RunTime = 0.0f;
+		DistanceMeters = 0.0f;
+		ParTimeBonusAwarded = 0;
 		Score = 0.0f;
 		CurrentMultiplier = 1.0f;
 		CurrentTakeNumber = 1;
@@ -89,8 +97,15 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
 	const float FlowRatio = FlowSubsystem ? FlowSubsystem->FlowRatio : 0.0f;
 
+	// Take Clock runs continuously while playing
 	RunTime += DeltaSeconds;
-	EvaluateSceneCheckpoints();
+
+	// Track distance traveled in meters along +X from SceneStartOriginX (0m to 1,800m)
+	if (const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	{
+		const float PawnX = static_cast<float>(PlayerPawn->GetActorLocation().X);
+		DistanceMeters = FMath::Max(0.0f, (PawnX - SceneStartOriginX) / 100.0f);
+	}
 
 	// Multiplier decays back toward 1 unless refreshed by grazes.
 	CurrentMultiplier = FMath::FInterpConstantTo(CurrentMultiplier, 1.0f, DeltaSeconds, MultiplierDecayPerSecond);
@@ -101,11 +116,16 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 	if (FlowSubsystem)
 	{
 		FlowSubsystem->SetCurrentMultiplier(CurrentMultiplier);
+		FlowSubsystem->SetDistanceMeters(DistanceMeters);
 	}
 
-	if (RunDuration > 0.0f && RunTime >= RunDuration)
+	if (TargetDistanceMeters > 0.0f && DistanceMeters >= TargetDistanceMeters)
 	{
-		RunTime = RunDuration;
+		DistanceMeters = TargetDistanceMeters;
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetDistanceMeters(DistanceMeters);
+		}
 		CompleteRun();
 	}
 }
@@ -152,6 +172,7 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 	}
 
 	World->GetTimerManager().ClearTimer(CrashRestartTimer);
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 
 	if (RunState == EMegaJamRunState::TitleScreen || RunState == EMegaJamRunState::Completed)
 	{
@@ -159,47 +180,19 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 		return;
 	}
 
-	float TargetTime = 0.0f;
-	EMegaJamFilmScene TargetScene = EMegaJamFilmScene::Soundstage;
-	FString MilestoneName = TEXT("ACT I // 00:00 (SOUNDSTAGE)");
-
-	if (RunTime < 35.0f)
-	{
-		TargetTime = 35.0f;
-		TargetScene = EMegaJamFilmScene::OverpassNight;
-		MilestoneName = TEXT("ACT II // 00:35 (OVERPASS NIGHT)");
-	}
-	else if (RunTime < 75.0f)
-	{
-		TargetTime = 75.0f;
-		TargetScene = EMegaJamFilmScene::CuttingRoom;
-		MilestoneName = TEXT("ACT III // 01:15 (CUTTING ROOM)");
-	}
-	else if (RunTime < 115.0f)
-	{
-		TargetTime = 115.0f;
-		TargetScene = EMegaJamFilmScene::FinalCut;
-		MilestoneName = TEXT("ACT IV // 01:55 (THE FINAL CUT)");
-	}
-	else if (RunTime < 147.0f)
-	{
-		TargetTime = 147.0f;
-		TargetScene = EMegaJamFilmScene::FinalCut;
-		MilestoneName = TEXT("PRE-WRAP GATE // 02:27 (FINAL ARCH)");
-	}
-
-	RunTime = TargetTime;
-	CurrentCheckpointTime = (TargetTime >= 115.0f) ? 115.0f : TargetTime;
-	CurrentCheckpointScene = TargetScene;
+	// Warp pawn forward to 1,710m (just ahead of the 1,740m Golden Wrap Arch)
+	DistanceMeters = 1710.0f;
+	const float TargetWorldX = SceneStartOriginX + 171000.0f;
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
+		FlowPawn->SetActorLocation(FVector(TargetWorldX, 0.0f, 140.0f), false, nullptr, ETeleportType::TeleportPhysics);
 		FlowPawn->ClearCrashStateForDebugSkip();
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
-		FlowSubsystem->SetCurrentCheckpointTime(CurrentCheckpointTime);
+		FlowSubsystem->SetDistanceMeters(DistanceMeters);
 	}
 
 	SetRunState(EMegaJamRunState::Playing);
@@ -213,7 +206,7 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(202603, 2.5f, FColor::Green,
-			FString::Printf(TEXT("DEV HOTKEY [F7]: SKIPPED TO %s"), *MilestoneName), true, FVector2D(1.3f, 1.3f));
+			TEXT("DEV HOTKEY [F7]: WARPED TO 1,710m (PRE-WRAP ARCH)"), true, FVector2D(1.3f, 1.3f));
 	}
 #endif
 }
@@ -225,19 +218,23 @@ void AMegaJamGameMode::StartProductionFromTitle()
 	{
 		World->GetTimerManager().ClearTimer(CrashRestartTimer);
 	}
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 
 	CurrentTakeNumber = 1;
 	Score = 0.0f;
+	ParTimeBonusAwarded = 0;
 	CurrentMultiplier = 1.0f;
 	TotalFramesCollected = 0;
 	HighestSpliceChain = 1;
 	CurrentCheckpointTime = 0.0f;
 	CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
 	RunTime = 0.0f;
+	DistanceMeters = 0.0f;
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
+		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
 	}
 
 	if (World)
@@ -252,6 +249,12 @@ void AMegaJamGameMode::StartProductionFromTitle()
 			FlowSubsystem->SetAirExposureRatio(0.0f);
 			FlowSubsystem->SetIsOverexposed(false);
 			FlowSubsystem->SetDropCutBannerTimer(0.0f);
+			FlowSubsystem->SetOnBeatFlashTimer(0.0f);
+			FlowSubsystem->SetDistanceMeters(0.0f);
+			FlowSubsystem->SetTargetDistanceMeters(TargetDistanceMeters);
+			FlowSubsystem->SetParTimeSeconds(SceneParTimeSeconds);
+			FlowSubsystem->SetFilmMeter(50.0f);
+			FlowSubsystem->SetHazardTimeScale(1.0f);
 			FlowSubsystem->SetTotalFramesCollected(0);
 			FlowSubsystem->SetHighestSpliceChain(1);
 			FlowSubsystem->SetCurrentCheckpointTime(0.0f);
@@ -283,13 +286,16 @@ void AMegaJamGameMode::RetakeCurrentAct()
 	World->GetTimerManager().ClearTimer(CrashRestartTimer);
 	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 
-	// Rewind RunTime to CurrentCheckpointTime without incrementing CurrentTakeNumber
-	RunTime = CurrentCheckpointTime;
+	// Reset cleanly to the current Scene's start distance (0m for Scene 01) without incrementing CurrentTakeNumber
+	RunTime = 0.0f;
+	DistanceMeters = 0.0f;
+	ParTimeBonusAwarded = 0;
 	CurrentMultiplier = 1.0f;
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
+		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -302,6 +308,10 @@ void AMegaJamGameMode::RetakeCurrentAct()
 		FlowSubsystem->SetAirExposureRatio(0.0f);
 		FlowSubsystem->SetIsOverexposed(false);
 		FlowSubsystem->SetDropCutBannerTimer(0.0f);
+		FlowSubsystem->SetOnBeatFlashTimer(0.0f);
+		FlowSubsystem->SetDistanceMeters(0.0f);
+		FlowSubsystem->SetFilmMeter(50.0f);
+		FlowSubsystem->SetHazardTimeScale(1.0f);
 	}
 
 	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
@@ -323,6 +333,8 @@ void AMegaJamGameMode::WrapToTitleSlate()
 	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 
 	RunTime = 0.0f;
+	DistanceMeters = 0.0f;
+	ParTimeBonusAwarded = 0;
 	Score = 0.0f;
 	CurrentMultiplier = 1.0f;
 	CurrentTakeNumber = 1;
@@ -334,6 +346,7 @@ void AMegaJamGameMode::WrapToTitleSlate()
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
+		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
 	}
 
 	if (World)
@@ -348,6 +361,10 @@ void AMegaJamGameMode::WrapToTitleSlate()
 			FlowSubsystem->SetAirExposureRatio(0.0f);
 			FlowSubsystem->SetIsOverexposed(false);
 			FlowSubsystem->SetDropCutBannerTimer(0.0f);
+			FlowSubsystem->SetOnBeatFlashTimer(0.0f);
+			FlowSubsystem->SetDistanceMeters(0.0f);
+			FlowSubsystem->SetFilmMeter(50.0f);
+			FlowSubsystem->SetHazardTimeScale(1.0f);
 			FlowSubsystem->SetTotalFramesCollected(0);
 			FlowSubsystem->SetHighestSpliceChain(1);
 			FlowSubsystem->SetCurrentCheckpointTime(0.0f);
@@ -359,7 +376,8 @@ void AMegaJamGameMode::WrapToTitleSlate()
 
 void AMegaJamGameMode::StartRun()
 {
-	RunTime = CurrentCheckpointTime;
+	RunTime = 0.0f;
+	DistanceMeters = 0.0f;
 	CurrentMultiplier = 1.0f;
 
 	EnsureTrackGeneratorSpawned();
@@ -376,15 +394,18 @@ void AMegaJamGameMode::ResetRun()
 	}
 
 	World->GetTimerManager().ClearTimer(CrashRestartTimer);
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 	++CurrentTakeNumber;
 
-	// Rewind RunTime to CurrentCheckpointTime so the player resumes at the start of their current Act!
-	RunTime = CurrentCheckpointTime;
+	// Rewind to the current Scene's start distance (0m for Scene 01)
+	RunTime = 0.0f;
+	DistanceMeters = 0.0f;
 	CurrentMultiplier = 1.0f;
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
+		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -397,6 +418,10 @@ void AMegaJamGameMode::ResetRun()
 		FlowSubsystem->SetAirExposureRatio(0.0f);
 		FlowSubsystem->SetIsOverexposed(false);
 		FlowSubsystem->SetDropCutBannerTimer(0.0f);
+		FlowSubsystem->SetOnBeatFlashTimer(0.0f);
+		FlowSubsystem->SetDistanceMeters(0.0f);
+		FlowSubsystem->SetFilmMeter(50.0f);
+		FlowSubsystem->SetHazardTimeScale(1.0f);
 	}
 
 	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
@@ -418,10 +443,22 @@ FString AMegaJamGameMode::GetFormattedTimecode() const
 	return FString::Printf(TEXT("%02d:%02d:%02d"), TotalSeconds / 60, TotalSeconds % 60, Frames);
 }
 
+FString AMegaJamGameMode::GetFormattedTakeClock() const
+{
+	const float SafeTime = FMath::Max(0.0f, RunTime);
+	const int32 TotalSeconds = FMath::FloorToInt(SafeTime);
+	const int32 Hundredths = FMath::Clamp(FMath::FloorToInt((SafeTime - static_cast<float>(TotalSeconds)) * 100.0f), 0, 99);
+	return FString::Printf(TEXT("%02d:%02d.%02d"), TotalSeconds / 60, TotalSeconds % 60, Hundredths);
+}
+
 void AMegaJamGameMode::CompleteRun()
 {
 	if (IsPlaying())
 	{
+		UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+		const float SecondsUnderPar = FMath::Max(0.0f, SceneParTimeSeconds - RunTime);
+		ParTimeBonusAwarded = FMath::RoundToInt(SecondsUnderPar * 500.0f);
+		Score += static_cast<float>(ParTimeBonusAwarded);
 		SetRunState(EMegaJamRunState::Completed);
 	}
 }

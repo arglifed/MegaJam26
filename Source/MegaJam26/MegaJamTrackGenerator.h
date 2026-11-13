@@ -272,7 +272,7 @@ protected:
 private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
-	static constexpr int32 PickupsPerChunk = 3;
+	static constexpr int32 PickupsPerChunk = 5;
 	static constexpr int32 BoostStripsPerChunk = 2;
 	static constexpr int32 WrapArchParts = 5;
 
@@ -329,6 +329,7 @@ private:
 	bool bPoolsCreated = false;
 	bool bBuilt = false;
 	bool bWrapArchSpawned = false;
+	float ScaledTrackTime = 0.0f;
 	int32 FirstChunkIndex = 0;
 	int32 SafeUntilChunkIndex = 2;
 	EMegaJamFilmScene CurrentScene = EMegaJamFilmScene::Soundstage;

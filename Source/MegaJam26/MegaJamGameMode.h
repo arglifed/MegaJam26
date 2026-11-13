@@ -82,6 +82,25 @@ public:
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	FString GetFormattedTimecode() const;
 
+	/** Current Take Clock formatted as MM:SS.ms (hundredths of a second). */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	FString GetFormattedTakeClock() const;
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	float GetDistanceMeters() const { return DistanceMeters; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	float GetTargetDistanceMeters() const { return TargetDistanceMeters; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	float GetSceneParTimeSeconds() const { return SceneParTimeSeconds; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Score")
+	int32 GetParTimeBonusAwarded() const { return ParTimeBonusAwarded; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	EMegaJamSceneGenre GetActiveSceneGenre() const { return ActiveSceneGenre; }
+
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	int32 GetCurrentTakeNumber() const { return CurrentTakeNumber; }
 
@@ -157,7 +176,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
 	bool bAutoStartRun = true;
 
-	/** Seconds until the run completes. Default 150 s = the four film acts. */
+	/** Target distance in meters for Scene 01 — ACTION vertical slice (1,800m). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
+	float TargetDistanceMeters = 1800.0f;
+
+	/** Par time in seconds for Scene 01 — ACTION (45.0s). Awards +500 pts/sec under Par on completion. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
+	float SceneParTimeSeconds = 45.0f;
+
+	/** Active scene genre (Scene 01 = Action). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
+	EMegaJamSceneGenre ActiveSceneGenre = EMegaJamSceneGenre::Action;
+
+	/** Legacy run duration tunable (kept for Blueprint compatibility; Scene 01 completes at TargetDistanceMeters). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
 	float RunDuration = 150.0f;
 
@@ -222,6 +253,17 @@ protected:
 	/** Saved checkpoint scene corresponding to CurrentCheckpointTime. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	EMegaJamFilmScene CurrentCheckpointScene = EMegaJamFilmScene::Soundstage;
+
+	/** Current distance traveled along the Scene track in meters (0m to 1800m). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float DistanceMeters = 0.0f;
+
+	/** World X coordinate at the start of the current Scene (0m mark). */
+	float SceneStartOriginX = 0.0f;
+
+	/** Par-Time Speed Bonus (+500 pts per second under 45.0s) awarded upon crossing 1,800m. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	int32 ParTimeBonusAwarded = 0;
 
 	FTimerHandle CrashRestartTimer;
 };

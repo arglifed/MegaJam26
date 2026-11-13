@@ -21,6 +21,11 @@ void UMegaJamFlowSubsystem::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	DropCutBannerTimer = FMath::Max(0.0f, DropCutBannerTimer - DeltaTime);
+	OnBeatFlashTimer = FMath::Max(0.0f, OnBeatFlashTimer - DeltaTime);
+
+	// Continuous 128.0 BPM beat phase in [0.0f, 1.0f)
+	constexpr float BeatsPerSecond = 128.0f / 60.0f;
+	BeatPhase = FMath::Fmod(BeatPhase + FMath::Max(0.0f, DeltaTime) * BeatsPerSecond, 1.0f);
 
 	PushToMaterialParameterCollection();
 	OnFlowStateUpdated.Broadcast(FlowRatio, CurrentMultiplier, AudioEnvelopeValue);
@@ -94,6 +99,49 @@ void UMegaJamFlowSubsystem::SetIsOverexposed(bool bNewOverexposed)
 void UMegaJamFlowSubsystem::SetDropCutBannerTimer(float NewTimer)
 {
 	DropCutBannerTimer = FMath::Max(0.0f, NewTimer);
+}
+
+void UMegaJamFlowSubsystem::SetDistanceMeters(float NewDistanceMeters)
+{
+	DistanceMeters = FMath::Max(0.0f, NewDistanceMeters);
+}
+
+void UMegaJamFlowSubsystem::SetTargetDistanceMeters(float NewTargetDistanceMeters)
+{
+	TargetDistanceMeters = FMath::Max(1.0f, NewTargetDistanceMeters);
+}
+
+void UMegaJamFlowSubsystem::SetParTimeSeconds(float NewParTimeSeconds)
+{
+	ParTimeSeconds = FMath::Max(1.0f, NewParTimeSeconds);
+}
+
+void UMegaJamFlowSubsystem::SetFilmMeter(float NewFilmMeter)
+{
+	FilmMeter = FMath::Clamp(NewFilmMeter, 0.0f, 100.0f);
+}
+
+void UMegaJamFlowSubsystem::SetHazardTimeScale(float NewHazardTimeScale)
+{
+	HazardTimeScale = FMath::Clamp(NewHazardTimeScale, 0.1f, 2.0f);
+}
+
+void UMegaJamFlowSubsystem::SetOnBeatFlashTimer(float NewTimer)
+{
+	OnBeatFlashTimer = FMath::Max(0.0f, NewTimer);
+}
+
+void UMegaJamFlowSubsystem::SetActiveGenre(EMegaJamSceneGenre NewGenre)
+{
+	ActiveGenre = NewGenre;
+}
+
+bool UMegaJamFlowSubsystem::IsWithinBeatWindow(float WindowSeconds) const
+{
+	constexpr float BeatDurationSeconds = 60.0f / 128.0f; // 0.46875s per beat
+	const float PhaseDistanceToNearestBeat = FMath::Min(BeatPhase, 1.0f - BeatPhase);
+	const float SecondsToNearestBeat = PhaseDistanceToNearestBeat * BeatDurationSeconds;
+	return SecondsToNearestBeat <= FMath::Max(0.0f, WindowSeconds);
 }
 
 void UMegaJamFlowSubsystem::SetFlowMPC(UMaterialParameterCollection* InFlowMPC)

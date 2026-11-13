@@ -113,6 +113,19 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UProgressBar> ActProgressBar;
 
+	// ---- Bottom-Center Film Meter & 128 BPM Beat Indicator ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> FilmMeterBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FilmMeterText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UProgressBar> FilmMeterBar;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> BeatIndicatorText;
+
 	// ---- Top-Center Scene Slugline Flash ----
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> SceneSluglineBorder;

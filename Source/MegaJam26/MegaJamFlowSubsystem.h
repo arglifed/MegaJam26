@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "MegaJamTypes.h"
 #include "MegaJamFlowSubsystem.generated.h"
 
 class UMaterialParameterCollection;
@@ -77,6 +78,31 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetDropCutBannerTimer(float NewTimer);
 
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetDistanceMeters(float NewDistanceMeters);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetTargetDistanceMeters(float NewTargetDistanceMeters);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetParTimeSeconds(float NewParTimeSeconds);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetFilmMeter(float NewFilmMeter);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetHazardTimeScale(float NewHazardTimeScale);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetOnBeatFlashTimer(float NewTimer);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void SetActiveGenre(EMegaJamSceneGenre NewGenre);
+
+	/** Returns true when the continuous 128 BPM beat clock is within +/- WindowSeconds of a beat boundary. */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	bool IsWithinBeatWindow(float WindowSeconds = 0.16f) const;
+
 	/** Assign the global Material Parameter Collection that receives the flow values each tick. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Shaders")
 	void SetFlowMPC(UMaterialParameterCollection* InFlowMPC);
@@ -132,9 +158,41 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	bool bIsOverexposed = false;
 
-	/** Remaining duration (s) for the center-screen Drop-Cut Slam alert banner. */
+	/** Remaining duration (s) for the center-screen Drop-Cut Slam / Overdrive alert banner. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float DropCutBannerTimer = 0.0f;
+
+	/** Distance traveled along the Scene track in meters (0m to 1800m for Scene 01). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float DistanceMeters = 0.0f;
+
+	/** Target finish distance for the active Scene in meters (1800m for Scene 01). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float TargetDistanceMeters = 1800.0f;
+
+	/** Par time in seconds for the active Scene (45.0s for Scene 01). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float ParTimeSeconds = 45.0f;
+
+	/** Film Meter (0.0f to 100.0f). Starts at 50.0f, charged in 4:3, spent in 21:9 Bullet-Time Overdrive. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float FilmMeter = 50.0f;
+
+	/** Time dilation multiplier applied to track hazards/animations (1.0f in 4:3, 0.45f in 21:9 Overdrive). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float HazardTimeScale = 1.0f;
+
+	/** Continuous 128.0 BPM beat phase in [0.0f, 1.0f). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float BeatPhase = 0.0f;
+
+	/** Remaining duration (s) for the ★ ON-BEAT CUT! HUD flash. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	float OnBeatFlashTimer = 0.0f;
+
+	/** Active scene genre (Scene 01 = Action). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	EMegaJamSceneGenre ActiveGenre = EMegaJamSceneGenre::Action;
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;

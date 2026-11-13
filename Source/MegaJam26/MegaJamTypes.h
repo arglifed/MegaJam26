@@ -21,7 +21,7 @@ enum class EMegaJamAspectMode : uint8
 	Box_4_3
 };
 
-/** The four film scenes, sequenced by run time. */
+/** The four film scenes, sequenced by run progress. */
 UENUM(BlueprintType)
 enum class EMegaJamFilmScene : uint8
 {
@@ -29,5 +29,16 @@ enum class EMegaJamFilmScene : uint8
 	OverpassNight,
 	CuttingRoom,
 	FinalCut
+};
+
+/** 5-Scene Genre Roadmap for SPLICE // DIRECTOR'S CUT. */
+UENUM(BlueprintType)
+enum class EMegaJamSceneGenre : uint8
+{
+	Action,
+	Western,
+	Noir,
+	Chase,
+	Montage
 };
 

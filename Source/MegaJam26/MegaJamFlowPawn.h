@@ -172,54 +172,71 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	FVector2D WideYBounds = FVector2D(-900.0, 900.0);
 
-	/** Wide_21_9: crushed vertical bounds. */
+	/** Wide_21_9: horizontal cinema rail bounds (Z = 140). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	FVector2D WideZBounds = FVector2D(60.0, 200.0);
+	FVector2D WideZBounds = FVector2D(140.0, 140.0);
 
-	/** Box_4_3: narrow lateral bounds. */
+	/** Box_4_3: full 2D free-flight lateral bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	FVector2D BoxYBounds = FVector2D(-450.0, 450.0);
+	FVector2D BoxYBounds = FVector2D(-850.0, 850.0);
 
-	/** Box_4_3: tall vertical bounds. */
+	/** Box_4_3: full 2D free-flight vertical bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	FVector2D BoxZBounds = FVector2D(60.0, 800.0);
+	FVector2D BoxZBounds = FVector2D(60.0, 860.0);
 
-	/** Lateral strafe force multiplier while in Wide_21_9 (+20% extra dolly rail responsiveness). */
+	/** Lateral strafe force multiplier while in Wide_21_9 Bullet-Time Overdrive. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float WideStrafeMultiplier = 1.55f;
+	float WideStrafeMultiplier = 1.65f;
 
-	// ---- 21:9 Dolly vs. 4:3 Crane Push-Pull Tunables ----
-	/** Altitude threshold (cm) in Box_4_3 above which switching to Wide_21_9 triggers a Drop-Cut Slam. */
+	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive Tunables ----
+	/** Target forward cruise velocity (cm/s) in 4:3 Flight & Charge Mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
+	float CruiseSpeed = 2900.0f;
+
+	/** Maximum forward speed (cm/s) while in 4:3 Flight & Charge Mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
+	float MaxFlightSpeed = 3600.0f;
+
+	/** Forward rail velocity (cm/s) during 21:9 Bullet-Time Overdrive (+35% surge). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
+	float OverdriveSpeed = 4500.0f;
+
+	/** Minimum Film Meter required to activate 21:9 Director's Cut Overdrive. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
+	float OverdriveMinActivationMeter = 25.0f;
+
+	/** Film Meter drain rate (units/sec) while 21:9 Bullet-Time Overdrive is active. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Overdrive")
+	float OverdriveDrainPerSec = 15.0f;
+
+	/** Altitude threshold (cm) in Box_4_3 (kept for Blueprint compatibility). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float DropCutMinAltitude = 185.0f;
 
-	/** Forward speed impulse (cm/s) granted on a Drop-Cut Slam. */
+	/** Forward speed impulse (cm/s) granted on Overdrive activation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float DropCutSpeedImpulse = 850.0f;
 
-	/** Additive camera FOV punch (degrees) triggered on a Drop-Cut Slam. */
+	/** Additive camera FOV punch (degrees) triggered on Overdrive activation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float DropCutFOVPunch = 10.0f;
+	float DropCutFOVPunch = 9.0f;
 
 	/** Passive Flow regeneration rate (% per second) while riding the Wide_21_9 dolly rail. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float WideDollyFlowRegenPerSec = 4.5f;
+	float WideDollyFlowRegenPerSec = 8.0f;
 
-	/** Altitude (cm) in Box_4_3 above which AirExposureTimer accumulates. */
+	/** Legacy overexposure tunables kept for Blueprint compatibility (unused in unrestricted 4:3 flight). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float OverexposureAltitudeThreshold = 175.0f;
 
-	/** Seconds of high-altitude Box_4_3 flight before bIsOverexposed triggers. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float OverexposureStartSeconds = 2.0f;
 
-	/** Maximum seconds on AirExposureTimer (past which SpliceChain decays). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	float OverexposureMaxSeconds = 3.2f;
 
-	/** Flow drain rate (% per second) while bIsOverexposed is active. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	float OverexposureFlowDrainPerSec = 14.0f;
+	float OverexposureFlowDrainPerSec = 0.0f;
 
 	/** FInterpTo speed used to squeeze the pawn into new bounds after an aspect switch. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
@@ -319,6 +336,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="MegaJam|Aspect")
 	bool IsOverexposed() const { return bIsOverexposed; }
 
+	UFUNCTION(BlueprintPure, Category="MegaJam|Overdrive")
+	float GetFilmMeter() const { return FilmMeter; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Overdrive")
+	bool IsInBulletTimeOverdrive() const { return CurrentAspect == EMegaJamAspectMode::Wide_21_9; }
+
 	/** Called by AMegaJamTrackGenerator when the pawn collects an active-take Film Frame pickup. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Chain")
 	void NotifyFilmFrameCollected();
@@ -407,6 +430,7 @@ protected:
 	void TriggerAudioEvent(FName ParameterName) const;
 	void PlayOneShot(USoundBase* Sound) const;
 	bool TryTriggerMatchCut(bool bForceMatchCut = false);
+	bool TryTriggerOnBeatCut();
 	void UpdatePawnDynamicMaterial(float DeltaSeconds);
 
 	/** Restarts MusicTrack when it ends so it loops. */
@@ -438,7 +462,11 @@ protected:
 	EMegaJamTakeState CurrentTake = EMegaJamTakeState::StudioTake;
 
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
-	EMegaJamAspectMode CurrentAspect = EMegaJamAspectMode::Wide_21_9;
+	EMegaJamAspectMode CurrentAspect = EMegaJamAspectMode::Box_4_3;
+
+	/** Director's Cut Film Meter (0.0f to 100.0f). Starts at 50.0f. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Overdrive")
+	float FilmMeter = 50.0f;
 
 	/** Active Match-Cut chain multiplier (1 to 8). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Chain")
