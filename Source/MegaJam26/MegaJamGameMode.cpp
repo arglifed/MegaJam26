@@ -296,9 +296,12 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 		FlowPawn->SyncSceneMusicTrack(ActiveSceneGenre);
 	}
 
-	const float TargetTimeSeconds = FlowPawn
-		? (WarpDistance / (FlowPawn->GetBaseForwardSpeed() * 100.0f))
-		: (DistanceMeters / 40.0f);
+	float TargetTimeSeconds = DistanceMeters / 40.0f;
+	if (FlowPawn)
+	{
+		float SafeSpeed = FMath::Max(FlowPawn->GetBaseForwardSpeed(), 1.0f);
+		TargetTimeSeconds = WarpDistance / (SafeSpeed * 100.0f);
+	}
 	RunTime = TargetTimeSeconds;
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())

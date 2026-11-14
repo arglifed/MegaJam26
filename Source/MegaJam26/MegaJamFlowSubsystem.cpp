@@ -31,7 +31,7 @@ void UMegaJamFlowSubsystem::Tick(float DeltaTime)
 	float PitchMult = 1.0f;
 	if (AMegaJamFlowPawn* Pawn = GetMegaJamPawn())
 	{
-		PitchMult = Pawn->CurrentMusicPitch;
+		PitchMult = FMath::IsFinite(Pawn->CurrentMusicPitch) ? FMath::Clamp(Pawn->CurrentMusicPitch, 0.01f, 4.0f) : 1.0f;
 	}
 
 	CurrentAudioTime += SafeDelta * PitchMult;
