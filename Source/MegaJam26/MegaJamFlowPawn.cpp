@@ -293,6 +293,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	CameraTrauma = FMath::Max(0.0f, CameraTrauma - 2.4f * UnscaledDelta);
 	EmissiveBurstTimer = FMath::Max(0.0f, EmissiveBurstTimer - DeltaSeconds);
 	CurrentFOVPunch = FMath::FInterpTo(CurrentFOVPunch, 0.0f, DeltaSeconds, CutFOVPunchDecaySpeed);
+	ActiveSlashRoll = FMath::FInterpTo(ActiveSlashRoll, 0.0f, DeltaSeconds, 12.0f);
 	if (!bIsDropCutSlamming)
 	{
 		SlamPitchPunch = FMath::FInterpTo(SlamPitchPunch, 0.0f, DeltaSeconds, 12.0f);
@@ -326,7 +327,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		const float ShakeRoll  = Shake * 5.0f * FMath::Sin(static_cast<float>(RealTime * 53.0));
 		const float ShakeZ     = Shake * 18.0f * FMath::Sin(static_cast<float>(RealTime * 61.0));
 
-		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll));
+		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
 		Camera->SetRelativeLocation(FVector(0.0f, 0.0f, ShakeZ));
 	}
 
@@ -500,7 +501,17 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		const float TargetLaneY = static_cast<float>(CurrentLane - 2) * LaneWidthY;
 		const float NextY = FMath::FInterpTo(CurrentY, TargetLaneY, DeltaSeconds, 18.0f);
 		Velocity.Y = (DeltaSeconds > KINDA_SMALL_NUMBER) ? ((NextY - CurrentY) / DeltaSeconds) : 0.0f;
-		Velocity.Z = 0.0f;
+
+		const float CurrentZ = static_cast<float>(GetActorLocation().Z);
+		if (CurrentZ > WideZBounds.Y + 5.0f || Velocity.Z > 1.0f)
+		{
+			// Let Clapperboard Stunt Transition vertical launch arc back down to the Z = 140 rail
+			Velocity.Z -= 4200.0f * DeltaSeconds;
+		}
+		else
+		{
+			Velocity.Z = 0.0f;
+		}
 		// Bullet-Time Overdrive / Ultra-Panavision Standoff: surge and sustain TargetOverdriveSpeed + ActiveDollyBoostBonus
 		Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), TargetOverdriveSpeed + ActiveDollyBoostBonus, DeltaSeconds, 9.0f);
 	}
@@ -571,7 +582,8 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	{
 		Velocity.Y = 0.0;
 	}
-	if ((Location.Z >= ZBounds.Y && Velocity.Z > 0.0) || (Location.Z <= ZBounds.X && Velocity.Z < 0.0))
+	const bool bAirborneInWide = bWide && (Location.Z > ZBounds.Y + 5.0f || Velocity.Z > 1.0f);
+	if (!bAirborneInWide && ((Location.Z >= ZBounds.Y && Velocity.Z > 0.0) || (Location.Z <= ZBounds.X && Velocity.Z < 0.0)))
 	{
 		Velocity.Z = 0.0;
 	}
@@ -582,10 +594,10 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	}
 
 	// Fast interpolation toward the clamped position: a punchy squeeze, not a one-frame teleport.
-	// Bypass soft vertical smoothing while bIsDropCutSlamming is driving Z down at 3600 u/s.
+	// Bypass soft vertical smoothing while bIsDropCutSlamming or Clapperboard launch is airborne.
 	const float NewY = FMath::FInterpTo(static_cast<float>(Location.Y), ClampedY, DeltaSeconds, AspectClampInterpSpeed);
-	const float NewZ = bIsDropCutSlamming
-		? static_cast<float>(Location.Z)
+	const float NewZ = (bIsDropCutSlamming || bAirborneInWide)
+		? FMath::Max(static_cast<float>(ZBounds.X), static_cast<float>(Location.Z))
 		: FMath::FInterpTo(static_cast<float>(Location.Z), ClampedZ, DeltaSeconds, AspectClampInterpSpeed);
 	AddActorWorldOffset(FVector(0.0f, NewY - Location.Y, NewZ - Location.Z), true);
 }
@@ -647,6 +659,9 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 
 	if (bOnBeat)
 	{
+		ActiveSlashRoll = -25.0f;
+		BP_PlaySlashVFX();
+
 		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 		FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
 		EmissiveBurstTimer = 0.30f;
@@ -682,6 +697,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 	}
 	else
 	{
+		ActiveSlashRoll = -8.0f;
 		AddCameraTrauma(0.30f);
 		if (CleavedCount > 0 && GameMode)
 		{
@@ -946,7 +962,18 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 
 void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenre)
 {
-	if (CurrentAspect != EMegaJamAspectMode::Box_4_3)
+	// Instantly refill FilmMeter so the player drops into the new scene fully fueled
+	FilmMeter = 100.0f;
+
+	if (NextGenre == EMegaJamSceneGenre::Western)
+	{
+		// Programmatically force Ultra-Panavision 2.76:1, lock Center Lane, and apply +2500 speed burst
+		CurrentAspect = EMegaJamAspectMode::UltraPanavision_276_1;
+		CurrentLane = 2;
+		ActiveDollyBoostBonus += 2500.0f;
+		SetAspectMode(EMegaJamAspectMode::UltraPanavision_276_1);
+	}
+	else if (CurrentAspect != EMegaJamAspectMode::Box_4_3)
 	{
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	}
@@ -963,6 +990,7 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
 			FlowSubsystem->SetActiveGenre(NextGenre);
+			FlowSubsystem->SetFilmMeter(FilmMeter);
 		}
 	}
 }
@@ -986,6 +1014,7 @@ void AMegaJamFlowPawn::ResetForRun()
 		UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
 	}
 	CurrentCameraRoll = 0.0f;
+	ActiveSlashRoll = 0.0f;
 	SpliceChain = 1;
 	CurrentShotDuration = 0.0f;
 	AspectHoldTimer = 0.0f;
@@ -1518,6 +1547,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	bIsOverexposed = false;
 	bIsDropCutSlamming = false;
 	SlamPitchPunch = 0.0f;
+	ActiveSlashRoll = 0.0f;
 	StaleDecayAccum = 0.0f;
 	OverexposureDecayAccum = 0.0f;
 	MatchCutFlashTimer = 0.0f;

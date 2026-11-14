@@ -1499,10 +1499,14 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 			const int32 PoolIdx = BaseBurstIdx + (NextBurstPickupCursor % BurstPickupPoolSize);
 			++NextBurstPickupCursor;
 
+			// "Parting the Red Sea": split half the frames violently left and half violently right with a low Z-arc
+			const float LateralSplitY = (FrameIdx % 2 == 0)
+				? FMath::RandRange(-8000.0f, -4000.0f)
+				: FMath::RandRange(4000.0f, 8000.0f);
 			const FVector ScatterVel(
-				PawnSpeed + FMath::RandRange(2000.0f, 4500.0f),
-				FMath::RandRange(-3500.0f, 3500.0f),
-				FMath::RandRange(2000.0f, 4000.0f));
+				PawnSpeed + FMath::RandRange(1800.0f, 3800.0f),
+				LateralSplitY,
+				FMath::RandRange(600.0f, 1400.0f));
 			PickupSlots[PoolIdx].Location = ImpactLocation;
 			PickupSlots[PoolIdx].Velocity = ScatterVel;
 			PickupSlots[PoolIdx].Scale = BurstRingScale;

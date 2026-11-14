@@ -486,6 +486,10 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category="MegaJam|Flow")
 	void OnAspectChangedEvent(EMegaJamAspectMode NewAspect);
 
+	/** Blueprint VFX hook triggered on an On-Beat Western Quick-Draw Beat-Slash. */
+	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
+	void BP_PlaySlashVFX();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -628,6 +632,9 @@ protected:
 
 	/** Decaying forward velocity bonus granted by outer-lane Dolly Boost Strips. */
 	float ActiveDollyBoostBonus = 0.0f;
+
+	/** Decaying katana camera roll tilt (degrees) applied on Western Beat-Slash. */
+	float ActiveSlashRoll = 0.0f;
 
 	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
 	bool bTriggeredVictorySting = false;
