@@ -178,6 +178,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float GrazeRadius = 220.0f;
 
+	/** Base near-miss Adrenaline Graze radius (cm); doubled automatically during Scene 03 Noir 21:9 Vertigo Dolly-Zoom. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
+	float AdrenalineGrazeRadius = 220.0f;
+
 	/** DEPRECATED: unused since IA_Boost became the hard cut. Kept so existing Blueprint defaults do not break. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float BoostMultiplier = 1.5f;
@@ -404,6 +408,9 @@ public:
 	float GetFilmMeter() const { return FilmMeter; }
 
 	UFUNCTION(BlueprintPure, Category="MegaJam|Overdrive")
+	float GetCometSmashTimer() const { return CometSmashTimer; }
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Overdrive")
 	bool IsInBulletTimeOverdrive() const
 	{
 		return CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1;
@@ -453,6 +460,14 @@ public:
 	/** Executes the Scene 03 Alpine Trick-Ollie & Cryo-Shatter while in Wide_21_9 Director's Cut. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void ExecuteAlpineTrickOllie();
+
+	/** Executes the Scene 03 Noir Vertigo Pulse while in Wide_21_9 Director's Cut, cashing in 2x graze radius targets into bonus Film Frames. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void ExecuteNoirVertigoPulse();
+
+	/** Executes the Scene 04 Chase Fast-Forward Comet Smash while in Wide_21_9 Director's Cut, granting invulnerable obstacle cleaving. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void ExecuteChaseCometSmash();
 
 	/** Triggers the mid-air Clapperboard stunt transition into NextGenre (vertical launch, 0.25s hitstop, blackout slate, mesh & music swap). */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
@@ -671,6 +686,10 @@ protected:
 
 	/** Remaining duration (s) for the Scene 03 snowboard 360-degree Trick-Ollie spin & nose-grab (0.42s). */
 	float ActiveTrickSpinTimer = 0.0f;
+
+	/** Remaining duration (s) for the Scene 04 Fast-Forward Comet Smash invulnerability & obstacle-cleaving state. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Overdrive")
+	float CometSmashTimer = 0.0f;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
 

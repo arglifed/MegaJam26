@@ -177,17 +177,17 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float DropCutBannerTimer = 0.0f;
 
-	/** Distance traveled along the Scene track in meters (0m to 5400m across Scene 01, Scene 02 & Scene 03). */
+	/** Distance traveled along the Scene track in meters (0m to 7200m across Scenes 01-04). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float DistanceMeters = 0.0f;
 
-	/** Target finish distance for the active campaign in meters (5400m for Scene 01 + Scene 02 + Scene 03). */
+	/** Target finish distance for the active campaign in meters (7200m for Scenes 01-04). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
-	float TargetDistanceMeters = 5400.0f;
+	float TargetDistanceMeters = 7200.0f;
 
-	/** Par time in seconds for the active campaign (135.0s for Scene 01 + Scene 02 + Scene 03). */
+	/** Par time in seconds for the active campaign (180.0s for Scenes 01-04). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
-	float ParTimeSeconds = 135.0f;
+	float ParTimeSeconds = 180.0f;
 
 	/** Film Meter (0.0f to 100.0f). Starts at 50.0f, charged in 4:3, spent in 21:9 Bullet-Time Overdrive. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")

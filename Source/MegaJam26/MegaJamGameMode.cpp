@@ -124,10 +124,10 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 			FlowPawn->TriggerClapperboardTransition(EMegaJamSceneGenre::Western);
 		}
 	}
-	// Scene 03 Transition at 3,600m: trigger mid-air Clapperboard Stunt Transition into Alpine Avalanche
-	else if (DistanceMeters >= 3600.0f && ActiveSceneGenre != EMegaJamSceneGenre::Alpine)
+	// Scene 03 Transition at 3,600m: trigger mid-air Clapperboard Stunt Transition into Noir (Spy Car Vertigo Dolly-Zoom)
+	else if (DistanceMeters >= 3600.0f && DistanceMeters < 5400.0f && ActiveSceneGenre != EMegaJamSceneGenre::Noir)
 	{
-		ActiveSceneGenre = EMegaJamSceneGenre::Alpine;
+		ActiveSceneGenre = EMegaJamSceneGenre::Noir;
 		CurrentCheckpointDistanceMeters = 3600.0f;
 		if (FlowSubsystem)
 		{
@@ -135,7 +135,21 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 		}
 		if (FlowPawn)
 		{
-			FlowPawn->TriggerClapperboardTransition(EMegaJamSceneGenre::Alpine);
+			FlowPawn->TriggerClapperboardTransition(EMegaJamSceneGenre::Noir);
+		}
+	}
+	// Scene 04 Transition at 5,400m: trigger mid-air Clapperboard Stunt Transition into Chase (Snowboard Comet Smash)
+	else if (DistanceMeters >= 5400.0f && ActiveSceneGenre != EMegaJamSceneGenre::Chase)
+	{
+		ActiveSceneGenre = EMegaJamSceneGenre::Chase;
+		CurrentCheckpointDistanceMeters = 5400.0f;
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		}
+		if (FlowPawn)
+		{
+			FlowPawn->TriggerClapperboardTransition(EMegaJamSceneGenre::Chase);
 		}
 	}
 
@@ -212,10 +226,11 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 		return;
 	}
 
-	// Step cleanly across all three acts:
-	// < 1750.0f -> warp to 1,760m (Scene 01 -> 02 transition)
-	// < 3550.0f -> warp to 3,560m (Scene 02 -> 03 transition)
-	// >= 3550.0f -> warp to 5,310m (Finish Arch approach)
+	// Step cleanly across all four acts:
+	// < 1750.0f -> warp to 1,760m (Scene 01 -> 02 Western transition)
+	// < 3550.0f -> warp to 3,560m (Scene 02 -> 03 Noir transition)
+	// < 5350.0f -> warp to 5,360m (Scene 03 -> 04 Chase transition)
+	// >= 5350.0f -> warp to 7,110m (Scene 04 Finish approach)
 	FString WarpMsg;
 	if (DistanceMeters < 1750.0f)
 	{
@@ -229,14 +244,21 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 		DistanceMeters = 3560.0f;
 		ActiveSceneGenre = EMegaJamSceneGenre::Western;
 		CurrentCheckpointDistanceMeters = 1800.0f;
-		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 3,560m (SCENE 02 -> 03 TRANSITION)");
+		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 3,560m (SCENE 02 -> 03 NOIR TRANSITION)");
+	}
+	else if (DistanceMeters < 5350.0f)
+	{
+		DistanceMeters = 5360.0f;
+		ActiveSceneGenre = EMegaJamSceneGenre::Noir;
+		CurrentCheckpointDistanceMeters = 3600.0f;
+		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 5,360m (SCENE 03 -> 04 CHASE TRANSITION)");
 	}
 	else
 	{
-		DistanceMeters = 5310.0f;
-		ActiveSceneGenre = EMegaJamSceneGenre::Alpine;
-		CurrentCheckpointDistanceMeters = 3600.0f;
-		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 5,310m (FINISH ARCH APPROACH)");
+		DistanceMeters = 7110.0f;
+		ActiveSceneGenre = EMegaJamSceneGenre::Chase;
+		CurrentCheckpointDistanceMeters = 5400.0f;
+		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 7,110m (FINISH APPROACH)");
 	}
 	const float TargetWorldX = SceneStartOriginX + DistanceMeters * 100.0f;
 

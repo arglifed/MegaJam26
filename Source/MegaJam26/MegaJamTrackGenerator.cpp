@@ -866,11 +866,15 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	const float CurrentDistance = ChunkDistMeters;
 	const int32 ChunkGenreIdx = FMath::Clamp(FMath::FloorToInt(CurrentDistance / 1800.0f), 0, 4);
 
-	// Visual progression across Scene 01 (0m-1,800m Action), Scene 02 (1,800m-3,600m Western Standoff), and Scene 03 (3,600m-5,400m Alpine Avalanche)
+	// Visual progression across Scene 01 (0m-1,800m Action), Scene 02 (1,800m-3,600m Western Standoff), Scene 03 (3,600m-5,400m Noir Spy Car), and Scene 04 (5,400m-7,200m Chase Snowboard)
 	EMegaJamFilmScene ChunkScene = EMegaJamFilmScene::Soundstage;
-	if (ChunkDistMeters >= 3600.0f)
+	if (ChunkDistMeters >= 5400.0f)
 	{
 		ChunkScene = EMegaJamFilmScene::FinalCut;
+	}
+	else if (ChunkDistMeters >= 3600.0f)
+	{
+		ChunkScene = EMegaJamFilmScene::OverpassNight;
 	}
 	else if (ChunkDistMeters >= 1800.0f)
 	{
@@ -883,10 +887,11 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	FRandomStream Stream(Seed + ChunkIndex * 7919);
 
-	// Keep chunks before SafeUntilChunkIndex, around the 1,800m and 3,600m Clapperboard transitions, and beyond 8,880m (Golden Wrap Arch finish stretch) obstacle-free
+	// Keep chunks before SafeUntilChunkIndex, around the 1,800m, 3,600m, and 5,400m Clapperboard transitions, and beyond 8,880m obstacle-free
 	const bool bInSceneTransitionZone =
 		(ChunkDistMeters >= 1720.0f && ChunkDistMeters < 1920.0f) ||
-		(ChunkDistMeters >= 3520.0f && ChunkDistMeters < 3720.0f);
+		(ChunkDistMeters >= 3520.0f && ChunkDistMeters < 3720.0f) ||
+		(ChunkDistMeters >= 5320.0f && ChunkDistMeters < 5520.0f);
 	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || bInSceneTransitionZone || ChunkDistMeters >= 8880.0f || bTitleOrCompleted);
 	const bool bIsHazardChunk = !bInSafeOrFinishZone && IsHazardChunkForScene(ChunkIndex, ChunkScene);
 	const int32 HazardArchetype = GetHazardArchetypeForChunk(ChunkIndex);
@@ -938,12 +943,12 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	const float HazardX = ChunkCenterX;
 	const float TakeRoll = Stream.FRand();
 
-	// Scene 03 (DistanceMeters >= 3600.0f): Multi-lane Alpine Slalom Gates & Ice-Boulder Clusters across the 5 rails (-700, -350, 0, 350, 700)
-	if (ChunkDistMeters >= 3600.0f)
+	// Scene 04 (DistanceMeters >= 5400.0f): Chase Snowboard Slalom Gates & Snowdrift/Ice-Boulder Clusters designed for +60% downhill carving and Comet Smash!
+	if (ChunkDistMeters >= 5400.0f)
 	{
 		if (HazardArchetype % 2 == 0)
 		{
-			// Alpine Ice-Boulder Cluster across 3 lanes + low ice ridge (ollie-able or Cryo-Shatterable!)
+			// Snowdrift / Ice-Boulder Cluster across 3 lanes + low ridge (Comet-Smashable!)
 			const float CenterBoulderY = (ChunkIndex % 4 == 0) ? -350.0f : ((ChunkIndex % 4 == 2) ? 350.0f : 0.0f);
 			const FTransform IceBoulderCluster(
 				FRotator(0.0f, 15.0f, 8.0f),
@@ -969,7 +974,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		}
 		else
 		{
-			// Alpine Slalom Gates across Lanes 1, 2, 3 (-350, 0, +350) with outer Dolly Boost rails at +/-700
+			// Downhill Slalom Gates across Lanes 1, 2, 3 (-350, 0, +350) with outer Dolly Boost rails at +/-700
 			const FTransform CenterIceMonolith(
 				FRotator(0.0f, 22.0f, 0.0f),
 				FVector(HazardX, 0.0f, 210.0f),
@@ -989,6 +994,59 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			const bool bLeftIsTakeA = (TakeRoll < 0.5f);
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? LeftSlalomGate : RightSlalomGate, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? RightSlalomGate : LeftSlalomGate, true, false, true);
+		}
+		return;
+	}
+
+	// Scene 03 (3600.0f <= DistanceMeters < 5400.0f): Noir Spy Car Roadblocks & Enemy Sedans across the 5 lanes (built for 2x Adrenaline Graze & Vertigo Pulse!)
+	if (ChunkDistMeters >= 3600.0f)
+	{
+		if (HazardArchetype % 2 == 0)
+		{
+			// Noir Enemy Sedan Chicane across alternating lanes for tight 2x Adrenaline Graze passes
+			const float SedanCenterY = (ChunkIndex % 4 == 0) ? -350.0f : ((ChunkIndex % 4 == 2) ? 350.0f : 0.0f);
+			const FTransform LeadEnemySedan(
+				FRotator(0.0f, 12.0f, 0.0f),
+				FVector(HazardX, SedanCenterY, 135.0f),
+				FVector(ObstacleSize / 100.0f, 4.4f, 2.5f));
+			const FTransform FlankingRoadblockLeft(
+				FRotator(0.0f, -8.0f, 0.0f),
+				FVector(HazardX, -700.0f, 145.0f),
+				FVector(ObstacleSize / 100.0f, 3.4f, 2.8f));
+			const FTransform FlankingRoadblockRight(
+				FRotator(0.0f, 8.0f, 0.0f),
+				FVector(HazardX, 700.0f, 145.0f),
+				FVector(ObstacleSize / 100.0f, 3.4f, 2.8f));
+
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeadEnemySedan, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeadEnemySedan, true, false, true);
+
+			const bool bLeftIsTakeA = (TakeRoll < 0.5f);
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? FlankingRoadblockLeft : FlankingRoadblockRight, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? FlankingRoadblockRight : FlankingRoadblockLeft, true, false, true);
+		}
+		else
+		{
+			// Noir Split Roadblock & Searchlight Arch across Lanes 1, 2, 3 (-350, 0, +350)
+			const FTransform CenterRoadblock(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 0.0f, 160.0f),
+				FVector(ObstacleSize / 100.0f, 3.4f, 3.2f));
+			const FTransform LeftSedanBlock(
+				FRotator(0.0f, 14.0f, 0.0f),
+				FVector(HazardX, -350.0f, 140.0f),
+				FVector(ObstacleSize / 100.0f, 3.3f, 2.6f));
+			const FTransform RightSedanBlock(
+				FRotator(0.0f, -14.0f, 0.0f),
+				FVector(HazardX, 350.0f, 140.0f),
+				FVector(ObstacleSize / 100.0f, 3.3f, 2.6f));
+
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterRoadblock, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterRoadblock, true, false, true);
+
+			const bool bLeftIsTakeA = (TakeRoll < 0.5f);
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? LeftSedanBlock : RightSedanBlock, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? RightSedanBlock : LeftSedanBlock, true, false, true);
 		}
 		return;
 	}
