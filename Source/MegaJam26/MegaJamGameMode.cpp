@@ -285,19 +285,27 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 		CurrentCheckpointDistanceMeters = 7200.0f;
 		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 8,910m (FINAL CUT WRAP ARCH APPROACH)");
 	}
-	const float TargetWorldX = SceneStartOriginX + DistanceMeters * 100.0f;
+	const float WarpDistance = DistanceMeters * 100.0f;
+	const float TargetWorldX = SceneStartOriginX + WarpDistance;
 
-	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (FlowPawn)
 	{
 		FlowPawn->SetActorLocation(FVector(TargetWorldX, 0.0f, 140.0f), false, nullptr, ETeleportType::TeleportPhysics);
 		FlowPawn->ClearCrashStateForDebugSkip();
 		FlowPawn->SyncSceneMusicTrack(ActiveSceneGenre);
 	}
 
+	const float TargetTimeSeconds = FlowPawn
+		? (WarpDistance / (FlowPawn->GetBaseForwardSpeed() * 100.0f))
+		: (DistanceMeters / 40.0f);
+	RunTime = TargetTimeSeconds;
+
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
 		FlowSubsystem->SetDistanceMeters(DistanceMeters);
 		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		FlowSubsystem->SeekMusicToTime(TargetTimeSeconds);
 	}
 
 	SetRunState(EMegaJamRunState::Playing);
@@ -631,7 +639,7 @@ void AMegaJamGameMode::TriggerWrapUpScoreboard()
 	}
 
 	// 2. Finalize EMegaJamSceneGenre::Montage metrics & calculate FinalBoxOfficeGross
-	//    Base $10,000,000 + ($5,000,000 per 'S') + ($2,500,000 per 'A') + ($1,000,000 per 'B') + ($500,000 per Special Move) + ($10,000 per Frame)
+	//    Base $10,000,000 + ($5,000,000 per 'S') + ($2,500,000 per 'A') + ($1,000,000 per 'B') + ($50,000 per Special Move) + ($10,000 per Frame)
 	int32 Gross = 10000000;
 	UWorld* World = GetWorld();
 	UMegaJamFlowSubsystem* FlowSubsystem = World ? World->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
@@ -664,7 +672,7 @@ void AMegaJamGameMode::TriggerWrapUpScoreboard()
 					Gross += 1000000;
 				}
 
-				Gross += FMath::Max(0, Metrics->SpecialMovesExecuted) * 500000;
+				Gross += FMath::Max(0, Metrics->SpecialMovesExecuted) * 50000;
 				Gross += FMath::Max(0, Metrics->FilmFramesCollected) * 10000;
 			}
 		}
