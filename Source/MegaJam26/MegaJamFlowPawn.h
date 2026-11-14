@@ -60,13 +60,13 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
 
-	/** Optional thematic skeletal mesh component swapped dynamically per scene genre via SceneVehicleMeshes. */
+	/** Optional thematic static mesh component swapped dynamically per scene genre via SceneVehicleMeshes. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")
-	TObjectPtr<USkeletalMeshComponent> VehicleSkeletalMesh;
+	TObjectPtr<UStaticMeshComponent> VehicleStaticMesh;
 
-	/** Per-scene vehicle skeletal meshes (Runner -> Horse -> Vintage Car, etc.) swapped on genre transition. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Art")
-	TMap<EMegaJamSceneGenre, TObjectPtr<USkeletalMesh>> SceneVehicleMeshes;
+	/** Per-scene vehicle static meshes (Motorcycle -> Horse -> Snowboard -> Spy Car -> Stunt Car) swapped on genre transition. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
+	TMap<EMegaJamSceneGenre, TObjectPtr<UStaticMesh>> SceneVehicleMeshes;
 
 	/** Chase camera boom. Does not use controller rotation. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
@@ -499,9 +499,21 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category="MegaJam|Flow")
 	void OnAspectChangedEvent(EMegaJamAspectMode NewAspect);
 
-	/** Blueprint VFX hook triggered on an On-Beat Western Quick-Draw Beat-Slash. */
+	/** Blueprint VFX hook triggered on a Western Quick-Draw Beat-Slash. */
 	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
-	void BP_PlaySlashVFX();
+	void BP_PlaySlashVFX(bool bIsOnBeat);
+
+	/** Blueprint VFX hook triggered when obstacles are shredded via a Beat-Splice. */
+	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
+	void BP_PlaySpliceVFX();
+
+	/** Blueprint VFX hook triggered when hitting an outer-lane Dolly Boost Strip. */
+	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
+	void BP_PlayDollyBoostVFX();
+
+	/** Blueprint VFX hook triggered whenever the Stale-Shot penalty state flips. */
+	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
+	void BP_OnStaleShotStateChanged(bool bIsStale);
 
 protected:
 	virtual void BeginPlay() override;
