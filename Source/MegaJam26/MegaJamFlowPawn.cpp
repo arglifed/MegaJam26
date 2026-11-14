@@ -336,6 +336,139 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		SpliceBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamFlowPawn::ExecuteEditorSplice);
 		PlayerInputComponent->KeyBindings.Add(SpliceBinding);
 	}
+
+	// Direct bindings for Tab / R / Gamepad_FaceButton_Top to CycleMontagePowerOnDemand() in Scene 05 Montage
+	for (const FKey& CycleKey : { EKeys::Tab, EKeys::R, EKeys::Gamepad_FaceButton_Top })
+	{
+		FInputKeyBinding CycleBinding(FInputChord(CycleKey), IE_Pressed);
+		CycleBinding.bConsumeInput = false;
+		CycleBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamFlowPawn::CycleMontagePowerOnDemand);
+		PlayerInputComponent->KeyBindings.Add(CycleBinding);
+	}
+}
+
+EMegaJamSceneGenre AMegaJamFlowPawn::GetEffectivePowerGenre() const
+{
+	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	const EMegaJamSceneGenre BaseGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+	return (BaseGenre == EMegaJamSceneGenre::Montage) ? ActiveMontageSubGenre : BaseGenre;
+}
+
+void AMegaJamFlowPawn::CycleMontagePowerOnDemand()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return;
+	}
+
+	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
+	if (GameMode && !GameMode->IsPlaying())
+	{
+		return;
+	}
+
+	const UMegaJamFlowSubsystem* FlowSub = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	const EMegaJamSceneGenre BaseGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+	if (BaseGenre != EMegaJamSceneGenre::Montage)
+	{
+		return;
+	}
+
+	EMegaJamSceneGenre NextSubGenre = EMegaJamSceneGenre::Action;
+	switch (ActiveMontageSubGenre)
+	{
+	case EMegaJamSceneGenre::Action:
+		NextSubGenre = EMegaJamSceneGenre::Western;
+		break;
+	case EMegaJamSceneGenre::Western:
+		NextSubGenre = EMegaJamSceneGenre::Noir;
+		break;
+	case EMegaJamSceneGenre::Noir:
+		NextSubGenre = EMegaJamSceneGenre::Chase;
+		break;
+	case EMegaJamSceneGenre::Chase:
+	default:
+		NextSubGenre = EMegaJamSceneGenre::Action;
+		break;
+	}
+
+	ApplyMontageSubGenre(NextSubGenre, true);
+}
+
+void AMegaJamFlowPawn::ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool bIsManualCycle)
+{
+	UWorld* World = GetWorld();
+	if (!World || bCrashed)
+	{
+		return;
+	}
+
+	ActiveMontageSubGenre = NewSubGenre;
+	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
+
+	// Match-Cut Power Switch: grant +15.0f Film Meter bonus, micro-flashbulb match-cut, and aspect lock
+	FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
+	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
+	CurrentShotDuration = 0.0f;
+	AspectHoldTimer = 0.0f;
+	if (bIsShotStale)
+	{
+		bIsShotStale = false;
+		BP_OnStaleShotStateChanged(false);
+	}
+
+	EmissiveBurstTimer = 0.28f;
+	MatchCutFlashTimer = 1.1f;
+	CurrentFOVPunch = CutFOVPunch;
+	AddCameraTrauma(0.38f, 0.65f);
+	TriggerMicroHitstop(0.03f, 0.25f);
+
+	if (NewSubGenre == EMegaJamSceneGenre::Western)
+	{
+		CurrentLane = 2;
+		bHasProcessedLaneInput = false;
+		SetAspectMode(EMegaJamAspectMode::UltraPanavision_276_1);
+	}
+	else
+	{
+		const float EntryY = static_cast<float>(GetActorLocation().Y);
+		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
+		bHasProcessedLaneInput = false;
+		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+	}
+
+	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
+	{
+		GameMode->AddBonusScore((bOnBeat ? 350.0f : 200.0f) * static_cast<float>(SpliceChain), true);
+		GameMode->NotifySpliceChainUpdated(SpliceChain);
+	}
+	if (FlowSubsystem)
+	{
+		FlowSubsystem->SetOnBeatFlashTimer(1.1f);
+		FlowSubsystem->SetSpliceChain(SpliceChain);
+		FlowSubsystem->SetFilmMeter(FilmMeter);
+		FlowSubsystem->SetHazardTimeScale(0.45f);
+	}
+
+	PlayCue(TEXT("OnBeatCut"), BeatSpliceSound, 0.95f, 1.28f, true);
+	TriggerAudioEvent(TEXT("OnAspectSwitch"));
+
+	if (GEngine)
+	{
+		const TCHAR* PowerName = (NewSubGenre == EMegaJamSceneGenre::Western)
+			? TEXT("WESTERN 2.76:1 BEAT-SLASH")
+			: ((NewSubGenre == EMegaJamSceneGenre::Noir)
+				? TEXT("NOIR VERTIGO 2x GRAZE")
+				: ((NewSubGenre == EMegaJamSceneGenre::Chase) ? TEXT("CHASE +60% COMET SMASH") : TEXT("ACTION 21:9 BEAT-SPLICE")));
+		GEngine->AddOnScreenDebugMessage(202607, 1.8f, FColor::Cyan,
+			FString::Printf(TEXT("★ MATCH-CUT MONTAGE [%s]: %s (+15%% FILM | CHAIN x%d)"),
+				bIsManualCycle ? TEXT("MANUAL TAB/R") : TEXT("400m AUTO-CUT"),
+				PowerName,
+				SpliceChain),
+			true, FVector2D(1.35f, 1.35f));
+	}
 }
 
 void AMegaJamFlowPawn::Tick(float DeltaSeconds)
@@ -434,8 +567,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	if (Camera)
 	{
-		const UMegaJamFlowSubsystem* CamFlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
-		const EMegaJamSceneGenre CamGenre = CamFlowSub ? CamFlowSub->ActiveGenre : ActiveMusicGenre;
+		const EMegaJamSceneGenre CamGenre = GetEffectivePowerGenre();
 		const bool bNoirVertigo = (CamGenre == EMegaJamSceneGenre::Noir && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
 
 		float BaseFOV = BoxFOV;
@@ -584,6 +716,46 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	}
 
 	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
+
+	// ---- Scene 05 Match-Cut Montage: Automatic 400m Sub-Genre Power Cycling on the Beat ----
+	if (FlowSubsystem && FlowSubsystem->ActiveGenre == EMegaJamSceneGenre::Montage && GameMode)
+	{
+		const float DistMeters = GameMode->GetDistanceMeters();
+		if (DistMeters >= 7200.0f)
+		{
+			int32 TargetSegIdx = 0;
+			float SegStartMeters = 7200.0f;
+			EMegaJamSceneGenre SegGenre = EMegaJamSceneGenre::Action;
+			if (DistMeters >= 8400.0f)
+			{
+				TargetSegIdx = 3;
+				SegStartMeters = 8400.0f;
+				SegGenre = EMegaJamSceneGenre::Chase;
+			}
+			else if (DistMeters >= 8000.0f)
+			{
+				TargetSegIdx = 2;
+				SegStartMeters = 8000.0f;
+				SegGenre = EMegaJamSceneGenre::Noir;
+			}
+			else if (DistMeters >= 7600.0f)
+			{
+				TargetSegIdx = 1;
+				SegStartMeters = 7600.0f;
+				SegGenre = EMegaJamSceneGenre::Western;
+			}
+
+			if (TargetSegIdx != LastAutoMontageSegmentIndex)
+			{
+				if (FlowSubsystem->IsWithinBeatWindow(0.18f) || (DistMeters - SegStartMeters) >= 28.0f)
+				{
+					LastAutoMontageSegmentIndex = TargetSegIdx;
+					ApplyMontageSubGenre(SegGenre, false);
+				}
+			}
+		}
+	}
+
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
 	{
 		// 21:9 / 2.76:1 Director's Cut: drain FilmMeter at 15/sec and slow hazard animations to 0.45x
@@ -623,7 +795,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	StepPhysics(DeltaSeconds);
 
-	// ---- Scene 04 Chase: Active Comet Smash Invulnerable Obstacle Cleaving ----
+	// ---- Scene 04 Chase & Scene 05 Montage Chase: Active Comet Smash Invulnerable Obstacle Cleaving ----
 	if (CometSmashTimer > 0.0f && !bCrashed)
 	{
 		if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(GetWorld(), AMegaJamTrackGenerator::StaticClass())))
@@ -654,12 +826,13 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		}
 	}
 
-	// ---- Procedural C++ Motion for VehicleStaticMesh (Banking + Western Gallop + Noir Spy Car Drift + Chase Snowboard Carve) ----
+	// ---- Procedural C++ Motion for VehicleStaticMesh (Banking + Western Gallop + Noir Spy Car Drift + Chase Snowboard Carve + Montage Hang Glider) ----
 	if (VehicleStaticMesh && VehicleStaticMesh->IsVisible())
 	{
 		const EMegaJamSceneGenre CurrentGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
 		const bool bIsSnowboardGenre = (CurrentGenre == EMegaJamSceneGenre::Chase || CurrentGenre == EMegaJamSceneGenre::Alpine);
 		const bool bIsNoirGenre = (CurrentGenre == EMegaJamSceneGenre::Noir);
+		const bool bIsMontageGlider = (CurrentGenre == EMegaJamSceneGenre::Montage);
 
 		float MaxRollDeg = 28.0f;
 		float RollScale = 0.018f;
@@ -667,6 +840,11 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		{
 			MaxRollDeg = 35.0f;
 			RollScale = 0.024f;
+		}
+		else if (bIsMontageGlider)
+		{
+			MaxRollDeg = 34.0f;
+			RollScale = 0.022f;
 		}
 		else if (bIsNoirGenre)
 		{
@@ -688,6 +866,12 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		{
 			VehicleYaw = 18.0f;
 		}
+		else if (bIsMontageGlider)
+		{
+			const float WorldSeconds = static_cast<float>(GetWorld()->GetTimeSeconds());
+			VehiclePitch = FMath::Sin(WorldSeconds * 2.4f) * 3.5f;
+			GallopZ = FMath::Sin(WorldSeconds * 3.2f) * 14.0f;
+		}
 
 		const bool bOnGround = (static_cast<float>(GetActorLocation().Z) <= WideZBounds.Y + 15.0f);
 		if (CurrentGenre == EMegaJamSceneGenre::Western && bOnGround && !bCrashed)
@@ -698,11 +882,11 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			VehiclePitch = GallopWave * 6.5f;
 			GallopZ = FMath::Abs(GallopWave) * 28.0f;
 		}
-		else if (bIsSnowboardGenre && ActiveTrickSpinTimer > 0.0f)
+		else if ((bIsSnowboardGenre || bIsMontageGlider) && ActiveTrickSpinTimer > 0.0f)
 		{
 			// Smoothly spin VehicleStaticMesh through a full 360-degree Yaw rotation with a -16.0 deg nose-grab pitch
 			const float SpinAlpha = FMath::Clamp(1.0f - (ActiveTrickSpinTimer / 0.42f), 0.0f, 1.0f);
-			VehicleYaw = 18.0f + SpinAlpha * 360.0f;
+			VehicleYaw = (bIsSnowboardGenre ? 18.0f : 0.0f) + SpinAlpha * 360.0f;
 			VehiclePitch = FMath::Sin(SpinAlpha * PI) * -16.0f;
 		}
 
@@ -754,10 +938,9 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 	const float CrossPlaneDamp = FMath::Exp(-LateralDamping * DeltaSeconds);
 
-	const UMegaJamFlowSubsystem* FlowSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
-	const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
-	const bool bChaseWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Chase);
-	const bool bAlpineWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Alpine);
+	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
+	const bool bChaseWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && EffectiveGenre == EMegaJamSceneGenre::Chase);
+	const bool bAlpineWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && EffectiveGenre == EMegaJamSceneGenre::Alpine);
 
 	float TargetOverdriveSpeed = OverdriveSpeed;
 	if (bChaseWide)
@@ -909,21 +1092,20 @@ void AMegaJamFlowPawn::ExecuteEditorSplice()
 		ExecuteWesternBeatSlash();
 		return;
 	}
-	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
-	const EMegaJamSceneGenre ActiveGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
 	{
-		if (ActiveGenre == EMegaJamSceneGenre::Noir)
+		if (EffectiveGenre == EMegaJamSceneGenre::Noir)
 		{
 			ExecuteNoirVertigoPulse();
 			return;
 		}
-		if (ActiveGenre == EMegaJamSceneGenre::Chase)
+		if (EffectiveGenre == EMegaJamSceneGenre::Chase)
 		{
 			ExecuteChaseCometSmash();
 			return;
 		}
-		if (ActiveGenre == EMegaJamSceneGenre::Alpine)
+		if (EffectiveGenre == EMegaJamSceneGenre::Alpine)
 		{
 			ExecuteAlpineTrickOllie();
 			return;
@@ -1433,20 +1615,20 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 
 	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
-	const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
+	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
 	{
-		if (ActiveGenre == EMegaJamSceneGenre::Noir)
+		if (EffectiveGenre == EMegaJamSceneGenre::Noir)
 		{
 			ExecuteNoirVertigoPulse();
 			return true;
 		}
-		if (ActiveGenre == EMegaJamSceneGenre::Chase)
+		if (EffectiveGenre == EMegaJamSceneGenre::Chase)
 		{
 			ExecuteChaseCometSmash();
 			return true;
 		}
-		if (ActiveGenre == EMegaJamSceneGenre::Alpine)
+		if (EffectiveGenre == EMegaJamSceneGenre::Alpine)
 		{
 			ExecuteAlpineTrickOllie();
 			return true;
@@ -1586,9 +1768,9 @@ void AMegaJamFlowPawn::ToggleAspect()
 			return;
 		}
 
-		const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
-		const bool bIsWesternGenre = (ActiveGenre == EMegaJamSceneGenre::Western);
-		const bool bIsAlpineGenre = (ActiveGenre == EMegaJamSceneGenre::Alpine);
+		const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
+		const bool bIsWesternGenre = (EffectiveGenre == EMegaJamSceneGenre::Western);
+		const bool bIsAlpineGenre = (EffectiveGenre == EMegaJamSceneGenre::Alpine);
 
 		if (bIsWesternGenre)
 		{
@@ -1599,7 +1781,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 		}
 		else
 		{
-			// Scene 01 Action & Scene 03 Alpine: lock onto the nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
+			// Scene 01 Action, Scene 03 Noir, Scene 04 Chase & Scene 05 Montage: lock onto nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
 			const float EntryY = static_cast<float>(GetActorLocation().Y);
 			CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
 			bHasProcessedLaneInput = false;
@@ -1616,7 +1798,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 		bIsDropCutSlamming = false;
 
 		// Activate Director's Cut: +60% speed surge (Chase), +35% speed surge (Alpine), +30% speed surge (Western), or OverdriveSpeed
-		if (ActiveGenre == EMegaJamSceneGenre::Chase)
+		if (EffectiveGenre == EMegaJamSceneGenre::Chase)
 		{
 			Velocity.X = FMath::Max(static_cast<float>(Velocity.X) * 1.60f, OverdriveSpeed * 1.18f);
 		}
@@ -1707,12 +1889,11 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 
 	if (Camera)
 	{
-		const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
-		const EMegaJamSceneGenre ActiveGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+		const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
 
-		if (ActiveGenre == EMegaJamSceneGenre::Noir)
+		if (EffectiveGenre == EMegaJamSceneGenre::Noir)
 		{
-			// Stark black-and-white monochrome grading for Scene 03 Noir (Spy Car)
+			// Stark black-and-white monochrome grading for Scene 03 Noir (Spy Car) & Montage Noir Segment
 			Camera->PostProcessBlendWeight = 1.0f;
 			Camera->PostProcessSettings.bOverride_ColorSaturation = true;
 			Camera->PostProcessSettings.ColorSaturation = FVector4(0.05f, 0.05f, 0.08f, 1.0f);
@@ -1730,7 +1911,7 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 			Camera->PostProcessSettings.bOverride_ColorGain = true;
 			Camera->PostProcessSettings.ColorGain = FVector4(1.16f, 1.02f, 0.80f, 1.0f);
 		}
-		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Chase)
+		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && EffectiveGenre == EMegaJamSceneGenre::Chase)
 		{
 			// Warm amber highway grading for Scene 04 Chase (Snowboard Comet Smash)
 			Camera->PostProcessBlendWeight = 1.0f;
@@ -1741,7 +1922,7 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 			Camera->PostProcessSettings.bOverride_ColorGain = true;
 			Camera->PostProcessSettings.ColorGain = FVector4(1.22f, 1.04f, 0.76f, 1.0f);
 		}
-		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Alpine)
+		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && EffectiveGenre == EMegaJamSceneGenre::Alpine)
 		{
 			// Cryo-Avalanche post-process grading for Alpine Director's Cut
 			Camera->PostProcessBlendWeight = 1.0f;
@@ -1786,7 +1967,19 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		}
 	}
 
-	if (NextGenre == EMegaJamSceneGenre::Western)
+	if (NextGenre == EMegaJamSceneGenre::Montage)
+	{
+		// Scene 05 The Final Cut: Launch off the cliff into the Hang Glider and engage Match-Cut Montage starting on Action (21:9 Beat-Splice)
+		ActiveMontageSubGenre = EMegaJamSceneGenre::Action;
+		LastAutoMontageSegmentIndex = 0;
+		CurrentAspect = EMegaJamAspectMode::Wide_21_9;
+		const float EntryY = static_cast<float>(GetActorLocation().Y);
+		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
+		bHasProcessedLaneInput = false;
+		ActiveDollyBoostBonus = FMath::Max(ActiveDollyBoostBonus, 3200.0f);
+		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+	}
+	else if (NextGenre == EMegaJamSceneGenre::Western)
 	{
 		// Programmatically force Ultra-Panavision 2.76:1, lock Center Lane, and apply +2500 speed burst
 		CurrentAspect = EMegaJamAspectMode::UltraPanavision_276_1;
@@ -1819,8 +2012,8 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	}
 
-	// Vertical launch impulse into the air + mid-air hang
-	Velocity.Z = 1800.0f;
+	// Vertical launch impulse into the air + mid-air hang (1900.0f for the 7,200m Cliff Drop into Hang Glider)
+	Velocity.Z = (NextGenre == EMegaJamSceneGenre::Montage) ? 1900.0f : 1800.0f;
 	TriggerMicroHitstop(0.25f, 0.0f);
 	OnClapperboardSnapped.Broadcast();
 	PlayRunStartSound();
@@ -1836,6 +2029,8 @@ void AMegaJamFlowPawn::ResetForRun()
 	SteerInput = FVector2D::ZeroVector;
 	CurrentLane = 2;
 	bHasProcessedLaneInput = false;
+	ActiveMontageSubGenre = EMegaJamSceneGenre::Action;
+	LastAutoMontageSegmentIndex = -1;
 	CurrentFOVPunch = 0.0f;
 	SlamPitchPunch = 0.0f;
 	CameraTrauma = 0.0f;
@@ -2463,6 +2658,8 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 
 	bCrashed = true;
 	ActiveDollyBoostBonus = 0.0f;
+	ActiveMontageSubGenre = EMegaJamSceneGenre::Action;
+	LastAutoMontageSegmentIndex = -1;
 	if (HitstopRealTimeRemaining > 0.0f)
 	{
 		HitstopRealTimeRemaining = 0.0f;
@@ -2675,8 +2872,8 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 	LastGrazeOrPickupTime = Now;
 
 	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
-	const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
-	const bool bNoirVertigoGraze = (ActiveGenre == EMegaJamSceneGenre::Noir && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
+	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
+	const bool bNoirVertigoGraze = (EffectiveGenre == EMegaJamSceneGenre::Noir && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
 
 	FilmMeter = FMath::Clamp(FilmMeter + (bNoirVertigoGraze ? 12.0f : 10.0f), 0.0f, 100.0f);
 	AddCameraTrauma(bNoirVertigoGraze ? 0.20f : 0.14f, 0.35f);
