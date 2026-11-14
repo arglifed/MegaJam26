@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "MegaJamTypes.generated.h"
 
+/** Canonical corridor half-width (cm). Total corridor width is 2400.0f units. */
+constexpr float MEGAJAM_CORRIDOR_HALF_WIDTH = 1200.0f;
+
 /** The two overlapping realities on the track. Obstacles of the inactive take are phased out. */
 UENUM(BlueprintType)
 enum class EMegaJamTakeState : uint8

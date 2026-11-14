@@ -68,6 +68,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
 	TMap<EMegaJamSceneGenre, TObjectPtr<UStaticMesh>> SceneVehicleMeshes;
 
+	/** Per-genre seat offsets for the player orb (VisualMesh). Defaults to (0, 0, 85) for any genre not in the map. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
+	TMap<EMegaJamSceneGenre, FVector> SceneSeatOffsets;
+
 	/** Procedural 3D shockwave ring mesh for Scene 01 Beat-Splice barrier punches (/Engine/BasicShapes/Cylinder). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="VFX")
 	TObjectPtr<UStaticMeshComponent> ProceduralSpliceRingMesh;

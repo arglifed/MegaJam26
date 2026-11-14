@@ -75,3 +75,16 @@ Obstacle density scales with scene index and `FlowRatio`.
 - `AMegaJamGameMode`:
   - `int32 CurrentTakeNumber = 1`, incremented in `ResetRun()`
   - `FString GetFormattedTimecode() const` returns `MM:SS:FF` at 24fps
+
+## Canonical Genre & Vehicle Mapping
+
+Corridor Total Width: 2400 units (`MEGAJAM_CORRIDOR_HALF_WIDTH = 1200.0f`).
+
+| Genre | Vehicle | Obstacle theme |
+|---|---|---|
+| Action | Motorcycle | Cyber-barriers |
+| Western | Horse | Timber barricade |
+| Noir | Spy car (vintage 1960s, open top) | Roadblocks / enemy sedans |
+| Chase | Snowboard | Snowdrifts / ice boulders |
+| Montage (Final Cut) | Hang glider | Neon monoliths / laser gates |
+

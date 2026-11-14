@@ -196,7 +196,7 @@ public:
 
 	/** Half width of the corridor (cm). Walls are centered on +/- this value. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
-	float CorridorHalfWidth = 1000.0f;
+	float CorridorHalfWidth = MEGAJAM_CORRIDOR_HALF_WIDTH;
 
 	/** Probability that a row holds an obstacle at density scale 1 (Act IV, full flow). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
