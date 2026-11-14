@@ -839,9 +839,13 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	const int32 Rows = FMath::Max(1, RowsPerChunk);
 	const float ChunkStartX = ChunkIndex * ChunkLength;
 	const float ChunkCenterX = ChunkStartX + ChunkLength * 0.5f;
+	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
 
+	// Scene 05 The Cliff Drop (DistanceMeters >= 7200.0f): drop the canyon floor beneath the track down to Z = -900.0f
+	// while keeping the glowing holographic energy rails (LaneRailsISM at Z = 2.0f) suspended in mid-air!
+	const float FloorZ = (ChunkDistMeters >= 7200.0f) ? -900.0f : -50.0f;
 	FloorISM->UpdateInstanceTransform(Slot,
-		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, 0.0f, -50.0f), FVector(ChunkLength / 100.0f, CorridorHalfWidth * 2.0f / 100.0f, 1.0f)),
+		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, 0.0f, FloorZ), FVector(ChunkLength / 100.0f, CorridorHalfWidth * 2.0f / 100.0f, 1.0f)),
 		true, false, true);
 
 	const FVector WallScale(ChunkLength / 100.0f, 1.0f, 10.0f);
@@ -862,11 +866,10 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	}
 
 	const bool bTitleOrCompleted = BoundGameMode && !BoundGameMode->IsPlaying();
-	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
 	const float CurrentDistance = ChunkDistMeters;
 	const int32 ChunkGenreIdx = FMath::Clamp(FMath::FloorToInt(CurrentDistance / 1800.0f), 0, 4);
 
-	// Visual progression across Scene 01 (0m-1,800m Action), Scene 02 (1,800m-3,600m Western Standoff), Scene 03 (3,600m-5,400m Noir Spy Car), and Scene 04 (5,400m-7,200m Chase Snowboard)
+	// Visual progression across Scene 01 (0m-1,800m Action), Scene 02 (1,800m-3,600m Western Standoff), Scene 03 (3,600m-5,400m Noir Spy Car), Scene 04 (5,400m-7,200m Chase Snowboard), and Scene 05 (7,200m-9,000m Final Cut Montage)
 	EMegaJamFilmScene ChunkScene = EMegaJamFilmScene::Soundstage;
 	if (ChunkDistMeters >= 5400.0f)
 	{
@@ -887,11 +890,12 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	FRandomStream Stream(Seed + ChunkIndex * 7919);
 
-	// Keep chunks before SafeUntilChunkIndex, around the 1,800m, 3,600m, and 5,400m Clapperboard transitions, and beyond 8,880m obstacle-free
+	// Keep chunks before SafeUntilChunkIndex, around the 1,800m, 3,600m, 5,400m, and 7,200m Clapperboard transitions, and beyond 8,880m obstacle-free
 	const bool bInSceneTransitionZone =
 		(ChunkDistMeters >= 1720.0f && ChunkDistMeters < 1920.0f) ||
 		(ChunkDistMeters >= 3520.0f && ChunkDistMeters < 3720.0f) ||
-		(ChunkDistMeters >= 5320.0f && ChunkDistMeters < 5520.0f);
+		(ChunkDistMeters >= 5320.0f && ChunkDistMeters < 5520.0f) ||
+		(ChunkDistMeters >= 7120.0f && ChunkDistMeters < 7320.0f);
 	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || bInSceneTransitionZone || ChunkDistMeters >= 8880.0f || bTitleOrCompleted);
 	const bool bIsHazardChunk = !bInSafeOrFinishZone && IsHazardChunkForScene(ChunkIndex, ChunkScene);
 	const int32 HazardArchetype = GetHazardArchetypeForChunk(ChunkIndex);
@@ -937,14 +941,19 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		return;
 	}
 
-	// Action Gauntlets, Scene 02 Western Standoff Barricades, and Scene 03 Alpine Slalom Gates & Ice-Boulder Clusters
+	// Action Gauntlets, Scene 02 Western Standoff Barricades, Scene 03 Noir Roadblocks, Scene 04 Chase Slalom/Boulders, and Scene 05 Match-Cut Montage!
 	const int32 CenterRow = FMath::Clamp(Rows / 2, 0, Rows - 1);
 	const int32 BaseObstacleIndex = (Slot * Rows + CenterRow) * ObstaclesPerRow;
 	const float HazardX = ChunkCenterX;
 	const float TakeRoll = Stream.FRand();
 
-	// Scene 04 (DistanceMeters >= 5400.0f): Chase Snowboard Slalom Gates & Snowdrift/Ice-Boulder Clusters designed for +60% downhill carving and Comet Smash!
-	if (ChunkDistMeters >= 5400.0f)
+	// Determine effective obstacle genre for this chunk (in Scene 05 Montage 7,200m-8,940m, match the 400m sub-genre cycle!)
+	const bool bIsChaseChunk = (ChunkDistMeters >= 5400.0f && ChunkDistMeters < 7200.0f) || (ChunkDistMeters >= 8400.0f);
+	const bool bIsNoirChunk = (ChunkDistMeters >= 3600.0f && ChunkDistMeters < 5400.0f) || (ChunkDistMeters >= 8000.0f && ChunkDistMeters < 8400.0f);
+	const bool bIsWesternChunk = (ChunkDistMeters >= 1800.0f && ChunkDistMeters < 3600.0f) || (ChunkDistMeters >= 7600.0f && ChunkDistMeters < 8000.0f);
+
+	// Scene 04 Chase (5,400m-7,200m) & Montage Chase Segment (8,400m-8,940m): Snowboard Slalom Gates & Snowdrift/Boulder Clusters for +60% carving and Comet Smash!
+	if (bIsChaseChunk)
 	{
 		if (HazardArchetype % 2 == 0)
 		{
@@ -998,8 +1007,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		return;
 	}
 
-	// Scene 03 (3600.0f <= DistanceMeters < 5400.0f): Noir Spy Car Roadblocks & Enemy Sedans across the 5 lanes (built for 2x Adrenaline Graze & Vertigo Pulse!)
-	if (ChunkDistMeters >= 3600.0f)
+	// Scene 03 Noir (3,600m-5,400m) & Montage Noir Segment (8,000m-8,400m): Spy Car Roadblocks & Enemy Sedans across the 5 lanes (built for 2x Adrenaline Graze & Vertigo Pulse!)
+	if (bIsNoirChunk)
 	{
 		if (HazardArchetype % 2 == 0)
 		{
@@ -1051,8 +1060,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		return;
 	}
 
-	// Scene 02 (1800.0f <= DistanceMeters < 3600.0f): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space!
-	if (ChunkDistMeters >= 1800.0f)
+	// Scene 02 Western (1,800m-3,600m) & Montage Western Segment (7,600m-8,000m): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space!
+	if (bIsWesternChunk)
 	{
 		const float BarricadeScaleY = (MEGAJAM_CORRIDOR_HALF_WIDTH * 2.0f) / 100.0f;
 		const FTransform MainTimberBarricade(

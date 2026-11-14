@@ -410,6 +410,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="MegaJam|Overdrive")
 	float GetCometSmashTimer() const { return CometSmashTimer; }
 
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	EMegaJamSceneGenre GetActiveMontageSubGenre() const { return ActiveMontageSubGenre; }
+
+	/** Returns ActiveMontageSubGenre during Scene 05 Montage, or the active scene genre in Scenes 01-04. */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	EMegaJamSceneGenre GetEffectivePowerGenre() const;
+
 	UFUNCTION(BlueprintPure, Category="MegaJam|Overdrive")
 	bool IsInBulletTimeOverdrive() const
 	{
@@ -468,6 +475,13 @@ public:
 	/** Executes the Scene 04 Chase Fast-Forward Comet Smash while in Wide_21_9 Director's Cut, granting invulnerable obstacle cleaving. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void ExecuteChaseCometSmash();
+
+	/** Manually cycles ActiveMontageSubGenre (Action -> Western -> Noir -> Chase) during Scene 05 Final Cut Montage (Tab / R). */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void CycleMontagePowerOnDemand();
+
+	/** Applies a new Montage sub-genre power, aspect ratio lock, post-process grading, and +15 Film Meter Match-Cut bonus. */
+	void ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool bIsManualCycle);
 
 	/** Triggers the mid-air Clapperboard stunt transition into NextGenre (vertical launch, 0.25s hitstop, blackout slate, mesh & music swap). */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
@@ -690,6 +704,13 @@ protected:
 	/** Remaining duration (s) for the Scene 04 Fast-Forward Comet Smash invulnerability & obstacle-cleaving state. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Overdrive")
 	float CometSmashTimer = 0.0f;
+
+	/** Active genre power sub-mode during Scene 05 Match-Cut Montage (Action -> Western -> Noir -> Chase). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
+	EMegaJamSceneGenre ActiveMontageSubGenre = EMegaJamSceneGenre::Action;
+
+	/** Last 400m sub-segment index (0..3) auto-applied during Scene 05 Montage (7,200m - 9,000m). */
+	int32 LastAutoMontageSegmentIndex = -1;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
 
