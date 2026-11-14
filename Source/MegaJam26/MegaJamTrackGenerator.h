@@ -141,6 +141,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> LaneRailsISM;
 
+	/** Non-colliding outer-corridor studio soundstage dressing (lighting trusses, cranes) outside Y = +/-1200. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")
+	TObjectPtr<UInstancedStaticMeshComponent> StudioDressingISM;
+
 	// ---- Modular Art Mesh Slots (fall back to Cube / Cylinder when null) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
 	TObjectPtr<UStaticMesh> ObstacleTakeAMesh;
@@ -319,6 +323,7 @@ private:
 	void BindToPawn();
 	void CreatePools();
 	void PopulateChunk(int32 ChunkIndex);
+	void GenerateTrackChunk(float StartX, float EndX);
 	void PopulateSetPiecesForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
 	void PopulatePickupsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, EMegaJamFilmScene ChunkScene, bool bIsHazardChunk, int32 HazardArchetype, FRandomStream& Stream);
 	void PopulateBoostStripsForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, bool bIsHazardChunk, int32 HazardArchetype, FRandomStream& Stream);
