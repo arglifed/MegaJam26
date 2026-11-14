@@ -111,7 +111,7 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 	}
 
 	// Scene 02 Transition at 1,800m: trigger mid-air Clapperboard Stunt Transition into Western Standoff
-	if (DistanceMeters >= 1800.0f && ActiveSceneGenre == EMegaJamSceneGenre::Action)
+	if (DistanceMeters >= 1800.0f && DistanceMeters < 3600.0f && ActiveSceneGenre == EMegaJamSceneGenre::Action)
 	{
 		ActiveSceneGenre = EMegaJamSceneGenre::Western;
 		CurrentCheckpointDistanceMeters = 1800.0f;
@@ -122,6 +122,20 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 		if (FlowPawn)
 		{
 			FlowPawn->TriggerClapperboardTransition(EMegaJamSceneGenre::Western);
+		}
+	}
+	// Scene 03 Transition at 3,600m: trigger mid-air Clapperboard Stunt Transition into Alpine Avalanche
+	else if (DistanceMeters >= 3600.0f && ActiveSceneGenre != EMegaJamSceneGenre::Alpine)
+	{
+		ActiveSceneGenre = EMegaJamSceneGenre::Alpine;
+		CurrentCheckpointDistanceMeters = 3600.0f;
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		}
+		if (FlowPawn)
+		{
+			FlowPawn->TriggerClapperboardTransition(EMegaJamSceneGenre::Alpine);
 		}
 	}
 
@@ -198,16 +212,33 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 		return;
 	}
 
-	// Step cleanly: < 1750.0f -> warp to 1,760m (pre-Scene 02 transition); otherwise -> warp to 3,510m (pre-Wrap Arch)
-	const bool bWarpToScene02Transition = (DistanceMeters < 1750.0f);
-	DistanceMeters = bWarpToScene02Transition ? 1760.0f : 3510.0f;
-	const float TargetWorldX = SceneStartOriginX + DistanceMeters * 100.0f;
-
-	if (!bWarpToScene02Transition && ActiveSceneGenre == EMegaJamSceneGenre::Action)
+	// Step cleanly across all three acts:
+	// < 1750.0f -> warp to 1,760m (Scene 01 -> 02 transition)
+	// < 3550.0f -> warp to 3,560m (Scene 02 -> 03 transition)
+	// >= 3550.0f -> warp to 5,310m (Finish Arch approach)
+	FString WarpMsg;
+	if (DistanceMeters < 1750.0f)
 	{
+		DistanceMeters = 1760.0f;
+		ActiveSceneGenre = EMegaJamSceneGenre::Action;
+		CurrentCheckpointDistanceMeters = 0.0f;
+		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 1,760m (SCENE 01 -> 02 TRANSITION)");
+	}
+	else if (DistanceMeters < 3550.0f)
+	{
+		DistanceMeters = 3560.0f;
 		ActiveSceneGenre = EMegaJamSceneGenre::Western;
 		CurrentCheckpointDistanceMeters = 1800.0f;
+		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 3,560m (SCENE 02 -> 03 TRANSITION)");
 	}
+	else
+	{
+		DistanceMeters = 5310.0f;
+		ActiveSceneGenre = EMegaJamSceneGenre::Alpine;
+		CurrentCheckpointDistanceMeters = 3600.0f;
+		WarpMsg = TEXT("DEV HOTKEY [F7]: WARPED TO 5,310m (FINISH ARCH APPROACH)");
+	}
+	const float TargetWorldX = SceneStartOriginX + DistanceMeters * 100.0f;
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
@@ -232,9 +263,6 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 
 	if (GEngine)
 	{
-		const FString WarpMsg = bWarpToScene02Transition
-			? TEXT("DEV HOTKEY [F7]: WARPED TO 1,760m (PRE-SCENE 02 CLAPPERBOARD)")
-			: TEXT("DEV HOTKEY [F7]: WARPED TO 3,510m (PRE-WRAP ARCH)");
 		GEngine->AddOnScreenDebugMessage(202603, 2.5f, FColor::Green, WarpMsg, true, FVector2D(1.3f, 1.3f));
 	}
 #endif

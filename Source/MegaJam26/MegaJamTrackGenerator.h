@@ -279,11 +279,11 @@ public:
 	int32 SpliceObstaclesInFront(const FVector& PawnLocation, float ForwardRange = 2500.0f, float SpliceRadius = 600.0f);
 
 	/**
-	 * Scene 02 Quick-Draw Beat-Slash: cleaves all Take A / Take B barricades and obstacles overlapping [ForwardMinX, ForwardMaxX]
-	 * within [-HalfWidthY, +HalfWidthY], spawning a radial scatter of collectible Film Frames. Returns the number of obstacles cleaved.
+	 * Scene 02 Quick-Draw Beat-Slash & Scene 03 Cryo-Shatter: cleaves all Take A / Take B barricades and obstacles overlapping
+	 * [ForwardMinX, ForwardMaxX] within [CenterY - HalfWidthY, CenterY + HalfWidthY], spawning a lateral split of collectible Film Frames.
 	 */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
-	int32 CleaveObstaclesInRange(float ForwardMinX, float ForwardMaxX, float HalfWidthY);
+	int32 CleaveObstaclesInRange(float ForwardMinX, float ForwardMaxX, float HalfWidthY, float CenterY = 0.0f);
 
 protected:
 	virtual void BeginPlay() override;
