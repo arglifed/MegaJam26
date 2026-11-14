@@ -156,6 +156,46 @@ void AMegaJamTrackGenerator::BeginPlay()
 		LaneRailMID = LaneRailsISM->CreateAndSetMaterialInstanceDynamic(0);
 	}
 
+	// Obstacle skins without art for their scene reuse the base mesh, so give them the shared take material created above.
+	auto ShareBaseMaterial = [](UInstancedStaticMeshComponent* BaseISM, const TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Skins)
+	{
+		for (UInstancedStaticMeshComponent* Skin : Skins)
+		{
+			if (Skin && Skin->GetStaticMesh() == BaseISM->GetStaticMesh())
+			{
+				Skin->SetMaterial(0, BaseISM->GetMaterial(0));
+			}
+		}
+	};
+	ShareBaseMaterial(TakeA_ObstaclesISM, ObstacleSkinISMsA);
+	ShareBaseMaterial(TakeB_ObstaclesISM, ObstacleSkinISMsB);
+
+	if (bUseMeshMaterials)
+	{
+		if (UMaterialInstanceDynamic* MID = MakeMeshMID(SetPieceISM))
+		{
+			MID->SetVectorParameterValue(TEXT("TakeColor"), CurrentSceneColor);
+			SetPieceMID = MID;
+		}
+		if (UMaterialInstanceDynamic* MID = MakeMeshMID(PickupISM))
+		{
+			MID->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
+			MID->SetScalarParameterValue(TEXT("TakeGhosting"), 1.0f);
+			PickupMatA = MID;
+		}
+		if (UMaterialInstanceDynamic* MID = MakeMeshMID(PickupTakeB_ISM))
+		{
+			MID->SetScalarParameterValue(TEXT("TakeIndex"), 1.0f);
+			MID->SetScalarParameterValue(TEXT("TakeGhosting"), 1.0f);
+			PickupMatB = MID;
+		}
+		if (UMaterialInstanceDynamic* MID = MakeMeshMID(WrapArchISM))
+		{
+			MID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(1.0f, 0.85f, 0.15f, 1.0f));
+			WrapArchMID = MID;
+		}
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -246,6 +286,20 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 		if (TargetSetMesh && SetPieceISM->GetStaticMesh() != TargetSetMesh)
 		{
 			SetPieceISM->SetStaticMesh(TargetSetMesh);
+			if (bUseMeshMaterials)
+			{
+				// The material follows the mesh: its own material when it has one, ObstacleMaterial for the engine fallback shapes.
+				UMaterialInstanceDynamic* MeshMID = MakeMeshMID(SetPieceISM);
+				if (!MeshMID && ObstacleMaterial)
+				{
+					MeshMID = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+					SetPieceISM->SetMaterial(0, MeshMID);
+				}
+				if (MeshMID)
+				{
+					SetPieceMID = MeshMID;
+				}
+			}
 		}
 
 		OnFilmSceneChanged.Broadcast(CurrentScene);
@@ -288,6 +342,8 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 			StudioDressingISM->MarkRenderStateDirty();
 		}
 	}
+
+	SyncObstacleSkins();
 }
 
 void AMegaJamTrackGenerator::UpdateFinalCutWrapArch()
@@ -314,6 +370,18 @@ void AMegaJamTrackGenerator::UpdateFinalCutWrapArch()
 		const float ArchX = 894000.0f;
 		const float HalfW = MEGAJAM_CORRIDOR_HALF_WIDTH;
 		const float FullWidthScaleY = (HalfW * 2.0f) / 100.0f;
+
+		if (WrapArchMesh && WrapArchISM->GetStaticMesh() == WrapArchMesh)
+		{
+			// One-piece arch: turned so its width (mesh X) spans the corridor, scaled uniformly, base resting on the floor.
+			const FVector Extent = WrapArchMesh->GetBounds().BoxExtent;
+			const float ArchScale = HalfW / FMath::Max(1.0f, static_cast<float>(Extent.X));
+			WrapArchISM->UpdateInstanceTransform(0,
+				FTransform(FRotator(0.0f, 90.0f, 0.0f), FVector(ArchX, 0.0f, Extent.Z * ArchScale), FVector(ArchScale)),
+				true, false, true);
+			WrapArchISM->MarkRenderStateDirty();
+			return;
+		}
 
 		WrapArchISM->UpdateInstanceTransform(0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -(HalfW - 120.0f), 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
 		WrapArchISM->UpdateInstanceTransform(1, FTransform(FRotator::ZeroRotator, FVector(ArchX, HalfW - 120.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
@@ -592,6 +660,13 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	{
 		StudioDressingISM->ClearInstances();
 	}
+	for (UInstancedStaticMeshComponent* DressingISM : StudioDressingExtraISMs)
+	{
+		if (DressingISM)
+		{
+			DressingISM->ClearInstances();
+		}
+	}
 
 	for (int32 Offset = 0; Offset < PoolSize(); ++Offset)
 	{
@@ -626,6 +701,7 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	}
 
 	ApplyTakeCollision(BoundPawn->GetCurrentTake());
+	SyncObstacleSkins();
 
 	LastBroadcastScene = -1;
 	bBuilt = true;
@@ -737,7 +813,7 @@ void AMegaJamTrackGenerator::CreatePools()
 	SetPieceISM->SetStaticMesh(SoundstageTrussMesh ? SoundstageTrussMesh.Get() : BlockMesh.Get());
 	BoostStripISM->SetStaticMesh(BlockMesh.Get());
 	LaneRailsISM->SetStaticMesh(BlockMesh.Get());
-	WrapArchISM->SetStaticMesh(ApertureRingMesh ? ApertureRingMesh.Get() : BlockMesh.Get());
+	WrapArchISM->SetStaticMesh(WrapArchMesh ? WrapArchMesh.Get() : (ApertureRingMesh ? ApertureRingMesh.Get() : BlockMesh.Get()));
 	if (StudioDressingISM && !StudioDressingISM->GetStaticMesh())
 	{
 		StudioDressingISM->SetStaticMesh(SoundstageTrussMesh ? SoundstageTrussMesh.Get() : BlockMesh.Get());
@@ -809,7 +885,152 @@ void AMegaJamTrackGenerator::CreatePools()
 		WrapArchISM->AddInstance(MakeHiddenInstanceTransform(), true);
 	}
 
+	CreateArtPools(ObstacleSlots);
+
 	bPoolsCreated = true;
+}
+
+UInstancedStaticMeshComponent* AMegaJamTrackGenerator::CreateVisualISM(UStaticMesh* Mesh)
+{
+	UInstancedStaticMeshComponent* ISM = NewObject<UInstancedStaticMeshComponent>(this);
+	ISM->SetupAttachment(TrackRoot);
+	ISM->SetMobility(EComponentMobility::Movable);
+	ISM->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ISM->SetGenerateOverlapEvents(false);
+	ISM->SetCanEverAffectNavigation(false);
+	ISM->SetStaticMesh(Mesh);
+	ISM->RegisterComponent();
+	return ISM;
+}
+
+UMaterialInstanceDynamic* AMegaJamTrackGenerator::MakeMeshMID(UInstancedStaticMeshComponent* ISM)
+{
+	UStaticMesh* Mesh = ISM ? ISM->GetStaticMesh().Get() : nullptr;
+	if (!Mesh || Mesh == BlockMesh || Mesh == CylinderMesh)
+	{
+		return nullptr;
+	}
+	UMaterialInterface* MeshMaterial = Mesh->GetMaterial(0);
+	if (!MeshMaterial)
+	{
+		return nullptr;
+	}
+	UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(MeshMaterial, this);
+	ISM->SetMaterial(0, MID);
+	return MID;
+}
+
+void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
+{
+	// ---- Per-scene obstacle skins (visual only; TakeA/TakeB_ObstaclesISM keep all collision and gameplay) ----
+	const int32 NumSkinScenes = 5;
+	bool bAnySkin = false;
+	for (const TObjectPtr<UStaticMesh>& Mesh : SceneObstacleMeshesTakeA) { bAnySkin |= (Mesh != nullptr); }
+	for (const TObjectPtr<UStaticMesh>& Mesh : SceneObstacleMeshesTakeB) { bAnySkin |= (Mesh != nullptr); }
+
+	if (bAnySkin && ObstacleSkinISMsA.Num() == 0)
+	{
+		auto BuildSkins = [this, ObstacleSlots, NumSkinScenes](
+			const TArray<TObjectPtr<UStaticMesh>>& Meshes, UInstancedStaticMeshComponent* BaseISM, float TakeIndex, const FLinearColor& TakeColor,
+			TArray<TObjectPtr<UInstancedStaticMeshComponent>>& OutSkins, TArray<int8>& OutOwners)
+		{
+			for (int32 SceneIdx = 0; SceneIdx < NumSkinScenes; ++SceneIdx)
+			{
+				UStaticMesh* SkinMesh = Meshes.IsValidIndex(SceneIdx) ? Meshes[SceneIdx].Get() : nullptr;
+				UInstancedStaticMeshComponent* Skin = CreateVisualISM(SkinMesh ? SkinMesh : BaseISM->GetStaticMesh().Get());
+				if (SkinMesh && SkinMesh->GetMaterial(0))
+				{
+					UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(SkinMesh->GetMaterial(0), this);
+					MID->SetScalarParameterValue(TEXT("TakeIndex"), TakeIndex);
+					MID->SetScalarParameterValue(TEXT("TakeGhosting"), 1.0f);
+					MID->SetVectorParameterValue(TEXT("TakeColor"), TakeColor);
+					Skin->SetMaterial(0, MID);
+				}
+				else if (UMaterialInterface* BaseMaterial = BaseISM->GetMaterial(0))
+				{
+					// No art for this scene: same look as before (the shared take MID on the fallback mesh).
+					Skin->SetMaterial(0, BaseMaterial);
+				}
+				for (int32 Index = 0; Index < ObstacleSlots; ++Index)
+				{
+					Skin->AddInstance(MakeHiddenInstanceTransform(), true);
+				}
+				OutSkins.Add(Skin);
+			}
+			OutOwners.Init(-1, ObstacleSlots);
+			BaseISM->SetVisibility(false);
+		};
+
+		BuildSkins(SceneObstacleMeshesTakeA, TakeA_ObstaclesISM, 0.0f, TakeAColor, ObstacleSkinISMsA, ObstacleSkinOwnerA);
+		BuildSkins(SceneObstacleMeshesTakeB, TakeB_ObstaclesISM, 1.0f, TakeBColor, ObstacleSkinISMsB, ObstacleSkinOwnerB);
+	}
+
+	// ---- Outer-corridor dressing variety ----
+	if (StudioDressingExtraISMs.Num() == 0)
+	{
+		for (const TObjectPtr<UStaticMesh>& Mesh : StudioDressingMeshes)
+		{
+			if (Mesh)
+			{
+				UInstancedStaticMeshComponent* DressingISM = CreateVisualISM(Mesh);
+				DressingISM->CastShadow = true;
+				StudioDressingExtraISMs.Add(DressingISM);
+			}
+		}
+	}
+}
+
+void AMegaJamTrackGenerator::SyncObstacleSkins()
+{
+	if (ObstacleSkinISMsA.Num() == 0 || !bPoolsCreated)
+	{
+		return;
+	}
+
+	auto SyncTake = [](UInstancedStaticMeshComponent* BaseISM, TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Skins, TArray<int8>& Owners)
+	{
+		const int32 Count = FMath::Min(BaseISM->GetInstanceCount(), Owners.Num());
+		const int32 Stride = BaseISM->NumCustomDataFloats;
+		uint32 DirtyMask = 0;
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			FTransform BaseTransform;
+			BaseISM->GetInstanceTransform(Index, BaseTransform, true);
+
+			// Custom data 0 is the scene index PopulateChunk stamps on every obstacle slot.
+			const int32 DataIdx = Index * Stride;
+			const int32 SceneIdx = (Stride > 0 && BaseISM->PerInstanceSMCustomData.IsValidIndex(DataIdx))
+				? FMath::Clamp(FMath::RoundToInt(BaseISM->PerInstanceSMCustomData[DataIdx]), 0, Skins.Num() - 1)
+				: 0;
+
+			const int32 PrevIdx = Owners[Index];
+			if (PrevIdx >= 0 && PrevIdx != SceneIdx)
+			{
+				Skins[PrevIdx]->UpdateInstanceTransform(Index, MakeHiddenInstanceTransform(), true, false, true);
+				DirtyMask |= (1u << PrevIdx);
+			}
+			Owners[Index] = static_cast<int8>(SceneIdx);
+
+			FTransform SkinTransform;
+			Skins[SceneIdx]->GetInstanceTransform(Index, SkinTransform, true);
+			if (!SkinTransform.Equals(BaseTransform, 0.01f))
+			{
+				Skins[SceneIdx]->UpdateInstanceTransform(Index, BaseTransform, true, false, true);
+				DirtyMask |= (1u << SceneIdx);
+			}
+		}
+		for (int32 SkinIdx = 0; SkinIdx < Skins.Num(); ++SkinIdx)
+		{
+			if (DirtyMask & (1u << SkinIdx))
+			{
+				Skins[SkinIdx]->MarkRenderStateDirty();
+			}
+		}
+	};
+
+	SyncTake(TakeA_ObstaclesISM, ObstacleSkinISMsA, ObstacleSkinOwnerA);
+	SyncTake(TakeB_ObstaclesISM, ObstacleSkinISMsB, ObstacleSkinOwnerB);
 }
 
 int32 AMegaJamTrackGenerator::SlotOf(int32 ChunkIndex) const
@@ -1219,20 +1440,36 @@ void AMegaJamTrackGenerator::GenerateTrackChunk(float StartX, float EndX)
 		return;
 	}
 
+	// With StudioDressingMeshes assigned, pick one at random, scale it up and rest its (centred) base on Z = 0.
+	auto AddDressing = [this](const FTransform& Transform)
+	{
+		if (StudioDressingExtraISMs.Num() == 0)
+		{
+			StudioDressingISM->AddInstance(Transform, true);
+			return;
+		}
+		UInstancedStaticMeshComponent* DressingISM = StudioDressingExtraISMs[FMath::RandRange(0, StudioDressingExtraISMs.Num() - 1)];
+		const float HalfHeight = DressingISM->GetStaticMesh() ? static_cast<float>(DressingISM->GetStaticMesh()->GetBounds().BoxExtent.Z) : 50.0f;
+		FTransform Scaled = Transform;
+		Scaled.SetScale3D(FVector(StudioDressingScale));
+		Scaled.AddToTranslation(FVector(0.0f, 0.0f, HalfHeight * StudioDressingScale));
+		DressingISM->AddInstance(Scaled, true);
+	};
+
 	for (float X = StartX; X < EndX; X += 800.0f)
 	{
 		if (FMath::RandBool() && FMath::FRand() > 0.6f)
 		{
 			const FVector PropLoc(X, FMath::RandRange(-2800.0f, -1400.0f), 0.0f);
 			const FTransform LeftTransform(FRotator(0.0f, 90.0f, 0.0f), PropLoc, FVector::OneVector);
-			StudioDressingISM->AddInstance(LeftTransform, true);
+			AddDressing(LeftTransform);
 		}
 
 		if (FMath::RandBool() && FMath::FRand() > 0.6f)
 		{
 			const FVector PropLoc(X, FMath::RandRange(1400.0f, 2800.0f), 0.0f);
 			const FTransform RightTransform(FRotator(0.0f, -90.0f, 0.0f), PropLoc, FVector::OneVector);
-			StudioDressingISM->AddInstance(RightTransform, true);
+			AddDressing(RightTransform);
 		}
 	}
 }
