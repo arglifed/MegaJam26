@@ -138,6 +138,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	MusicTrack = MusicActionFinder.Object;
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Action, MusicActionFinder.Object);
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Western, MusicWesternFinder.Object);
+	SceneMusicTracks.Add(EMegaJamSceneGenre::Alpine, MusicNoirFinder.Object);
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Noir, MusicNoirFinder.Object);
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Chase, MusicChaseFinder.Object);
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Montage, MusicMontageFinder.Object);
@@ -370,12 +371,13 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	EmissiveBurstTimer = FMath::Max(0.0f, EmissiveBurstTimer - DeltaSeconds);
 	CurrentFOVPunch = FMath::FInterpTo(CurrentFOVPunch, 0.0f, DeltaSeconds, CutFOVPunchDecaySpeed);
 	ActiveSlashRoll = FMath::FInterpTo(ActiveSlashRoll, 0.0f, DeltaSeconds, 12.0f);
+	ActiveTrickSpinTimer = FMath::Max(0.0f, ActiveTrickSpinTimer - UnscaledDelta);
 	if (!bIsDropCutSlamming)
 	{
 		SlamPitchPunch = FMath::FInterpTo(SlamPitchPunch, 0.0f, DeltaSeconds, 12.0f);
 	}
 
-	// ---- Procedural 3D Beat-Splice Shockwave Ring (Scene 01) ----
+	// ---- Procedural 3D Beat-Splice / Cryo-Shatter Shockwave Ring (Scene 01 & Scene 03) ----
 	if (SpliceRingTimer > 0.0f)
 	{
 		SpliceRingTimer = FMath::Max(0.0f, SpliceRingTimer - UnscaledDelta);
@@ -386,9 +388,17 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 				const float Alpha = FMath::Clamp(1.0f - (SpliceRingTimer / 0.18f), 0.0f, 1.0f);
 				const float RadialScale = FMath::Lerp(1.2f, 11.5f, Alpha);
 				const float ThicknessZ = FMath::Lerp(0.08f, 0.005f, Alpha);
-				const float RelX = FMath::Lerp(240.0f, 780.0f, Alpha);
-				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(RelX, 0.0f, 0.0f));
-				ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+				if (bSpliceRingIsHorizontal)
+				{
+					ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -45.0f));
+					ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
+				}
+				else
+				{
+					const float RelX = FMath::Lerp(240.0f, 780.0f, Alpha);
+					ProceduralSpliceRingMesh->SetRelativeLocation(FVector(RelX, 0.0f, 0.0f));
+					ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+				}
 				ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(RadialScale, RadialScale, ThicknessZ));
 			}
 			else
@@ -449,7 +459,11 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		const float ShakeRoll  = Shake * 5.0f * FMath::Sin(static_cast<float>(RealTime * 53.0));
 		const float ShakeZ     = Shake * 18.0f * FMath::Sin(static_cast<float>(RealTime * 61.0));
 
-		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
+		const UMegaJamFlowSubsystem* CamFlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+		const EMegaJamSceneGenre CamGenre = CamFlowSub ? CamFlowSub->ActiveGenre : ActiveMusicGenre;
+		const float DownhillPitchOffset = (CamGenre == EMegaJamSceneGenre::Alpine && CurrentAspect == EMegaJamAspectMode::Wide_21_9) ? -7.5f : 0.0f;
+
+		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + DownhillPitchOffset + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
 		Camera->SetRelativeLocation(FVector(0.0f, 0.0f, ShakeZ));
 	}
 
@@ -577,25 +591,37 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	StepPhysics(DeltaSeconds);
 
-	// ---- Procedural C++ Motion for VehicleStaticMesh (Banking + Western Gallop Bob) ----
+	// ---- Procedural C++ Motion for VehicleStaticMesh (Banking + Western Gallop Bob + Alpine Carve & 360 Trick Spin) ----
 	if (VehicleStaticMesh && VehicleStaticMesh->IsVisible())
 	{
-		const float VehicleRoll = FMath::Clamp(static_cast<float>(Velocity.Y) * 0.018f, -28.0f, 28.0f);
-		float GallopPitch = 0.0f;
+		const EMegaJamSceneGenre CurrentGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
+		const bool bIsAlpine = (CurrentGenre == EMegaJamSceneGenre::Alpine);
+
+		const float MaxRollDeg = bIsAlpine ? 35.0f : 28.0f;
+		const float RollScale = bIsAlpine ? 0.024f : 0.018f;
+		const float VehicleRoll = FMath::Clamp(static_cast<float>(Velocity.Y) * RollScale, -MaxRollDeg, MaxRollDeg);
+		float VehiclePitch = 0.0f;
+		float VehicleYaw = bIsAlpine ? 18.0f : 0.0f;
 		float GallopZ = 0.0f;
 
-		const EMegaJamSceneGenre CurrentGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
 		const bool bOnGround = (static_cast<float>(GetActorLocation().Z) <= WideZBounds.Y + 15.0f);
 		if (CurrentGenre == EMegaJamSceneGenre::Western && bOnGround && !bCrashed)
 		{
 			// Rhythmic 128 BPM sine-wave pitch and vertical Z-hop so the static horse mesh visibly gallops to the beat
 			const float WorldSeconds = static_cast<float>(GetWorld()->GetTimeSeconds());
 			const float GallopWave = FMath::Sin(WorldSeconds * (128.0f / 60.0f) * 2.0f * PI);
-			GallopPitch = GallopWave * 6.5f;
+			VehiclePitch = GallopWave * 6.5f;
 			GallopZ = FMath::Abs(GallopWave) * 28.0f;
 		}
+		else if (bIsAlpine && ActiveTrickSpinTimer > 0.0f)
+		{
+			// Smoothly spin VehicleStaticMesh through a full 360-degree Yaw rotation with a -16.0 deg nose-grab pitch
+			const float SpinAlpha = FMath::Clamp(1.0f - (ActiveTrickSpinTimer / 0.42f), 0.0f, 1.0f);
+			VehicleYaw = 18.0f + SpinAlpha * 360.0f;
+			VehiclePitch = FMath::Sin(SpinAlpha * PI) * -16.0f;
+		}
 
-		VehicleStaticMesh->SetRelativeRotation(FRotator(GallopPitch, 0.0f, VehicleRoll));
+		VehicleStaticMesh->SetRelativeRotation(FRotator(VehiclePitch, VehicleYaw, VehicleRoll));
 		VehicleStaticMesh->SetRelativeLocation(FVector(0.0f, 0.0f, GallopZ));
 		if (VisualMesh)
 		{
@@ -642,9 +668,19 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 	const float CrossPlaneDamp = FMath::Exp(-LateralDamping * DeltaSeconds);
 
-	const float TargetOverdriveSpeed = bUltraPanavision
-		? FMath::Max(CruiseSpeed * 1.30f, OverdriveSpeed)
-		: OverdriveSpeed;
+	const UMegaJamFlowSubsystem* FlowSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
+	const bool bAlpineWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Alpine);
+
+	float TargetOverdriveSpeed = OverdriveSpeed;
+	if (bUltraPanavision)
+	{
+		TargetOverdriveSpeed = FMath::Max(CruiseSpeed * 1.30f, OverdriveSpeed);
+	}
+	else if (bAlpineWide)
+	{
+		TargetOverdriveSpeed = FMath::Max(CruiseSpeed * 1.35f, OverdriveSpeed * 1.05f);
+	}
 
 	if (bWide)
 	{
@@ -764,7 +800,147 @@ void AMegaJamFlowPawn::ExecuteEditorSplice()
 		ExecuteWesternBeatSlash();
 		return;
 	}
+	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	const EMegaJamSceneGenre ActiveGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Alpine)
+	{
+		ExecuteAlpineTrickOllie();
+		return;
+	}
 	TriggerHardCut();
+}
+
+void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
+{
+	UWorld* World = GetWorld();
+	if (bCrashed || !World)
+	{
+		return;
+	}
+
+	AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
+	if (GameMode && !GameMode->IsPlaying())
+	{
+		return;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	constexpr double OllieCooldown = 0.26;
+	if (Now - LastEditorSpliceTime < OllieCooldown || Now - LastCutTime < OllieCooldown)
+	{
+		return;
+	}
+	LastEditorSpliceTime = Now;
+	LastCutTime = Now;
+
+	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
+	if (FlowSubsystem)
+	{
+		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+	}
+
+	// Vertical jump impulse while maintaining 5-lane lateral rail lock in 21:9
+	Velocity.Z = 1350.0f;
+	Velocity.X += CutSpeedImpulse;
+	CurrentFOVPunch = CutFOVPunch;
+	ActiveTrickSpinTimer = 0.42f;
+
+	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
+	BP_PlayAvalancheTrickVFX(bOnBeat);
+
+	const FVector PawnLoc = GetActorLocation();
+	const float PawnX = static_cast<float>(PawnLoc.X);
+	const float PawnY = static_cast<float>(PawnLoc.Y);
+
+	int32 CleavedCount = 0;
+	if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
+	{
+		if (bOnBeat)
+		{
+			CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 150.0f, PawnX + 2400.0f, 550.0f, PawnY);
+		}
+		else
+		{
+			CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 120.0f, PawnX + 1200.0f, 240.0f, PawnY);
+		}
+	}
+
+	if (bOnBeat)
+	{
+		// On-Beat Cryo-Shatter: refund +10 FilmMeter, +1800 Dolly Boost, horizontal frost shockwave ring
+		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
+		FilmMeter = FMath::Clamp(FilmMeter + 10.0f, 0.0f, 100.0f);
+		ActiveDollyBoostBonus = FMath::Max(ActiveDollyBoostBonus, 1800.0f);
+		EmissiveBurstTimer = 0.30f;
+		MatchCutFlashTimer = 1.1f;
+
+		SpliceRingTimer = 0.18f;
+		bSpliceRingIsHorizontal = true;
+		if (SpliceRingMID)
+		{
+			const FLinearColor FrostCyan(22.0f, 45.0f, 65.0f, 1.0f);
+			SpliceRingMID->SetVectorParameterValue(TEXT("Color"), FrostCyan);
+			SpliceRingMID->SetVectorParameterValue(TEXT("BaseColor"), FrostCyan);
+			SpliceRingMID->SetVectorParameterValue(TEXT("TakeColor"), FrostCyan);
+			SpliceRingMID->SetVectorParameterValue(TEXT("EmissiveColor"), FrostCyan);
+		}
+		if (ProceduralSpliceRingMesh)
+		{
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -45.0f));
+			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
+			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+			ProceduralSpliceRingMesh->SetVisibility(true);
+		}
+		if (AMegaJamPlayerController* PC = Cast<AMegaJamPlayerController>(GetController()))
+		{
+			if (PC->CinemaHUDInstance)
+			{
+				PC->CinemaHUDInstance->TriggerSpliceShockwaveFlash();
+			}
+		}
+
+		if (GameMode)
+		{
+			const int32 EffectiveCleaved = FMath::Max(1, CleavedCount);
+			GameMode->AddBonusScore(280.0f * static_cast<float>(SpliceChain) * static_cast<float>(EffectiveCleaved) * 2.0f, true);
+			GameMode->NotifySpliceChainUpdated(SpliceChain);
+		}
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SetOnBeatFlashTimer(1.1f);
+			FlowSubsystem->SetSpliceChain(SpliceChain);
+			FlowSubsystem->SetFilmMeter(FilmMeter);
+		}
+
+		AddCameraTrauma(0.50f);
+		TriggerMicroHitstop(0.035f, 0.25f);
+		const float ChainPitch = FMath::Clamp(1.18f + 0.04f * static_cast<float>(SpliceChain), 1.18f, 1.50f);
+		PlayCue(TEXT("OnBeatSplice"), BeatSpliceSound, 1.0f, ChainPitch, true);
+
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(202605, 1.6f, FColor::Cyan,
+				FString::Printf(TEXT("★ AVALANCHE CRYO-SHATTER! SHATTERED %d BOULDER(S)! (+10%% FILM | CHAIN x%d)"),
+					CleavedCount, SpliceChain),
+				true, FVector2D(1.4f, 1.4f));
+		}
+	}
+	else
+	{
+		AddCameraTrauma(0.22f);
+		if (CleavedCount > 0 && GameMode)
+		{
+			GameMode->AddBonusScore(150.0f * static_cast<float>(SpliceChain) * static_cast<float>(CleavedCount), true);
+		}
+		TryTriggerMatchCut();
+	}
+
+	PushTakeAndAspectToSubsystem();
+	PushAudioParameters();
+	TriggerAudioEvent(TEXT("OnHardCut"));
+	OnTakeCut.Broadcast(CurrentTake);
+	OnTakeCutEvent(CurrentTake);
 }
 
 void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
@@ -908,6 +1084,14 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		return false;
 	}
 
+	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Alpine)
+	{
+		ExecuteAlpineTrickOllie();
+		return true;
+	}
+
 	AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
 	if (GameMode && !GameMode->IsPlaying())
 	{
@@ -922,8 +1106,6 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 	LastEditorSpliceTime = Now;
 	LastCutTime = Now;
-
-	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
 
 	// When pressed in 4:3 mode (or active flight), toggle Take A / Take B state
 	if (CurrentAspect == EMegaJamAspectMode::Box_4_3 || CurrentAspect == EMegaJamAspectMode::Wide_21_9)
@@ -955,6 +1137,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 
 		// Trigger Procedural 3D Beat-Splice Shockwave Ring (0.18s electric-cyan radial expansion)
 		SpliceRingTimer = 0.18f;
+		bSpliceRingIsHorizontal = false;
 		if (SpliceRingMID)
 		{
 			const FLinearColor ElectricCyan(6.0f, 35.0f, 60.0f, 1.0f);
@@ -1044,6 +1227,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 
 		const EMegaJamSceneGenre ActiveGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
 		const bool bIsWesternGenre = (ActiveGenre == EMegaJamSceneGenre::Western);
+		const bool bIsAlpineGenre = (ActiveGenre == EMegaJamSceneGenre::Alpine);
 
 		if (bIsWesternGenre)
 		{
@@ -1054,7 +1238,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 		}
 		else
 		{
-			// Scene 01 Action: lock onto the nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
+			// Scene 01 Action & Scene 03 Alpine: lock onto the nearest of the 5 magnetic lanes (-700, -350, 0, 350, 700) on entry
 			const float EntryY = static_cast<float>(GetActorLocation().Y);
 			CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
 			bHasProcessedLaneInput = false;
@@ -1070,8 +1254,19 @@ void AMegaJamFlowPawn::ToggleAspect()
 		}
 		bIsDropCutSlamming = false;
 
-		// Activate Director's Cut: +30% speed surge (or OverdriveSpeed), 0.45x HazardTimeScale, camera trauma + hitstop + white-hot burst
-		Velocity.X = bIsWesternGenre ? FMath::Max(static_cast<float>(Velocity.X) * 1.30f, OverdriveSpeed) : OverdriveSpeed;
+		// Activate Director's Cut: +30% speed surge (Western), +35% speed surge (Alpine), or OverdriveSpeed
+		if (bIsAlpineGenre)
+		{
+			Velocity.X = FMath::Max(static_cast<float>(Velocity.X) * 1.35f, OverdriveSpeed * 1.05f);
+		}
+		else if (bIsWesternGenre)
+		{
+			Velocity.X = FMath::Max(static_cast<float>(Velocity.X) * 1.30f, OverdriveSpeed);
+		}
+		else
+		{
+			Velocity.X = OverdriveSpeed;
+		}
 		Velocity.Z = 0.0f;
 		CurrentFOVPunch = DropCutFOVPunch;
 		SlamPitchPunch = -5.5f;
@@ -1147,6 +1342,9 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 
 	if (Camera)
 	{
+		const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+		const EMegaJamSceneGenre ActiveGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+
 		if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
 		{
 			// Golden-Hour Sepia post-process grading for Scene 02 Ultra-Panavision 2.76:1
@@ -1155,6 +1353,15 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 			Camera->PostProcessSettings.ColorSaturation = FVector4(0.62f, 0.62f, 0.62f, 1.0f);
 			Camera->PostProcessSettings.bOverride_ColorGain = true;
 			Camera->PostProcessSettings.ColorGain = FVector4(1.16f, 1.02f, 0.80f, 1.0f);
+		}
+		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 && ActiveGenre == EMegaJamSceneGenre::Alpine)
+		{
+			// Cryo-Avalanche post-process grading for Scene 03 Alpine Director's Cut
+			Camera->PostProcessBlendWeight = 1.0f;
+			Camera->PostProcessSettings.bOverride_ColorSaturation = true;
+			Camera->PostProcessSettings.ColorSaturation = FVector4(0.78f, 0.92f, 1.15f, 1.0f);
+			Camera->PostProcessSettings.bOverride_ColorGain = true;
+			Camera->PostProcessSettings.ColorGain = FVector4(0.88f, 1.04f, 1.24f, 1.0f);
 		}
 		else
 		{
@@ -1172,6 +1379,23 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 {
 	// Instantly refill FilmMeter so the player drops into the new scene fully fueled
 	FilmMeter = 100.0f;
+	ActiveMusicGenre = NextGenre;
+	CurrentShotDuration = 0.0f;
+	AspectHoldTimer = 0.0f;
+	if (bIsShotStale)
+	{
+		bIsShotStale = false;
+		BP_OnStaleShotStateChanged(false);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			FlowSubsystem->SetActiveGenre(NextGenre);
+			FlowSubsystem->SetFilmMeter(FilmMeter);
+		}
+	}
 
 	if (NextGenre == EMegaJamSceneGenre::Western)
 	{
@@ -1180,6 +1404,16 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		CurrentLane = 2;
 		ActiveDollyBoostBonus = FMath::Max(ActiveDollyBoostBonus, 2500.0f);
 		SetAspectMode(EMegaJamAspectMode::UltraPanavision_276_1);
+	}
+	else if (NextGenre == EMegaJamSceneGenre::Alpine)
+	{
+		// Programmatically force 21:9 Director's Cut (5-lane magnetic rail snowboard grind), Cryo-Grading, and +2800 speed burst
+		CurrentAspect = EMegaJamAspectMode::Wide_21_9;
+		const float EntryY = static_cast<float>(GetActorLocation().Y);
+		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
+		bHasProcessedLaneInput = false;
+		ActiveDollyBoostBonus = FMath::Max(ActiveDollyBoostBonus, 2800.0f);
+		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
 	}
 	else if (CurrentAspect != EMegaJamAspectMode::Box_4_3)
 	{
@@ -1192,15 +1426,6 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 	OnClapperboardSnapped.Broadcast();
 	PlayRunStartSound();
 	SyncSceneMusicTrack(NextGenre);
-
-	if (UWorld* World = GetWorld())
-	{
-		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
-		{
-			FlowSubsystem->SetActiveGenre(NextGenre);
-			FlowSubsystem->SetFilmMeter(FilmMeter);
-		}
-	}
 }
 
 void AMegaJamFlowPawn::ResetForRun()
@@ -1223,6 +1448,8 @@ void AMegaJamFlowPawn::ResetForRun()
 	}
 	CurrentCameraRoll = 0.0f;
 	ActiveSlashRoll = 0.0f;
+	ActiveTrickSpinTimer = 0.0f;
+	bSpliceRingIsHorizontal = false;
 	SpliceRingTimer = 0.0f;
 	SlashArcTimer = 0.0f;
 	if (ProceduralSpliceRingMesh)
@@ -1855,6 +2082,8 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	bIsDropCutSlamming = false;
 	SlamPitchPunch = 0.0f;
 	ActiveSlashRoll = 0.0f;
+	ActiveTrickSpinTimer = 0.0f;
+	bSpliceRingIsHorizontal = false;
 	SpliceRingTimer = 0.0f;
 	SlashArcTimer = 0.0f;
 	if (ProceduralSpliceRingMesh)

@@ -292,11 +292,11 @@ void AMegaJamTrackGenerator::UpdateFinalCutWrapArch()
 		? BoundGameMode->GetDistanceMeters()
 		: FMath::Max(0.0f, static_cast<float>(BoundPawn->GetActorLocation().X) / 100.0f);
 
-	if (CurrentDistMeters >= 3320.0f && !bWrapArchSpawned)
+	if (CurrentDistMeters >= 5100.0f && !bWrapArchSpawned)
 	{
 		bWrapArchSpawned = true;
-		// Golden Wrap Arch at 3,540m (354,000 cm) framing the 3,600m finish line
-		const float ArchX = 354000.0f;
+		// Golden Wrap Arch at 5,340m (534,000 cm) framing the 5,400m finish line
+		const float ArchX = 534000.0f;
 
 		WrapArchISM->UpdateInstanceTransform(0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
 		WrapArchISM->UpdateInstanceTransform(1, FTransform(FRotator::ZeroRotator, FVector(ArchX, 880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
@@ -855,9 +855,9 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	const bool bTitleOrCompleted = BoundGameMode && !BoundGameMode->IsPlaying();
 	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
 
-	// Visual progression across Scene 01 (0m-1,800m Action) and Scene 02 (1,800m-3,600m Western Standoff)
+	// Visual progression across Scene 01 (0m-1,800m Action), Scene 02 (1,800m-3,600m Western Standoff), and Scene 03 (3,600m-5,400m Alpine Avalanche)
 	EMegaJamFilmScene ChunkScene = EMegaJamFilmScene::Soundstage;
-	if (ChunkDistMeters >= 2700.0f)
+	if (ChunkDistMeters >= 3600.0f)
 	{
 		ChunkScene = EMegaJamFilmScene::FinalCut;
 	}
@@ -872,9 +872,11 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	FRandomStream Stream(Seed + ChunkIndex * 7919);
 
-	// Keep chunks before SafeUntilChunkIndex, around the 1,800m Clapperboard transition, and beyond 3,480m (Golden Wrap Arch finish stretch) obstacle-free
-	const bool bInSceneTransitionZone = (ChunkDistMeters >= 1720.0f && ChunkDistMeters < 1920.0f);
-	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || bInSceneTransitionZone || ChunkDistMeters >= 3480.0f || bTitleOrCompleted);
+	// Keep chunks before SafeUntilChunkIndex, around the 1,800m and 3,600m Clapperboard transitions, and beyond 5,280m (Golden Wrap Arch finish stretch) obstacle-free
+	const bool bInSceneTransitionZone =
+		(ChunkDistMeters >= 1720.0f && ChunkDistMeters < 1920.0f) ||
+		(ChunkDistMeters >= 3520.0f && ChunkDistMeters < 3720.0f);
+	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || bInSceneTransitionZone || ChunkDistMeters >= 5280.0f || bTitleOrCompleted);
 	const bool bIsHazardChunk = !bInSafeOrFinishZone && IsHazardChunkForScene(ChunkIndex, ChunkScene);
 	const int32 HazardArchetype = GetHazardArchetypeForChunk(ChunkIndex);
 
@@ -916,13 +918,68 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		return;
 	}
 
-	// Action Gauntlets & Scene 02 Western Standoff Barricades
+	// Action Gauntlets, Scene 02 Western Standoff Barricades, and Scene 03 Alpine Slalom Gates & Ice-Boulder Clusters
 	const int32 CenterRow = FMath::Clamp(Rows / 2, 0, Rows - 1);
 	const int32 BaseObstacleIndex = (Slot * Rows + CenterRow) * ObstaclesPerRow;
 	const float HazardX = ChunkCenterX;
 	const float TakeRoll = Stream.FRand();
 
-	// Scene 02 (DistanceMeters >= 1800.0f): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space!
+	// Scene 03 (DistanceMeters >= 3600.0f): Multi-lane Alpine Slalom Gates & Ice-Boulder Clusters across the 5 rails (-700, -350, 0, 350, 700)
+	if (ChunkDistMeters >= 3600.0f)
+	{
+		if (HazardArchetype % 2 == 0)
+		{
+			// Alpine Ice-Boulder Cluster across 3 lanes + low ice ridge (ollie-able or Cryo-Shatterable!)
+			const float CenterBoulderY = (ChunkIndex % 4 == 0) ? -350.0f : ((ChunkIndex % 4 == 2) ? 350.0f : 0.0f);
+			const FTransform IceBoulderCluster(
+				FRotator(0.0f, 15.0f, 8.0f),
+				FVector(HazardX, CenterBoulderY, 150.0f),
+				FVector(ObstacleSize / 100.0f, 7.2f, 2.8f));
+			const FTransform LowAvalancheRidge(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 0.0f, 115.0f),
+				FVector(ObstacleSize / 100.0f, 15.5f, 1.85f));
+			const FTransform OuterSlalomPillar(
+				FRotator(0.0f, -12.0f, 0.0f),
+				FVector(HazardX, -CenterBoulderY, 320.0f),
+				FVector(ObstacleSize / 100.0f, 3.4f, 6.4f));
+
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, IceBoulderCluster, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, IceBoulderCluster, true, false, true);
+
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
+
+			UInstancedStaticMeshComponent* SlalomTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+			SlalomTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, OuterSlalomPillar, true, false, true);
+		}
+		else
+		{
+			// Alpine Slalom Gates across Lanes 1, 2, 3 (-350, 0, +350) with outer Dolly Boost rails at +/-700
+			const FTransform CenterIceMonolith(
+				FRotator(0.0f, 22.0f, 0.0f),
+				FVector(HazardX, 0.0f, 210.0f),
+				FVector(ObstacleSize / 100.0f, 3.6f, 4.2f));
+			const FTransform LeftSlalomGate(
+				FRotator::ZeroRotator,
+				FVector(HazardX, -350.0f, 165.0f),
+				FVector(ObstacleSize / 100.0f, 3.5f, 3.1f));
+			const FTransform RightSlalomGate(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 350.0f, 165.0f),
+				FVector(ObstacleSize / 100.0f, 3.5f, 3.1f));
+
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterIceMonolith, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterIceMonolith, true, false, true);
+
+			const bool bLeftIsTakeA = (TakeRoll < 0.5f);
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? LeftSlalomGate : RightSlalomGate, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? RightSlalomGate : LeftSlalomGate, true, false, true);
+		}
+		return;
+	}
+
+	// Scene 02 (1800.0f <= DistanceMeters < 3600.0f): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space!
 	if (ChunkDistMeters >= 1800.0f)
 	{
 		const FTransform MainTimberBarricade(
@@ -1160,13 +1217,14 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	}
 	else
 	{
-		// Aerial Lens Hoops (10-frame ring at Z = 620.0f):
-		// High above the Z = 140 widescreen rail so players must pop back into 4:3 analog flight to fuel 21:9 Overdrive!
+		// Aerial Lens Hoops (10-frame ring):
+		// Z = 520.0f in Scene 03 Alpine (reachable at the apex of a Trick-Ollie!), Z = 620.0f in Scenes 01/02
+		const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
 		const float HoopCenterX = ChunkStartX + ChunkLength * 0.50f;
 		const float HoopCenterY = (HazardArchetype == 1)
 			? ((ChunkIndex % 4 == 0) ? -700.0f : 700.0f)
 			: ((HazardArchetype == 0) ? ((ChunkIndex % 4 == 0) ? -350.0f : 350.0f) : 0.0f);
-		constexpr float HoopCenterZ = 620.0f;
+		const float HoopCenterZ = (ChunkDistMeters >= 3600.0f) ? 520.0f : 620.0f;
 		constexpr float HoopRadius = 185.0f;
 
 		for (int32 RingIdx = 0; RingIdx < PickupsPerChunk; ++RingIdx)
@@ -1200,8 +1258,9 @@ void AMegaJamTrackGenerator::PopulateBoostStripsForChunk(
 		return;
 	}
 
-	// Spawn glowing cyan outer-wing Dolly Boost Strips (Y = +/-700, Z = 18) on 21:9 Center-Median Blockades and Breathing Runway Chunks
-	if (bIsHazardChunk && HazardArchetype != 1)
+	// Spawn glowing cyan outer-wing Dolly Boost Strips (Y = +/-700, Z = 18) on Scene 03 Alpine chunks, 21:9 Center-Median Blockades, and Breathing Runway Chunks
+	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
+	if (bIsHazardChunk && HazardArchetype != 1 && ChunkDistMeters < 3600.0f)
 	{
 		return;
 	}
@@ -1390,7 +1449,7 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 	return ShreddedCount;
 }
 
-int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float ForwardMaxX, float HalfWidthY)
+int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float ForwardMaxX, float HalfWidthY, float CenterY)
 {
 	if (!bPoolsCreated || !TakeA_ObstaclesISM || !TakeB_ObstaclesISM)
 	{
@@ -1441,13 +1500,13 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 			return false;
 		}
 
-		if (Loc.Y - HalfExtent.Y > HalfWidthY || Loc.Y + HalfExtent.Y < -HalfWidthY)
+		if (Loc.Y - HalfExtent.Y > CenterY + HalfWidthY || Loc.Y + HalfExtent.Y < CenterY - HalfWidthY)
 		{
 			return false;
 		}
 
 		ISM->UpdateInstanceTransform(InstanceIdx, MakeHiddenInstanceTransform(), true, false, true);
-		OutHitCenter = FVector(Loc.X, FMath::Clamp(static_cast<float>(Loc.Y), -HalfWidthY, HalfWidthY), FMath::Clamp(static_cast<float>(Loc.Z), 140.0f, 760.0f));
+		OutHitCenter = FVector(Loc.X, FMath::Clamp(static_cast<float>(Loc.Y), CenterY - HalfWidthY, CenterY + HalfWidthY), FMath::Clamp(static_cast<float>(Loc.Z), 140.0f, 760.0f));
 		return true;
 	};
 

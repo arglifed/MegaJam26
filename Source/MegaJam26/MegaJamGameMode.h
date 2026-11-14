@@ -176,13 +176,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
 	bool bAutoStartRun = true;
 
-	/** Target distance in meters for Scene 01 + Scene 02 campaign (3,600m). */
+	/** Target distance in meters for Scene 01 + Scene 02 + Scene 03 campaign (5,400m). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
-	float TargetDistanceMeters = 3600.0f;
+	float TargetDistanceMeters = 5400.0f;
 
-	/** Par time in seconds for Scene 01 + Scene 02 campaign (90.0s). Awards +500 pts/sec under Par on completion. */
+	/** Par time in seconds for Scene 01 + Scene 02 + Scene 03 campaign (135.0s = 45s Action + 45s Western + 45s Alpine). Awards +500 pts/sec under Par on completion. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")
-	float SceneParTimeSeconds = 90.0f;
+	float SceneParTimeSeconds = 135.0f;
 
 	/** Active scene genre (Scene 01 = Action). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="MegaJam|Run")

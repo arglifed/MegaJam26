@@ -38,6 +38,7 @@ enum class EMegaJamSceneGenre : uint8
 {
 	Action,
 	Western,
+	Alpine,
 	Noir,
 	Chase,
 	Montage

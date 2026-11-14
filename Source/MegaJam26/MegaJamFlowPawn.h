@@ -446,6 +446,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void ExecuteWesternBeatSlash();
 
+	/** Executes the Scene 03 Alpine Trick-Ollie & Cryo-Shatter while in Wide_21_9 Director's Cut. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void ExecuteAlpineTrickOllie();
+
 	/** Triggers the mid-air Clapperboard stunt transition into NextGenre (vertical launch, 0.25s hitstop, blackout slate, mesh & music swap). */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void TriggerClapperboardTransition(EMegaJamSceneGenre NextGenre);
@@ -522,6 +526,10 @@ public:
 	/** Blueprint VFX hook triggered whenever the Stale-Shot penalty state flips. */
 	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
 	void BP_OnStaleShotStateChanged(bool bIsStale);
+
+	/** Blueprint VFX hook triggered on a Scene 03 Alpine Trick-Ollie / Cryo-Shatter. */
+	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
+	void BP_PlayAvalancheTrickVFX(bool bIsOnBeat);
 
 protected:
 	virtual void BeginPlay() override;
@@ -653,6 +661,12 @@ protected:
 
 	/** True when the active SlashArcTimer sweep was triggered on-beat. */
 	bool bActiveSlashIsOnBeat = false;
+
+	/** True when ProceduralSpliceRingMesh is pitched flat (FRotator::ZeroRotator) for a horizontal Scene 03 Cryo-Shatter shockwave. */
+	bool bSpliceRingIsHorizontal = false;
+
+	/** Remaining duration (s) for the Scene 03 snowboard 360-degree Trick-Ollie spin & nose-grab (0.42s). */
+	float ActiveTrickSpinTimer = 0.0f;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
 

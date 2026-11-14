@@ -310,9 +310,9 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 
 	AddTitleLine(TEXT("TitleStudio"), TEXT("FOUR SWORDS PICTURES PRESENTS"), 16, FLinearColor(0.75f, 0.78f, 0.85f, 1.0f), 6.0f);
 	AddTitleLine(TEXT("TitleMain"), TEXT("DIRECTOR'S CUT"), 44, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 18.0f);
-	AddTitleLine(TEXT("TitleControls1"), TEXT("[W / A / S / D] 4:3 FREE FLIGHT   |   [SPACE / SHIFT] HARD CUT / BEAT-SLASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
+	AddTitleLine(TEXT("TitleControls1"), TEXT("[W / A / S / D] 4:3 FREE FLIGHT   |   [SPACE / SHIFT] HARD CUT / BEAT-SLASH / OLLIE"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
 	AddTitleLine(TEXT("TitleControls2"), TEXT("[LEFT CTRL / C] 21:9 & 2.76:1 DIRECTOR'S CUT (@ >=25% FILM)"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 16.0f);
-	AddTitleLine(TEXT("TitleObj"), TEXT("SCENE 01 (ACTION) + SCENE 02 (WESTERN) — 3,600m CAMPAIGN (PAR 01:30.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 24.0f);
+	AddTitleLine(TEXT("TitleObj"), TEXT("SCENES 01-03 (ACTION + WESTERN + ALPINE) — 5,400m CAMPAIGN (PAR 02:15.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 24.0f);
 	TitlePromptText = AddTitleLine(TEXT("TitlePrompt"), TEXT("▶ PRESS [SPACE] TO ROLL CAMERA"), 22, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
 	TitleCardBorder->SetContent(TitleBox);
@@ -501,9 +501,18 @@ void UMegaJamCinemaHUD::BindToPawn()
 void UMegaJamCinemaHUD::HandleClapperboardSnapped()
 {
 	ClapperboardBlackoutTimer = 0.40f;
+	const UWorld* World = GetWorld();
+	const UMegaJamFlowSubsystem* FlowSubsystem = World ? World->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	const AMegaJamGameMode* GameMode = World ? World->GetAuthGameMode<AMegaJamGameMode>() : nullptr;
+	const EMegaJamSceneGenre ActiveGenre = FlowSubsystem
+		? FlowSubsystem->ActiveGenre
+		: (GameMode ? GameMode->GetActiveSceneGenre() : EMegaJamSceneGenre::Western);
+	const bool bIsAlpine = (ActiveGenre == EMegaJamSceneGenre::Alpine);
+
 	if (ClapperboardBlackoutText)
 	{
-		ClapperboardBlackoutText->SetText(FText::FromString(TEXT("SCENE 02 // ACTION!")));
+		ClapperboardBlackoutText->SetText(FText::FromString(
+			bIsAlpine ? TEXT("SCENE 03 // ALPINE AVALANCHE!") : TEXT("SCENE 02 // ACTION!")));
 	}
 	if (ClapperboardBlackoutOverlay)
 	{
@@ -511,7 +520,10 @@ void UMegaJamCinemaHUD::HandleClapperboardSnapped()
 	}
 	if (SceneSluglineText)
 	{
-		SceneSluglineText->SetText(FText::FromString(TEXT("SCENE 02 // WESTERN — HIGH-NOON STANDOFF")));
+		SceneSluglineText->SetText(FText::FromString(
+			bIsAlpine
+				? TEXT("SCENE 03 // ALPINE — SNOWBOARD RAIL-GRIND")
+				: TEXT("SCENE 02 // WESTERN — HIGH-NOON STANDOFF")));
 	}
 	SceneSluglineTimer = SceneSluglineFlashDuration;
 }
@@ -684,7 +696,10 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		? FlowSubsystem->ActiveGenre
 		: (GameMode ? GameMode->GetActiveSceneGenre() : EMegaJamSceneGenre::Action);
 	const bool bIsWestern = (ActiveGenre == EMegaJamSceneGenre::Western);
-	const TCHAR* SceneTitleLabel = bIsWestern ? TEXT("SCENE 02 // WESTERN") : TEXT("SCENE 01 // ACTION");
+	const bool bIsAlpine = (ActiveGenre == EMegaJamSceneGenre::Alpine);
+	const TCHAR* SceneTitleLabel = bIsAlpine
+		? TEXT("SCENE 03 // ALPINE")
+		: (bIsWestern ? TEXT("SCENE 02 // WESTERN") : TEXT("SCENE 01 // ACTION"));
 
 	const EMegaJamRunState RunState = GameMode ? GameMode->GetRunState() : EMegaJamRunState::Playing;
 	const bool bIsPlaying = GameMode ? GameMode->IsPlaying() : true;
@@ -863,7 +878,7 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			if (WrapStatsText)
 			{
 				WrapStatsText->SetText(FText::FromString(FString::Printf(
-					TEXT("FINAL SCORE: %06d\nTAKE TIME: %s  (PAR: 01:30.00)\nPAR-TIME SPEED BONUS: +%d PTS\nMAX MATCH-CUT CHAIN: x%d   |   FRAMES SPLICED: %d   |   TAKES: %02d"),
+					TEXT("FINAL SCORE: %06d\nTAKE TIME: %s  (PAR: 02:15.00)\nPAR-TIME SPEED BONUS: +%d PTS\nMAX MATCH-CUT CHAIN: x%d   |   FRAMES SPLICED: %d   |   TAKES: %02d"),
 					FinalScore, *TakeClock, ParBonus, MaxChain, FramesSpliced, TakeNumber)));
 			}
 
@@ -967,20 +982,27 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			{
 				if (OnBeatFlashTimer > 0.0f)
 				{
-					BeatIndicatorText->SetText(FText::FromString(
-						bInPanavision ? TEXT("★ QUICK-DRAW BEAT-SLASH! +15 FILM METER ★") : TEXT("★ ON-BEAT CUT! +15 FILM METER ★")));
-					BeatIndicatorText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.92f, 0.18f, 1.0f)));
+					const TCHAR* BeatFlashLabel = bInPanavision
+						? TEXT("★ QUICK-DRAW BEAT-SLASH! +15 FILM METER ★")
+						: (bIsAlpine ? TEXT("★ AVALANCHE CRYO-SHATTER! +10 FILM METER ★") : TEXT("★ ON-BEAT CUT! +15 FILM METER ★"));
+					BeatIndicatorText->SetText(FText::FromString(BeatFlashLabel));
+					BeatIndicatorText->SetColorAndOpacity(FSlateColor(
+						bIsAlpine ? FLinearColor(0.35f, 0.96f, 1.0f, 1.0f) : FLinearColor(1.0f, 0.92f, 0.18f, 1.0f)));
 				}
 				else if (bOnBeatWindow)
 				{
-					BeatIndicatorText->SetText(FText::FromString(
-						bInPanavision ? TEXT("♦ 128 BPM BEAT — SLASH NOW! ♦") : TEXT("♦ 128 BPM BEAT — CUT NOW! ♦")));
+					const TCHAR* BeatPromptLabel = bInPanavision
+						? TEXT("♦ 128 BPM BEAT — SLASH NOW! ♦")
+						: ((bIsAlpine && bInOverdrive) ? TEXT("♦ 128 BPM BEAT — [SPACE] TRICK-OLLIE CRYO-SHATTER! ♦") : TEXT("♦ 128 BPM BEAT — CUT NOW! ♦"));
+					BeatIndicatorText->SetText(FText::FromString(BeatPromptLabel));
 					BeatIndicatorText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 1.0f, 0.95f, 1.0f)));
 				}
 				else
 				{
-					BeatIndicatorText->SetText(FText::FromString(TEXT("· 128 BPM BEAT ·")));
-					BeatIndicatorText->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.62f, 0.68f, 0.85f)));
+					BeatIndicatorText->SetText(FText::FromString(
+						(bIsAlpine && bInOverdrive) ? TEXT("[SPACE ON BEAT] TRICK-OLLIE CRYO-SHATTER!") : TEXT("· 128 BPM BEAT ·")));
+					BeatIndicatorText->SetColorAndOpacity(FSlateColor(
+						(bIsAlpine && bInOverdrive) ? FLinearColor(0.35f, 0.96f, 1.0f, 0.95f) : FLinearColor(0.55f, 0.62f, 0.68f, 0.85f)));
 				}
 			}
 
@@ -993,7 +1015,8 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 				}
 				else if (bInOverdrive)
 				{
-					FilmMeterBar->SetFillColorAndOpacity(FLinearColor(0.15f, 0.95f, 1.0f, 1.0f));
+					FilmMeterBar->SetFillColorAndOpacity(
+						bIsAlpine ? FLinearColor(0.35f, 0.96f, 1.0f, 1.0f) : FLinearColor(0.15f, 0.95f, 1.0f, 1.0f));
 				}
 				else if (FilmMeter >= 25.0f)
 				{
@@ -1012,6 +1035,12 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 					FilmMeterText->SetText(FText::FromString(FString::Printf(
 						TEXT("2.76:1 ULTRA-PANAVISION // [SPACE] QUICK-DRAW SLASH (%d%%)"), FilmPct)));
 					FilmMeterText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.28f, 1.0f)));
+				}
+				else if (bInOverdrive && bIsAlpine)
+				{
+					FilmMeterText->SetText(FText::FromString(FString::Printf(
+						TEXT("[SPACE ON BEAT] TRICK-OLLIE CRYO-SHATTER! (%d%%)"), FilmPct)));
+					FilmMeterText->SetColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.96f, 1.0f, 1.0f)));
 				}
 				else if (bInOverdrive)
 				{
@@ -1054,7 +1083,7 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			const bool bRecBlink = FMath::Fmod(World->GetTimeSeconds(), 1.0) < 0.65;
 			const TCHAR* RecDot = bRecBlink ? TEXT("●") : TEXT("○");
 			TopLeftText->SetText(FText::FromString(FString::Printf(
-				TEXT("REC %s %s  |  TAKE %02d  //  TIME: %s  (PAR: 01:30.00)"),
+				TEXT("REC %s %s  |  TAKE %02d  //  TIME: %s  (PAR: 02:15.00)"),
 				RecDot, SceneTitleLabel, TakeNumber, *TakeClock)));
 		}
 	}
@@ -1114,9 +1143,12 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			{
 				const FString BeatBadge = (Aspect == EMegaJamAspectMode::UltraPanavision_276_1)
 					? FString::Printf(TEXT("★ QUICK-DRAW BEAT-SLASH! (+15 FILM // CHAIN x%d)"), SpliceChain)
-					: FString::Printf(TEXT("★ ON-BEAT CUT! (+15 FILM // CHAIN x%d)"), SpliceChain);
+					: (bIsAlpine
+						? FString::Printf(TEXT("★ AVALANCHE CRYO-SHATTER! (+10 FILM // CHAIN x%d)"), SpliceChain)
+						: FString::Printf(TEXT("★ ON-BEAT CUT! (+15 FILM // CHAIN x%d)"), SpliceChain));
 				ChainBadgeText->SetText(FText::FromString(BeatBadge));
-				ChainBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.92f, 0.18f, 1.0f)));
+				ChainBadgeText->SetColorAndOpacity(FSlateColor(
+					bIsAlpine ? FLinearColor(0.35f, 0.96f, 1.0f, 1.0f) : FLinearColor(1.0f, 0.92f, 0.18f, 1.0f)));
 			}
 			else if (DropCutFlash > 0.0f)
 			{
@@ -1172,8 +1204,10 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		if (RunState == EMegaJamRunState::Crashed)
 		{
 			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
-			CenterBannerText->SetText(FText::FromString(
-				bIsWestern ? TEXT("CUT! // REWINDING SCENE 02 TO 1,800m...") : TEXT("CUT! // REWINDING SCENE 01 TO 0m...")));
+			const TCHAR* RewindLabel = bIsAlpine
+				? TEXT("CUT! // REWINDING SCENE 03 TO 3,600m...")
+				: (bIsWestern ? TEXT("CUT! // REWINDING SCENE 02 TO 1,800m...") : TEXT("CUT! // REWINDING SCENE 01 TO 0m..."));
+			CenterBannerText->SetText(FText::FromString(RewindLabel));
 			CenterBannerText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.2f, 0.2f, 1.0f)));
 		}
 		else if (bIsPlaying && ActionFlashTimer > 0.0f)
@@ -1186,14 +1220,14 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		else if (bIsPlaying && DropCutBannerTimer > 0.0f)
 		{
 			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
-			CenterBannerText->SetText(FText::FromString(
-				(Aspect == EMegaJamAspectMode::UltraPanavision_276_1)
-					? TEXT("▶ 2.76:1 ULTRA-PANAVISION // [SPACE] QUICK-DRAW BEAT-SLASH!")
-					: TEXT("▶ 21:9 DIRECTOR'S CUT // BULLET-TIME OVERDRIVE!")));
+			const TCHAR* DropCutLabel = (Aspect == EMegaJamAspectMode::UltraPanavision_276_1)
+				? TEXT("▶ 2.76:1 ULTRA-PANAVISION // [SPACE] QUICK-DRAW BEAT-SLASH!")
+				: (bIsAlpine ? TEXT("▶ 21:9 ALPINE RAIL-GRIND // [SPACE ON BEAT] TRICK-OLLIE CRYO-SHATTER!") : TEXT("▶ 21:9 DIRECTOR'S CUT // BULLET-TIME OVERDRIVE!"));
+			CenterBannerText->SetText(FText::FromString(DropCutLabel));
 			CenterBannerText->SetColorAndOpacity(FSlateColor(
 				(Aspect == EMegaJamAspectMode::UltraPanavision_276_1)
 					? FLinearColor(1.0f, 0.85f, 0.25f, 1.0f)
-					: FLinearColor(0.15f, 0.95f, 1.0f, 1.0f)));
+					: (bIsAlpine ? FLinearColor(0.35f, 0.96f, 1.0f, 1.0f) : FLinearColor(0.15f, 0.95f, 1.0f, 1.0f))));
 		}
 		else
 		{
