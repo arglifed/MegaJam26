@@ -291,7 +291,7 @@ void AMegaJamGameMode::DebugSkipToNextAct()
 	AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0));
 	if (FlowPawn)
 	{
-		FlowPawn->SetActorLocation(FVector(TargetWorldX, 0.0f, 140.0f), false, nullptr, ETeleportType::TeleportPhysics);
+		FlowPawn->SetActorLocation(FVector(TargetWorldX, 0.0f, 0.0f), false, nullptr, ETeleportType::TeleportPhysics);
 		FlowPawn->ClearCrashStateForDebugSkip();
 		FlowPawn->SyncSceneMusicTrack(ActiveSceneGenre);
 	}

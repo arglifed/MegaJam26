@@ -109,6 +109,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> WallISM;
 
+	/** Invisible full-height (10m) corridor collision walls keeping the player inside the Y = +/-700 track while WallISM renders a 2m guardrail. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> CollisionWallISM;
+
 	/** Obstacles that are solid in StudioTake. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UInstancedStaticMeshComponent> TakeA_ObstaclesISM;
