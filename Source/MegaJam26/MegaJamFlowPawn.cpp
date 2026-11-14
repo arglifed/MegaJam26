@@ -143,13 +143,24 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Chase, MusicChaseFinder.Object);
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Montage, MusicMontageFinder.Object);
 
+	// Measured tempo of each stem (onset autocorrelation over the whole file; every track's first beat lands at 0.0s):
+	// TooClever 120, Brixxx 136, LucidDreaming 125, Outbreak 110, TheSnatcher 120.
+	const TMap<EMegaJamSceneGenre, float> MeasuredTrackBPMs = {
+		{ EMegaJamSceneGenre::Action, 120.0f },
+		{ EMegaJamSceneGenre::Western, 136.0f },
+		{ EMegaJamSceneGenre::Alpine, 125.0f },
+		{ EMegaJamSceneGenre::Noir, 125.0f },
+		{ EMegaJamSceneGenre::Chase, 110.0f },
+		{ EMegaJamSceneGenre::Montage, 120.0f },
+	};
 	for (const TPair<EMegaJamSceneGenre, TObjectPtr<USoundBase>>& Pair : SceneMusicTracks)
 	{
+		const float* MeasuredBPM = MeasuredTrackBPMs.Find(Pair.Key);
 		FSceneAudioConfig AudioCfg;
 		AudioCfg.MusicTrack = Pair.Value;
-		AudioCfg.TrackBPM = 128.0f;
+		AudioCfg.TrackBPM = MeasuredBPM ? *MeasuredBPM : 128.0f;
 		SceneAudioConfigs.Add(Pair.Key, AudioCfg);
-		SceneBPMs.Add(Pair.Key, 128.0f);
+		SceneBPMs.Add(Pair.Key, AudioCfg.TrackBPM);
 	}
 
 	RunStartSound = RunStartFinder.Object;

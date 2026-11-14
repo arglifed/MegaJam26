@@ -17,7 +17,19 @@ The C++ side of this issue is already done. The pawn and track generator expose 
 
 ### Which sounds play: C++ is the source of truth
 
-The pawn's sound properties (`RunStartSound`, `FilmFramePickupSound`, `DirectorsCutEnterSound`, …) still choose the sounds. In BeginPlay C++ hands each one to the score as a **WaveAsset** input. The genre-to-track mapping also stays in C++ (`SceneMusicTracks`): the score just loops whatever `MusicWave` it receives. To swap a sound, change the property on `BP_FlowPawn`. It has to be a **SoundWave**: a SoundCue override leaves that cue silent in the score.
+The pawn's sound properties (`RunStartSound`, `FilmFramePickupSound`, `DirectorsCutEnterSound`, …) still choose the sounds. In BeginPlay C++ hands each one to the score as a **WaveAsset** input. The genre-to-track mapping also stays in C++: the score just loops whatever `MusicWave` it receives. To swap a sound, change the property on `BP_FlowPawn`. It has to be a **SoundWave**: a SoundCue override leaves that cue silent in the score.
+
+**Music tracks and tempo (since #70):** each genre's track and tempo live in `SceneAudioConfigs` (`MusicTrack` + `TrackBPM`), which wins over `SceneMusicTracks`. To swap a track, change `SceneAudioConfigs` **and set its `TrackBPM`**; editing only `SceneMusicTracks` is ignored when the genre has a config. The on-beat windows, the horse gallop and the Noir dolly-zoom all follow `TrackBPM`. Measured values, set as the C++ defaults:
+
+| Genre | Track | BPM |
+|---|---|---|
+| Action | `SW_Music_TooClever` | 120 |
+| Western | `SW_Music_Brixxx` | 136 |
+| Noir (and Alpine) | `SW_Music_LucidDreaming` | 125 |
+| Chase | `SW_Music_Outbreak` | 110 |
+| Montage (Final Cut) | `SW_Music_TheSnatcher` | 120 |
+
+Every track's first beat is at 0.0 s, so no offset is needed. Known gap: the beat clock is not yet tied to the score's playback (it is not reset when a track restarts, not scaled by the pause / bullet-time pitch, and the F7 seek only reaches the legacy `MusicAudioComponent`).
 
 ### Inputs (names are case-sensitive)
 
@@ -28,7 +40,7 @@ The pawn's sound properties (`RunStartSound`, `FilmFramePickupSound`, `Directors
 | `SpeedRatio` | Float 0–1 | Every frame | Not wired yet (free for an intensity layer) |
 | `OnHardCut`, `OnGraze`, `OnAspectSwitch` | Trigger | On event | Kept for compatibility; not wired, since each fires for several events |
 | `OnCrashed` | Trigger | Crash (also God Mode hits) | Crash cue (`CrashWave`) |
-| `MusicWave` | WaveAsset | Scene change | Current genre's track (from `SceneMusicTracks`) |
+| `MusicWave` | WaveAsset | Scene change | Current genre's track (from `SceneAudioConfigs`, falling back to `SceneMusicTracks`) |
 | `OnSceneChanged` | Trigger | Scene change | Restarts the looping music player with the new `MusicWave` |
 | `SceneGenre` | Int32 0–4 | Scene change | Informational (Action, Western, Noir, Chase, Montage) |
 | `MusicPitchSemitones` | Float | Every frame | Pause / title / bullet-time pitch, = 12·log2(C++ pitch) |

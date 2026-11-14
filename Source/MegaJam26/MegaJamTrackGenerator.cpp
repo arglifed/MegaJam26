@@ -1449,10 +1449,20 @@ void AMegaJamTrackGenerator::GenerateTrackChunk(float StartX, float EndX)
 			return;
 		}
 		UInstancedStaticMeshComponent* DressingISM = StudioDressingExtraISMs[FMath::RandRange(0, StudioDressingExtraISMs.Num() - 1)];
-		const float HalfHeight = DressingISM->GetStaticMesh() ? static_cast<float>(DressingISM->GetStaticMesh()->GetBounds().BoxExtent.Z) : 50.0f;
+		const FVector Extent = DressingISM->GetStaticMesh() ? DressingISM->GetStaticMesh()->GetBounds().BoxExtent : FVector(50.0f);
 		FTransform Scaled = Transform;
 		Scaled.SetScale3D(FVector(StudioDressingScale));
-		Scaled.AddToTranslation(FVector(0.0f, 0.0f, HalfHeight * StudioDressingScale));
+
+		// Keep the whole scaled prop outside the corridor wall, whichever way it is turned.
+		const float HalfFootprint = static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * StudioDressingScale;
+		const float MinAbsY = MEGAJAM_CORRIDOR_HALF_WIDTH + HalfFootprint + 150.0f;
+		FVector Location = Scaled.GetLocation();
+		if (FMath::Abs(Location.Y) < MinAbsY)
+		{
+			Location.Y = (Location.Y < 0.0f) ? -MinAbsY : MinAbsY;
+		}
+		Location.Z += static_cast<float>(Extent.Z) * StudioDressingScale;
+		Scaled.SetLocation(Location);
 		DressingISM->AddInstance(Scaled, true);
 	};
 
