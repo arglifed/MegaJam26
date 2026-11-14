@@ -787,7 +787,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 		const bool bChaseSlope = (ActiveMusicGenre == EMegaJamSceneGenre::Chase || CamGenre == EMegaJamSceneGenre::Chase);
 		const bool bAlpineSlope = (CamGenre == EMegaJamSceneGenre::Alpine && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
-		const float DownhillPitchOffset = bChaseSlope ? -12.5f : (bAlpineSlope ? -7.5f : 0.0f);
+		const float DownhillPitchOffset = bChaseSlope ? SnowboardDownhillPitch : (bAlpineSlope ? -7.5f : 0.0f);
 
 		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + DownhillPitchOffset + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
 		Camera->SetRelativeLocation(FVector(0.0f, 0.0f, ShakeZ));
@@ -1132,7 +1132,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 			if (bIsGrounded && SteerInput.Y > 0.35f && !bHasProcessedJumpInput)
 			{
-				Velocity.Z = 1150.0f;
+				Velocity.Z = StuntJumpVelocityZ;
 				bIsGrounded = false;
 				bHasProcessedJumpInput = true;
 			}
@@ -2226,9 +2226,9 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	}
 
-	// Vertical launch impulse into the air + mid-air hang (2100.0f for 5,400m Scene 04 Mountain Drop-In, 1900.0f for 7,200m Cliff Drop into Hang Glider)
+	// Vertical launch impulse into the air + mid-air hang (SnowboardDropInVelocityZ for 5,400m Scene 04 Mountain Drop-In, 1900.0f for 7,200m Cliff Drop into Hang Glider)
 	Velocity.Z = (NextGenre == EMegaJamSceneGenre::Chase)
-		? 2100.0f
+		? SnowboardDropInVelocityZ
 		: ((NextGenre == EMegaJamSceneGenre::Montage) ? 1900.0f : 1800.0f);
 	bIsGrounded = false;
 	TriggerMicroHitstop(0.25f, 0.0f);
