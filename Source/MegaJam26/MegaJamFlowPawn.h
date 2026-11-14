@@ -139,7 +139,7 @@ public:
 
 	/** Active scene tempo in Beats Per Minute (fetched in SyncSceneMusicTrack). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
-	float CurrentTrackBPM = 128.0f;
+	float CurrentTrackBPM = 120.0f;
 
 	/** Active genre track currently playing on MusicAudioComponent. */
 	UPROPERTY(BlueprintReadOnly, Category="Audio")

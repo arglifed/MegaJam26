@@ -143,13 +143,19 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Chase, MusicChaseFinder.Object);
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Montage, MusicMontageFinder.Object);
 
+	SceneBPMs.Add(EMegaJamSceneGenre::Action, 120.0f);
+	SceneBPMs.Add(EMegaJamSceneGenre::Western, 136.0f);
+	SceneBPMs.Add(EMegaJamSceneGenre::Alpine, 125.0f);
+	SceneBPMs.Add(EMegaJamSceneGenre::Noir, 125.0f);
+	SceneBPMs.Add(EMegaJamSceneGenre::Chase, 110.0f);
+	SceneBPMs.Add(EMegaJamSceneGenre::Montage, 120.0f);
+
 	for (const TPair<EMegaJamSceneGenre, TObjectPtr<USoundBase>>& Pair : SceneMusicTracks)
 	{
 		FSceneAudioConfig AudioCfg;
 		AudioCfg.MusicTrack = Pair.Value;
-		AudioCfg.TrackBPM = 128.0f;
+		AudioCfg.TrackBPM = SceneBPMs.Contains(Pair.Key) ? SceneBPMs[Pair.Key] : 120.0f;
 		SceneAudioConfigs.Add(Pair.Key, AudioCfg);
-		SceneBPMs.Add(Pair.Key, 128.0f);
 	}
 
 	RunStartSound = RunStartFinder.Object;
