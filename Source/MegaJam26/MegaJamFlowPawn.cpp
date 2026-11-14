@@ -625,7 +625,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		VehicleStaticMesh->SetRelativeLocation(FVector(0.0f, 0.0f, GallopZ));
 		if (VisualMesh)
 		{
-			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 85.0f + GallopZ));
+			const FVector SeatOffset = SceneSeatOffsets.Contains(CurrentGenre) ? SceneSeatOffsets[CurrentGenre] : FVector(0.0f, 0.0f, 85.0f);
+			VisualMesh->SetRelativeLocation(SeatOffset + FVector(0.0f, 0.0f, GallopZ));
 		}
 	}
 
@@ -980,7 +981,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
 	const float PawnX = static_cast<float>(GetActorLocation().X);
 	const float ForwardMaxX = PawnX + (bOnBeat ? 3000.0f : 1800.0f);
-	const float HalfWidthY = bOnBeat ? 1200.0f : 360.0f;
+	const float HalfWidthY = bOnBeat ? MEGAJAM_CORRIDOR_HALF_WIDTH : 360.0f;
 
 	int32 CleavedCount = 0;
 	if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
@@ -1795,36 +1796,31 @@ void AMegaJamFlowPawn::PushScoreWaveParameters() const
 
 void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 {
-	ActiveMusicGenre = TargetGenre;
+	const EMegaJamSceneGenre NewGenre = TargetGenre;
+	ActiveMusicGenre = NewGenre;
 
 	// Swap thematic vehicle static mesh when mapped in SceneVehicleMeshes (Motorcycle -> Horse -> Snowboard -> Spy Car -> Stunt Car)
 	UStaticMesh* NewMesh = nullptr;
-	if (const TObjectPtr<UStaticMesh>* FoundVehicleMesh = SceneVehicleMeshes.Find(TargetGenre))
+	if (const TObjectPtr<UStaticMesh>* FoundVehicleMesh = SceneVehicleMeshes.Find(NewGenre))
 	{
 		NewMesh = FoundVehicleMesh->Get();
+	}
+
+	const FVector SeatOffset = SceneSeatOffsets.Contains(NewGenre) ? SceneSeatOffsets[NewGenre] : FVector(0.0f, 0.0f, 85.0f);
+	if (VisualMesh)
+	{
+		VisualMesh->SetVisibility(true);
+		VisualMesh->SetRelativeLocation(SeatOffset);
 	}
 
 	if (NewMesh && VehicleStaticMesh)
 	{
 		VehicleStaticMesh->SetStaticMesh(NewMesh);
 		VehicleStaticMesh->SetVisibility(true);
-		if (VisualMesh)
-		{
-			VisualMesh->SetVisibility(true);
-			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 85.0f));
-		}
 	}
-	else
+	else if (VehicleStaticMesh)
 	{
-		if (VehicleStaticMesh)
-		{
-			VehicleStaticMesh->SetVisibility(false);
-		}
-		if (VisualMesh)
-		{
-			VisualMesh->SetVisibility(true);
-			VisualMesh->SetRelativeLocation(FVector::ZeroVector);
-		}
+		VehicleStaticMesh->SetVisibility(false);
 	}
 
 	USoundBase* DesiredSound = nullptr;

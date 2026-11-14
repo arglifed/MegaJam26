@@ -60,6 +60,8 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	ConfigureISM(WallISM, TrackRoot, true, false);
 	ConfigureISM(TakeA_ObstaclesISM, TrackRoot, true, true);
 	ConfigureISM(TakeB_ObstaclesISM, TrackRoot, true, true);
+	TakeA_ObstaclesISM->NumCustomDataFloats = FMath::Max(TakeA_ObstaclesISM->NumCustomDataFloats, 1);
+	TakeB_ObstaclesISM->NumCustomDataFloats = FMath::Max(TakeB_ObstaclesISM->NumCustomDataFloats, 1);
 
 	ConfigureISM(SetPieceISM, TrackRoot, false, false);
 	ConfigureISM(PickupISM, TrackRoot, false, false);
@@ -292,17 +294,19 @@ void AMegaJamTrackGenerator::UpdateFinalCutWrapArch()
 		? BoundGameMode->GetDistanceMeters()
 		: FMath::Max(0.0f, static_cast<float>(BoundPawn->GetActorLocation().X) / 100.0f);
 
-	if (CurrentDistMeters >= 5100.0f && !bWrapArchSpawned)
+	if (CurrentDistMeters >= 8600.0f && !bWrapArchSpawned)
 	{
 		bWrapArchSpawned = true;
-		// Golden Wrap Arch at 5,340m (534,000 cm) framing the 5,400m finish line
-		const float ArchX = 534000.0f;
+		// Golden Wrap Arch at 8,940m (894,000 cm) framing the 9,000m finish line
+		const float ArchX = 894000.0f;
+		const float HalfW = MEGAJAM_CORRIDOR_HALF_WIDTH;
+		const float FullWidthScaleY = (HalfW * 2.0f) / 100.0f;
 
-		WrapArchISM->UpdateInstanceTransform(0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(1, FTransform(FRotator::ZeroRotator, FVector(ArchX, 880.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(2, FTransform(FRotator::ZeroRotator, FVector(ArchX, 0.0f, 960.0f), FVector(3.2f, 20.4f, 2.2f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(3, FTransform(FRotator(0.0f, 0.0f, 25.0f), FVector(ArchX - 250.0f, -680.0f, 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(4, FTransform(FRotator(0.0f, 0.0f, -25.0f), FVector(ArchX - 250.0f, 680.0f, 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
+		WrapArchISM->UpdateInstanceTransform(0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -(HalfW - 120.0f), 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
+		WrapArchISM->UpdateInstanceTransform(1, FTransform(FRotator::ZeroRotator, FVector(ArchX, HalfW - 120.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
+		WrapArchISM->UpdateInstanceTransform(2, FTransform(FRotator::ZeroRotator, FVector(ArchX, 0.0f, 960.0f), FVector(3.2f, FullWidthScaleY, 2.2f)), true, false, true);
+		WrapArchISM->UpdateInstanceTransform(3, FTransform(FRotator(0.0f, 0.0f, 25.0f), FVector(ArchX - 250.0f, -(HalfW - 320.0f), 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
+		WrapArchISM->UpdateInstanceTransform(4, FTransform(FRotator(0.0f, 0.0f, -25.0f), FVector(ArchX - 250.0f, HalfW - 320.0f, 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
 		WrapArchISM->MarkRenderStateDirty();
 	}
 }
@@ -734,10 +738,15 @@ void AMegaJamTrackGenerator::CreatePools()
 		WallISM->AddInstance(MakeHiddenInstanceTransform(), true);
 	}
 
+	TakeA_ObstaclesISM->NumCustomDataFloats = FMath::Max(TakeA_ObstaclesISM->NumCustomDataFloats, 1);
+	TakeB_ObstaclesISM->NumCustomDataFloats = FMath::Max(TakeB_ObstaclesISM->NumCustomDataFloats, 1);
+
 	for (int32 Index = 0; Index < ObstacleSlots; ++Index)
 	{
-		TakeA_ObstaclesISM->AddInstance(MakeHiddenInstanceTransform(), true);
-		TakeB_ObstaclesISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		const int32 InstIdxA = TakeA_ObstaclesISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		TakeA_ObstaclesISM->SetCustomDataValue(InstIdxA, 0, 0.0f);
+		const int32 InstIdxB = TakeB_ObstaclesISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		TakeB_ObstaclesISM->SetCustomDataValue(InstIdxB, 0, 0.0f);
 	}
 
 	SetPieceSlots.SetNum(TotalSetPieceSlots);
@@ -854,6 +863,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	const bool bTitleOrCompleted = BoundGameMode && !BoundGameMode->IsPlaying();
 	const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
+	const float CurrentDistance = ChunkDistMeters;
+	const int32 ChunkGenreIdx = FMath::Clamp(FMath::FloorToInt(CurrentDistance / 1800.0f), 0, 4);
 
 	// Visual progression across Scene 01 (0m-1,800m Action), Scene 02 (1,800m-3,600m Western Standoff), and Scene 03 (3,600m-5,400m Alpine Avalanche)
 	EMegaJamFilmScene ChunkScene = EMegaJamFilmScene::Soundstage;
@@ -872,11 +883,11 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	FRandomStream Stream(Seed + ChunkIndex * 7919);
 
-	// Keep chunks before SafeUntilChunkIndex, around the 1,800m and 3,600m Clapperboard transitions, and beyond 5,280m (Golden Wrap Arch finish stretch) obstacle-free
+	// Keep chunks before SafeUntilChunkIndex, around the 1,800m and 3,600m Clapperboard transitions, and beyond 8,880m (Golden Wrap Arch finish stretch) obstacle-free
 	const bool bInSceneTransitionZone =
 		(ChunkDistMeters >= 1720.0f && ChunkDistMeters < 1920.0f) ||
 		(ChunkDistMeters >= 3520.0f && ChunkDistMeters < 3720.0f);
-	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || bInSceneTransitionZone || ChunkDistMeters >= 5280.0f || bTitleOrCompleted);
+	const bool bInSafeOrFinishZone = (ChunkIndex < SafeUntilChunkIndex || bInSceneTransitionZone || ChunkDistMeters >= 8880.0f || bTitleOrCompleted);
 	const bool bIsHazardChunk = !bInSafeOrFinishZone && IsHazardChunkForScene(ChunkIndex, ChunkScene);
 	const int32 HazardArchetype = GetHazardArchetypeForChunk(ChunkIndex);
 
@@ -886,14 +897,17 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	const float RowLength = ChunkLength / Rows;
 
-	// Clear all obstacle slots in this chunk first
+	// Clear all obstacle slots in this chunk first and stamp Per-Instance Custom Data 0 with ChunkGenreIdx
 	for (int32 Row = 0; Row < Rows; ++Row)
 	{
 		const int32 BaseObstacleIndex = (Slot * Rows + Row) * ObstaclesPerRow;
 		for (int32 SubIdx = 0; SubIdx < ObstaclesPerRow; ++SubIdx)
 		{
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + SubIdx, MakeHiddenInstanceTransform(), true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + SubIdx, MakeHiddenInstanceTransform(), true, false, true);
+			const int32 InstIdx = BaseObstacleIndex + SubIdx;
+			TakeA_ObstaclesISM->UpdateInstanceTransform(InstIdx, MakeHiddenInstanceTransform(), true, false, true);
+			TakeA_ObstaclesISM->SetCustomDataValue(InstIdx, 0, (float)ChunkGenreIdx);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(InstIdx, MakeHiddenInstanceTransform(), true, false, true);
+			TakeB_ObstaclesISM->SetCustomDataValue(InstIdx, 0, (float)ChunkGenreIdx);
 		}
 	}
 
@@ -982,14 +996,15 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	// Scene 02 (1800.0f <= DistanceMeters < 3600.0f): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space!
 	if (ChunkDistMeters >= 1800.0f)
 	{
+		const float BarricadeScaleY = (MEGAJAM_CORRIDOR_HALF_WIDTH * 2.0f) / 100.0f;
 		const FTransform MainTimberBarricade(
 			FRotator::ZeroRotator,
 			FVector(HazardX, 0.0f, 180.0f),
-			FVector(ObstacleSize / 100.0f, 18.2f, 3.6f));
+			FVector(ObstacleSize / 100.0f, BarricadeScaleY, 3.6f));
 		const FTransform UpperRailCrossbeam(
 			FRotator::ZeroRotator,
 			FVector(HazardX, 0.0f, 430.0f),
-			FVector(ObstacleSize / 100.0f, 18.2f, 2.2f));
+			FVector(ObstacleSize / 100.0f, BarricadeScaleY, 2.2f));
 		const FTransform FlankingPostLeft(
 			FRotator::ZeroRotator,
 			FVector(HazardX, -700.0f, 360.0f),
