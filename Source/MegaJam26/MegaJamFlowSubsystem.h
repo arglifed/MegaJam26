@@ -106,6 +106,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetActiveGenre(EMegaJamSceneGenre NewGenre);
 
+	// ---- Per-Scene Performance Metrics & Box-Office Grading ----
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void ResetSceneMetrics(float StartTimeSeconds = 0.0f);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void ResetSingleSceneMetrics(EMegaJamSceneGenre Genre, float StartTimeSeconds);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void RecordSpecialMoveExecution(EMegaJamSceneGenre Genre);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void RecordFramePickup(EMegaJamSceneGenre Genre);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void FinalizeScenePerformance(EMegaJamSceneGenre OutgoingGenre, float CurrentTimeSeconds);
+
 	/** Returns true when the continuous 128 BPM beat clock is within +/- WindowSeconds of a beat boundary. */
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	bool IsWithinBeatWindow(float WindowSeconds = 0.16f) const;
@@ -208,6 +224,14 @@ public:
 	/** Active scene genre (Scene 01 = Action). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	EMegaJamSceneGenre ActiveGenre = EMegaJamSceneGenre::Action;
+
+	/** Per-scene performance tracking across Action, Western, Noir, Chase, and Montage. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	TMap<EMegaJamSceneGenre, FScenePerformanceMetrics> SceneMetrics;
+
+	/** Run time (seconds) when the current scene started. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	float CurrentSceneStartTime = 0.0f;
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;

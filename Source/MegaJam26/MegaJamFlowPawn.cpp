@@ -406,6 +406,10 @@ void AMegaJamFlowPawn::ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool
 
 	ActiveMontageSubGenre = NewSubGenre;
 	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	if (FlowSubsystem && bIsManualCycle)
+	{
+		FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
+	}
 	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
 
 	// Match-Cut Power Switch: grant +15.0f Film Meter bonus, micro-flashbulb match-cut, and aspect lock
@@ -674,14 +678,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 				PlayCue(TEXT("OnCompleted"), VictorySound, 1.0f, 0.75f);
 			}
 
-			const float VictorySpeed = AttractCruiseSpeed * 1.25f;
-			Velocity = FVector(VictorySpeed, 0.0f, 0.0f);
+			// Cinematic letterboxed freeze-frame for the Box-Office Wrap-Up Scoreboard
+			Velocity = FVector::ZeroVector;
 			FlowRatio = 1.0f;
-
-			const FVector Loc = GetActorLocation();
-			const float NewY = FMath::FInterpTo(static_cast<float>(Loc.Y), 0.0f, DeltaSeconds, 5.0f);
-			const float NewZ = FMath::FInterpTo(static_cast<float>(Loc.Z), 160.0f, DeltaSeconds, 5.0f);
-			SetActorLocation(FVector(Loc.X + VictorySpeed * DeltaSeconds, NewY, NewZ), false);
 
 			if (Camera)
 			{
@@ -1142,6 +1141,7 @@ void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 	if (FlowSubsystem)
 	{
 		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+		FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
 	}
 
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
@@ -1253,6 +1253,7 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 	if (FlowSubsystem)
 	{
 		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+		FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
 	}
 
 	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
@@ -1368,6 +1369,7 @@ void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 	if (FlowSubsystem)
 	{
 		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+		FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
 	}
 
 	// Vertical jump impulse while maintaining 5-lane lateral rail lock in 21:9
@@ -1502,6 +1504,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 	if (FlowSubsystem)
 	{
 		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+		FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
 	}
 
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
@@ -1676,6 +1679,10 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 
 	if (ShreddedCount > 0)
 	{
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
+		}
 		BP_PlaySpliceVFX();
 
 		// Trigger Procedural 3D Beat-Splice Shockwave Ring (0.18s electric-cyan radial expansion)
@@ -1947,6 +1954,8 @@ void AMegaJamFlowPawn::SetAspectMode(EMegaJamAspectMode NewAspect)
 
 void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenre)
 {
+	const EMegaJamSceneGenre OutgoingGenre = ActiveMusicGenre;
+
 	// Instantly refill FilmMeter so the player drops into the new scene fully fueled
 	FilmMeter = 100.0f;
 	ActiveMusicGenre = NextGenre;
@@ -1960,8 +1969,11 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 
 	if (UWorld* World = GetWorld())
 	{
+		const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
+		const float CurrentRunTime = GameMode ? GameMode->GetRunTime() : static_cast<float>(World->GetTimeSeconds());
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
+			FlowSubsystem->FinalizeScenePerformance(OutgoingGenre, CurrentRunTime);
 			FlowSubsystem->SetActiveGenre(NextGenre);
 			FlowSubsystem->SetFilmMeter(FilmMeter);
 		}
@@ -2020,9 +2032,22 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 	SyncSceneMusicTrack(NextGenre);
 }
 
+void AMegaJamFlowPawn::HaltForWrapUpScoreboard()
+{
+	Velocity.X = 0.0f;
+	Velocity.Y = 0.0f;
+	Velocity.Z = 0.0f;
+	CustomTimeDilation = 0.05f;
+	if (CurrentAspect == EMegaJamAspectMode::Box_4_3)
+	{
+		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+	}
+}
+
 void AMegaJamFlowPawn::ResetForRun()
 {
 	bCrashed = false;
+	CustomTimeDilation = 1.0f;
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
 	FilmMeter = 50.0f;
@@ -2248,6 +2273,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
+		FlowSubsystem->RecordFramePickup(FlowSubsystem->ActiveGenre);
 		FlowSubsystem->SetFlowRatio(FlowRatio);
 		FlowSubsystem->SetSpliceChain(SpliceChain);
 		FlowSubsystem->SetFilmMeter(FilmMeter);

@@ -63,6 +63,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void CompleteRun();
 
+	/** Finalizes Scene 05 Montage metrics, halts pawn in a 0.05x freeze-frame, calculates FinalBoxOfficeGross, and displays the Box-Office Scoreboard. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void TriggerWrapUpScoreboard();
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Score")
+	int32 GetFinalBoxOfficeGross() const { return FinalBoxOfficeGross; }
+
 	/**
 	 * Clapperboard rewind: bumps CurrentTakeNumber, resets the pawn, and rewinds RunTime to CurrentCheckpointTime.
 	 * Called automatically CrashRestartDelay seconds after a crash, or immediately by IA_Boost.
@@ -268,6 +275,10 @@ protected:
 	/** Par-Time Speed Bonus (+500 pts per second under 45.0s) awarded upon crossing 1,800m. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
 	int32 ParTimeBonusAwarded = 0;
+
+	/** Total Box-Office Gross ($) calculated at the end of the 9,000m production run. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	int32 FinalBoxOfficeGross = 0;
 
 	FTimerHandle CrashRestartTimer;
 };

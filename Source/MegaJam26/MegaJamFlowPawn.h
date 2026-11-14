@@ -487,6 +487,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void TriggerClapperboardTransition(EMegaJamSceneGenre NextGenre);
 
+	/** Halts pawn forward movement (Velocity.X = 0.0f) and triggers a cinematic letterboxed freeze-frame (CustomTimeDilation = 0.05f) for the Wrap-Up Scoreboard. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void HaltForWrapUpScoreboard();
+
 	/** Minimum cooldown (seconds) between ExecuteEditorSplice calls to prevent macro-spamming. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Flow")
 	float EditorSpliceCooldown = 0.25f;

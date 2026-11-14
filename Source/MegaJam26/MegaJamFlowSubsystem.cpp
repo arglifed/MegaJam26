@@ -153,6 +153,76 @@ void UMegaJamFlowSubsystem::SetActiveGenre(EMegaJamSceneGenre NewGenre)
 	ActiveGenre = NewGenre;
 }
 
+void UMegaJamFlowSubsystem::ResetSceneMetrics(float StartTimeSeconds)
+{
+	SceneMetrics.Empty();
+	for (const EMegaJamSceneGenre Genre : {
+		EMegaJamSceneGenre::Action,
+		EMegaJamSceneGenre::Western,
+		EMegaJamSceneGenre::Noir,
+		EMegaJamSceneGenre::Chase,
+		EMegaJamSceneGenre::Montage })
+	{
+		SceneMetrics.Add(Genre, FScenePerformanceMetrics());
+	}
+	CurrentSceneStartTime = FMath::Max(0.0f, StartTimeSeconds);
+}
+
+void UMegaJamFlowSubsystem::ResetSingleSceneMetrics(EMegaJamSceneGenre Genre, float StartTimeSeconds)
+{
+	SceneMetrics.FindOrAdd(Genre) = FScenePerformanceMetrics();
+	CurrentSceneStartTime = FMath::Max(0.0f, StartTimeSeconds);
+}
+
+void UMegaJamFlowSubsystem::RecordSpecialMoveExecution(EMegaJamSceneGenre Genre)
+{
+	FScenePerformanceMetrics& Metrics = SceneMetrics.FindOrAdd(Genre);
+	++Metrics.SpecialMovesExecuted;
+}
+
+void UMegaJamFlowSubsystem::RecordFramePickup(EMegaJamSceneGenre Genre)
+{
+	FScenePerformanceMetrics& Metrics = SceneMetrics.FindOrAdd(Genre);
+	++Metrics.FilmFramesCollected;
+}
+
+void UMegaJamFlowSubsystem::FinalizeScenePerformance(EMegaJamSceneGenre OutgoingGenre, float CurrentTimeSeconds)
+{
+	FScenePerformanceMetrics& Metrics = SceneMetrics.FindOrAdd(OutgoingGenre);
+	Metrics.TimeSpentSeconds = FMath::Max(0.0f, CurrentTimeSeconds - CurrentSceneStartTime);
+	CurrentSceneStartTime = FMath::Max(CurrentSceneStartTime, CurrentTimeSeconds);
+
+	const float Time = Metrics.TimeSpentSeconds;
+	const int32 Moves = Metrics.SpecialMovesExecuted;
+
+	// Critic Grading Logic:
+	// S-Rank: Time <= 45.0s AND Moves >= 4
+	// A-Rank: Time <= 50.0s AND Moves >= 2
+	// B-Rank: Time <= 55.0s
+	// C-Rank: Time > 55.0s (and <= 65.0s)
+	// D-Rank: Time > 65.0s
+	if (Time <= 45.0f && Moves >= 4)
+	{
+		Metrics.CalculatedGrade = TEXT("S");
+	}
+	else if (Time <= 50.0f && Moves >= 2)
+	{
+		Metrics.CalculatedGrade = TEXT("A");
+	}
+	else if (Time <= 55.0f)
+	{
+		Metrics.CalculatedGrade = TEXT("B");
+	}
+	else if (Time > 65.0f)
+	{
+		Metrics.CalculatedGrade = TEXT("D");
+	}
+	else
+	{
+		Metrics.CalculatedGrade = TEXT("C");
+	}
+}
+
 bool UMegaJamFlowSubsystem::IsWithinBeatWindow(float WindowSeconds) const
 {
 	constexpr float BeatDurationSeconds = 60.0f / 128.0f; // 0.46875s per beat
