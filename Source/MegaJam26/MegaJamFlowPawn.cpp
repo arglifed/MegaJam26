@@ -107,10 +107,12 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	// Chase camera. The pawn never rotates, so the boom simply trails behind along -X and looks down slightly over the hood.
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(CollisionSphere);
-	SpringArm->TargetArmLength = 540.0f;
-	SpringArm->SocketOffset = FVector(0.0f, 0.0f, 135.0f);
+	SpringArm->TargetArmLength = 450.0f;
+	SpringArm->TargetOffset = FVector(0.0f, 0.0f, 120.0f);
+	SpringArm->SocketOffset = FVector(0.0f, 0.0f, 15.0f);
 	SpringArm->SetRelativeRotation(FRotator(-11.0f, 0.0f, 0.0f));
 	SpringArm->bUsePawnControlRotation = false;
+	SpringArm->bDoCollisionTest = false;
 	SpringArm->bEnableCameraLag = true;
 	SpringArm->CameraLagSpeed = 8.0f;
 	SpringArm->ProbeSize = 12.0f;
@@ -118,7 +120,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
-	Camera->SetFieldOfView(BoxFOV);
+	Camera->SetFieldOfView(90.0f);
 
 	ScoreAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ScoreAudioComponent"));
 	ScoreAudioComponent->SetupAttachment(CollisionSphere);
@@ -210,11 +212,20 @@ void AMegaJamFlowPawn::BeginPlay()
 	GroundedSpawnLoc.Z = static_cast<double>(WideZBounds.X);
 	SpawnTransform.SetLocation(GroundedSpawnLoc);
 	SetActorLocation(GroundedSpawnLoc, false, nullptr, ETeleportType::TeleportPhysics);
+
+	if (SpringArm)
+	{
+		SpringArm->TargetOffset = FVector(0.0f, 0.0f, 120.0f);
+		SpringArm->TargetArmLength = 450.0f;
+		SpringArm->bDoCollisionTest = false;
+	}
 	ApplyCameraPOV();
 
 	if (Camera)
 	{
-		Camera->SetFieldOfView(CurrentAspect == EMegaJamAspectMode::Wide_21_9 ? WideFOV : BoxFOV);
+		Camera->SetFieldOfView(90.0f);
+		Camera->SetRelativeLocation(FVector::ZeroVector);
+		Camera->SetRelativeRotation(FRotator::ZeroRotator);
 	}
 
 	GrazeSphere->SetSphereRadius(GrazeRadius);
@@ -434,11 +445,14 @@ void AMegaJamFlowPawn::ApplyCameraPOV()
 		return;
 	}
 
+	SpringArm->TargetOffset = FVector(0.0f, 0.0f, 120.0f);
+	SpringArm->bDoCollisionTest = false;
+
 	switch (ActiveCameraPOV)
 	{
 	case EMegaJamCameraPOV::ChaseFar:
 		SpringArm->TargetArmLength = 720.0f;
-		SpringArm->SocketOffset = FVector(0.0f, 0.0f, 175.0f);
+		SpringArm->SocketOffset = FVector(0.0f, 0.0f, 55.0f);
 		SpringArm->SetRelativeRotation(FRotator(-14.0f, 0.0f, 0.0f));
 		if (VisualMesh)
 		{
@@ -449,7 +463,7 @@ void AMegaJamFlowPawn::ApplyCameraPOV()
 
 	case EMegaJamCameraPOV::BumperFirstPerson:
 		SpringArm->TargetArmLength = 0.0f;
-		SpringArm->SocketOffset = FVector(135.0f, 0.0f, 45.0f);
+		SpringArm->SocketOffset = FVector(135.0f, 0.0f, -75.0f);
 		SpringArm->SetRelativeRotation(FRotator(-2.0f, 0.0f, 0.0f));
 		if (VisualMesh)
 		{
@@ -459,8 +473,8 @@ void AMegaJamFlowPawn::ApplyCameraPOV()
 
 	case EMegaJamCameraPOV::ChaseStandard:
 	default:
-		SpringArm->TargetArmLength = 540.0f;
-		SpringArm->SocketOffset = FVector(0.0f, 0.0f, 135.0f);
+		SpringArm->TargetArmLength = 450.0f;
+		SpringArm->SocketOffset = FVector(0.0f, 0.0f, 15.0f);
 		SpringArm->SetRelativeRotation(FRotator(-11.0f, 0.0f, 0.0f));
 		if (VisualMesh)
 		{
@@ -714,27 +728,59 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	if (Camera)
 	{
+		if (!FMath::IsFinite(Camera->FieldOfView) || Camera->FieldOfView <= 10.0f)
+		{
+			Camera->SetFieldOfView(90.0f);
+		}
+		if (!FMath::IsFinite(CurrentFOVPunch))
+		{
+			CurrentFOVPunch = 0.0f;
+		}
+		if (!FMath::IsFinite(CurrentCameraRoll))
+		{
+			CurrentCameraRoll = 0.0f;
+		}
+		if (!FMath::IsFinite(CameraTrauma))
+		{
+			CameraTrauma = 0.0f;
+		}
+		if (!FMath::IsFinite(SlamPitchPunch))
+		{
+			SlamPitchPunch = 0.0f;
+		}
+		if (!FMath::IsFinite(ActiveSlashRoll))
+		{
+			ActiveSlashRoll = 0.0f;
+		}
+
 		const EMegaJamSceneGenre CamGenre = GetEffectivePowerGenre();
 		const bool bNoirVertigo = (CamGenre == EMegaJamSceneGenre::Noir && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
 
 		const float POVTargetArmLength = (ActiveCameraPOV == EMegaJamCameraPOV::ChaseStandard)
-			? 540.0f
+			? 450.0f
 			: ((ActiveCameraPOV == EMegaJamCameraPOV::ChaseFar) ? 720.0f : 0.0f);
 
-		float BaseFOV = BoxFOV;
+		if (SpringArm && !FMath::IsFinite(SpringArm->TargetArmLength))
+		{
+			SpringArm->TargetArmLength = POVTargetArmLength;
+		}
+
+		float BaseFOV = FMath::IsFinite(BoxFOV) ? BoxFOV : 90.0f;
 		if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
 		{
-			BaseFOV = UltraPanavisionFOV;
+			BaseFOV = FMath::IsFinite(UltraPanavisionFOV) ? UltraPanavisionFOV : 112.0f;
 		}
 		else if (bNoirVertigo)
 		{
 			// Hitchcock Vertigo Dolly-Zoom: dynamic TrackBPM sine pulse widening FOV to 114.0f while pulling SpringArm inward
 			const UMegaJamFlowSubsystem* VertigoSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
-			const float TimeSeconds = VertigoSub
+			const float RawTimeSeconds = VertigoSub
 				? VertigoSub->CurrentAudioTime
 				: (GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds()) : 0.0f);
-			const float VertigoAlpha = 0.5f + 0.5f * FMath::Sin(TimeSeconds * PI * (CurrentTrackBPM / 60.0f));
-			BaseFOV = FMath::Lerp(WideFOV, 114.0f, VertigoAlpha);
+			const float TimeSeconds = FMath::IsFinite(RawTimeSeconds) ? RawTimeSeconds : 0.0f;
+			const float SafeBPM = (FMath::IsFinite(CurrentTrackBPM) && CurrentTrackBPM > 1.0f) ? CurrentTrackBPM : 125.0f;
+			const float VertigoAlpha = FMath::Clamp(0.5f + 0.5f * FMath::Sin(TimeSeconds * PI * (SafeBPM / 60.0f)), 0.0f, 1.0f);
+			BaseFOV = FMath::Lerp(FMath::IsFinite(WideFOV) ? WideFOV : 108.0f, 114.0f, VertigoAlpha);
 			if (SpringArm)
 			{
 				if (ActiveCameraPOV == EMegaJamCameraPOV::BumperFirstPerson)
@@ -750,7 +796,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		}
 		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
 		{
-			BaseFOV = WideFOV;
+			BaseFOV = FMath::IsFinite(WideFOV) ? WideFOV : 108.0f;
 		}
 
 		if (SpringArm && !bNoirVertigo)
@@ -769,13 +815,18 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		}
 
 		const float SmoothedBaseFOV = FMath::FInterpTo(Camera->FieldOfView - CurrentFOVPunch, BaseFOV, DeltaSeconds, AspectFOVInterpSpeed);
-		Camera->SetFieldOfView(SmoothedBaseFOV + CurrentFOVPunch);
+		const float FinalFOV = FMath::Clamp(SmoothedBaseFOV + CurrentFOVPunch, 60.0f, 140.0f);
+		Camera->SetFieldOfView(FMath::IsFinite(FinalFOV) ? FinalFOV : 90.0f);
 
-		const float LateralAlpha = (TerminalVelocity > KINDA_SMALL_NUMBER && !bCrashed)
+		const float LateralAlpha = (TerminalVelocity > KINDA_SMALL_NUMBER && !bCrashed && FMath::IsFinite(Velocity.Y))
 			? FMath::Clamp(static_cast<float>(Velocity.Y) / TerminalVelocity, -1.0f, 1.0f)
 			: 0.0f;
 		const float TargetRoll = LateralAlpha * MaxStrafeRoll;
 		CurrentCameraRoll = FMath::FInterpTo(CurrentCameraRoll, TargetRoll, DeltaSeconds, CameraRollInterpSpeed);
+		if (!FMath::IsFinite(CurrentCameraRoll))
+		{
+			CurrentCameraRoll = 0.0f;
+		}
 
 		// Damped high-frequency sinusoidal Pitch, Yaw, Roll, and vertical Z offsets using Trauma^2 scaling
 		const float Shake = CameraTrauma * CameraTrauma;
@@ -787,7 +838,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 		const bool bChaseSlope = (ActiveMusicGenre == EMegaJamSceneGenre::Chase || CamGenre == EMegaJamSceneGenre::Chase);
 		const bool bAlpineSlope = (CamGenre == EMegaJamSceneGenre::Alpine && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
-		const float DownhillPitchOffset = bChaseSlope ? SnowboardDownhillPitch : (bAlpineSlope ? -7.5f : 0.0f);
+		const float SafeDownhillPitch = FMath::IsFinite(SnowboardDownhillPitch) ? SnowboardDownhillPitch : -12.5f;
+		const float DownhillPitchOffset = bChaseSlope ? SafeDownhillPitch : (bAlpineSlope ? -7.5f : 0.0f);
 
 		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + DownhillPitchOffset + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
 		Camera->SetRelativeLocation(FVector(0.0f, 0.0f, ShakeZ));
@@ -2323,7 +2375,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	ApplyCameraPOV();
 	if (Camera)
 	{
-		Camera->SetFieldOfView(BoxFOV);
+		Camera->SetFieldOfView(90.0f);
 		Camera->SetRelativeRotation(FRotator::ZeroRotator);
 		Camera->SetRelativeLocation(FVector::ZeroVector);
 	}
