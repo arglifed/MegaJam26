@@ -268,6 +268,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
 	TMap<EMegaJamSceneGenre, FScenePerformanceMetrics> SceneMetrics;
 
+	/** Configurable thresholds for per-scene S / A / B / C / D critic grading. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Scoreboard")
+	FSceneGradeThresholds GradeThresholds;
+
 	/** Run time (seconds) when the current scene started. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
 	float CurrentSceneStartTime = 0.0f;

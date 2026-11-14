@@ -257,24 +257,24 @@ void UMegaJamFlowSubsystem::FinalizeScenePerformance(EMegaJamSceneGenre Outgoing
 	const int32 Moves = Metrics.SpecialMovesExecuted;
 
 	// Critic Grading Logic:
-	// S-Rank: Time <= 45.0s AND Moves >= 4
-	// A-Rank: Time <= 50.0s AND Moves >= 2
-	// B-Rank: Time <= 55.0s
-	// C-Rank: Time > 55.0s (and <= 65.0s)
-	// D-Rank: Time > 65.0s
-	if (Time <= 45.0f && Moves >= 4)
+	// S-Rank: Time <= SRankTime AND Moves >= SRankMoves
+	// A-Rank: Time <= ARankTime AND Moves >= ARankMoves
+	// B-Rank: Time <= BRankTime
+	// C-Rank: Time > BRankTime (and <= CRankTime)
+	// D-Rank: Time > CRankTime
+	if (Time <= GradeThresholds.SRankTime && Moves >= GradeThresholds.SRankMoves)
 	{
 		Metrics.CalculatedGrade = TEXT("S");
 	}
-	else if (Time <= 50.0f && Moves >= 2)
+	else if (Time <= GradeThresholds.ARankTime && Moves >= GradeThresholds.ARankMoves)
 	{
 		Metrics.CalculatedGrade = TEXT("A");
 	}
-	else if (Time <= 55.0f)
+	else if (Time <= GradeThresholds.BRankTime)
 	{
 		Metrics.CalculatedGrade = TEXT("B");
 	}
-	else if (Time > 65.0f)
+	else if (Time > GradeThresholds.CRankTime)
 	{
 		Metrics.CalculatedGrade = TEXT("D");
 	}

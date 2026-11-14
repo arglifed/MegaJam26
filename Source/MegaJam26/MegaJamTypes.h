@@ -81,3 +81,29 @@ struct FScenePerformanceMetrics
 	FString CalculatedGrade = TEXT("C");
 };
 
+/** Tunable grading thresholds for the per-scene Box-Office Critic Scoreboard. */
+USTRUCT(BlueprintType)
+struct FSceneGradeThresholds
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Grading")
+	float SRankTime = 45.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Grading")
+	int32 SRankMoves = 4;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Grading")
+	float ARankTime = 50.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Grading")
+	int32 ARankMoves = 2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Grading")
+	float BRankTime = 55.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Grading")
+	float CRankTime = 65.0f;
+};
+
+
