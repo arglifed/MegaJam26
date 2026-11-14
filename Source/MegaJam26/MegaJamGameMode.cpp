@@ -375,6 +375,7 @@ void AMegaJamGameMode::StartProductionFromTitle()
 			FlowSubsystem->SetTotalFramesCollected(0);
 			FlowSubsystem->SetHighestSpliceChain(1);
 			FlowSubsystem->SetCurrentCheckpointTime(0.0f);
+			FlowSubsystem->SeekMusicToTime(0.0f);
 		}
 	}
 
@@ -445,6 +446,7 @@ void AMegaJamGameMode::RetakeCurrentAct()
 		FlowSubsystem->SetDistanceMeters(DistanceMeters);
 		FlowSubsystem->SetFilmMeter(50.0f);
 		FlowSubsystem->SetHazardTimeScale(1.0f);
+		FlowSubsystem->SeekMusicToTime(0.0f);
 	}
 
 	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
@@ -513,6 +515,7 @@ void AMegaJamGameMode::WrapToTitleSlate()
 			FlowSubsystem->SetTotalFramesCollected(0);
 			FlowSubsystem->SetHighestSpliceChain(1);
 			FlowSubsystem->SetCurrentCheckpointTime(0.0f);
+			FlowSubsystem->SeekMusicToTime(0.0f);
 		}
 	}
 
@@ -586,6 +589,7 @@ void AMegaJamGameMode::ResetRun()
 		FlowSubsystem->SetDistanceMeters(DistanceMeters);
 		FlowSubsystem->SetFilmMeter(50.0f);
 		FlowSubsystem->SetHazardTimeScale(1.0f);
+		FlowSubsystem->SeekMusicToTime(0.0f);
 	}
 
 	if (const AMegaJamFlowPawn* ClapperPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))

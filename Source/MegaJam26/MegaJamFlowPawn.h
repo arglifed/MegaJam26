@@ -386,6 +386,14 @@ public:
 	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
 	bool IsWithinBeatWindow(float Tolerance = 0.16f) const;
 
+	/** True while ScoreMetaSound is playing, i.e. the score owns music + SFX and the C++ fallback audio must stay silent. */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
+	bool IsScoreDrivingAudio() const;
+
+	/** Smoothly interpolated pitch multiplier for MusicAudioComponent / ScoreAudioComponent. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Audio")
+	float CurrentMusicPitch = 1.0f;
+
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	bool HasCrashed() const { return bCrashed; }
 
@@ -606,9 +614,6 @@ protected:
 	void TriggerAudioEvent(FName ParameterName) const;
 	void PlayOneShot(USoundBase* Sound) const;
 
-	/** True while ScoreMetaSound is playing, i.e. the score owns music + SFX and the C++ fallback audio must stay silent. */
-	bool IsScoreDrivingAudio() const;
-
 	/**
 	 * Plays one gameplay SFX cue. Score path: fires ScoreTrigger (and, if bChainPitched, first sets ChainPitchSemitones
 	 * from Pitch). Fallback path: PlaySound2D(FallbackSound, Volume, Pitch). Never both, so nothing doubles up.
@@ -782,9 +787,6 @@ protected:
 
 	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
 	bool bTriggeredVictorySting = false;
-
-	/** Smoothly interpolated pitch multiplier for MusicAudioComponent. */
-	float CurrentMusicPitch = 1.0f;
 
 	/** Smoothly interpolated volume multiplier for MusicAudioComponent. */
 	float CurrentMusicVolume = 0.90f;
