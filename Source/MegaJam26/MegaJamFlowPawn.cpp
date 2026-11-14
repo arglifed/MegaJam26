@@ -60,6 +60,13 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VehicleStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	VehicleStaticMesh->SetVisibility(false);
 
+	DroppedBoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DroppedBoardMesh"));
+	DroppedBoardMesh->SetupAttachment(CollisionSphere);
+	DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	DroppedBoardMesh->SetCastShadow(false);
+	DroppedBoardMesh->SetAbsolute(true, true, false);
+	DroppedBoardMesh->SetVisibility(false);
+
 	ProceduralSpliceRingMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProceduralSpliceRingMesh"));
 	ProceduralSpliceRingMesh->SetupAttachment(CollisionSphere);
 	ProceduralSpliceRingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -519,7 +526,7 @@ void AMegaJamFlowPawn::ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool
 	}
 	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
 
-	// Match-Cut Power Switch: grant +15.0f Film Meter bonus, micro-flashbulb match-cut, and aspect lock
+	// Match-Cut Power Switch: grant +15.0f Film Meter bonus and micro-flashbulb match-cut without forcing aspect or altitude locks
 	FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
 	SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 	CurrentShotDuration = 0.0f;
@@ -536,19 +543,8 @@ void AMegaJamFlowPawn::ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool
 	AddCameraTrauma(0.38f, 0.65f);
 	TriggerMicroHitstop(0.03f, 0.25f);
 
-	if (NewSubGenre == EMegaJamSceneGenre::Western)
-	{
-		CurrentLane = 2;
-		bHasProcessedLaneInput = false;
-		SetAspectMode(EMegaJamAspectMode::UltraPanavision_276_1);
-	}
-	else
-	{
-		const float EntryY = static_cast<float>(GetActorLocation().Y);
-		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
-		bHasProcessedLaneInput = false;
-		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
-	}
+	// Refresh post-process grading for the newly selected Montage power while preserving the player's current aspect mode and flight altitude
+	SetAspectMode(CurrentAspect);
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
@@ -560,7 +556,6 @@ void AMegaJamFlowPawn::ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool
 		FlowSubsystem->SetOnBeatFlashTimer(1.1f);
 		FlowSubsystem->SetSpliceChain(SpliceChain);
 		FlowSubsystem->SetFilmMeter(FilmMeter);
-		FlowSubsystem->SetHazardTimeScale(0.45f);
 	}
 
 	PlayCue(TEXT("OnBeatCut"), BeatSpliceSound, 0.95f, 1.28f, true);
@@ -569,13 +564,12 @@ void AMegaJamFlowPawn::ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool
 	if (GEngine)
 	{
 		const TCHAR* PowerName = (NewSubGenre == EMegaJamSceneGenre::Western)
-			? TEXT("WESTERN 2.76:1 BEAT-SLASH")
+			? TEXT("WESTERN BEAT-SLASH")
 			: ((NewSubGenre == EMegaJamSceneGenre::Noir)
 				? TEXT("NOIR VERTIGO 2x GRAZE")
-				: ((NewSubGenre == EMegaJamSceneGenre::Chase) ? TEXT("CHASE +60% COMET SMASH") : TEXT("ACTION 21:9 BEAT-SPLICE")));
+				: ((NewSubGenre == EMegaJamSceneGenre::Chase) ? TEXT("CHASE +60% COMET SMASH") : TEXT("ACTION BEAT-SPLICE")));
 		GEngine->AddOnScreenDebugMessage(202607, 1.8f, FColor::Cyan,
-			FString::Printf(TEXT("★ MATCH-CUT MONTAGE [%s]: %s (+15%% FILM | CHAIN x%d)"),
-				bIsManualCycle ? TEXT("MANUAL TAB/R") : TEXT("400m AUTO-CUT"),
+			FString::Printf(TEXT("★ MATCH-CUT MONTAGE [MANUAL TAB/R]: %s (+15%% FILM | CHAIN x%d)"),
 				PowerName,
 				SpliceChain),
 			true, FVector2D(1.35f, 1.35f));
@@ -617,6 +611,26 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	ActiveSlashRoll = FMath::FInterpTo(ActiveSlashRoll, 0.0f, DeltaSeconds, 12.0f);
 	ActiveTrickSpinTimer = FMath::Max(0.0f, ActiveTrickSpinTimer - UnscaledDelta);
 	CometSmashTimer = FMath::Max(0.0f, CometSmashTimer - DeltaSeconds);
+	if (DroppedBoardTimer > 0.0f)
+	{
+		DroppedBoardTimer = FMath::Max(0.0f, DroppedBoardTimer - DeltaSeconds);
+		if (DroppedBoardMesh)
+		{
+			if (DroppedBoardTimer > 0.0f)
+			{
+				DroppedBoardVelocity.Z -= 3200.0f * DeltaSeconds;
+				DroppedBoardWorldLocation += DroppedBoardVelocity * DeltaSeconds;
+				DroppedBoardWorldRotation.Pitch += 340.0f * DeltaSeconds;
+				DroppedBoardWorldRotation.Roll += 260.0f * DeltaSeconds;
+				DroppedBoardWorldRotation.Yaw += 95.0f * DeltaSeconds;
+				DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+			}
+			else
+			{
+				DroppedBoardMesh->SetVisibility(false);
+			}
+		}
+	}
 	if (!bIsDropCutSlamming)
 	{
 		SlamPitchPunch = FMath::FInterpTo(SlamPitchPunch, 0.0f, DeltaSeconds, 12.0f);
@@ -740,8 +754,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		const float ShakeRoll  = Shake * 5.0f * FMath::Sin(static_cast<float>(RealTime * 53.0));
 		const float ShakeZ     = Shake * 18.0f * FMath::Sin(static_cast<float>(RealTime * 61.0));
 
-		const bool bDownhillScene = (CamGenre == EMegaJamSceneGenre::Chase || CamGenre == EMegaJamSceneGenre::Alpine);
-		const float DownhillPitchOffset = (bDownhillScene && CurrentAspect == EMegaJamAspectMode::Wide_21_9) ? -7.5f : 0.0f;
+		const bool bChaseSlope = (ActiveMusicGenre == EMegaJamSceneGenre::Chase || CamGenre == EMegaJamSceneGenre::Chase);
+		const bool bAlpineSlope = (CamGenre == EMegaJamSceneGenre::Alpine && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
+		const float DownhillPitchOffset = bChaseSlope ? -12.5f : (bAlpineSlope ? -7.5f : 0.0f);
 
 		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + DownhillPitchOffset + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
 		Camera->SetRelativeLocation(FVector(0.0f, 0.0f, ShakeZ));
@@ -828,45 +843,6 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
 
-	// ---- Scene 05 Match-Cut Montage: Automatic 400m Sub-Genre Power Cycling on the Beat ----
-	if (FlowSubsystem && FlowSubsystem->ActiveGenre == EMegaJamSceneGenre::Montage && GameMode)
-	{
-		const float DistMeters = GameMode->GetDistanceMeters();
-		if (DistMeters >= 7200.0f)
-		{
-			int32 TargetSegIdx = 0;
-			float SegStartMeters = 7200.0f;
-			EMegaJamSceneGenre SegGenre = EMegaJamSceneGenre::Action;
-			if (DistMeters >= 8400.0f)
-			{
-				TargetSegIdx = 3;
-				SegStartMeters = 8400.0f;
-				SegGenre = EMegaJamSceneGenre::Chase;
-			}
-			else if (DistMeters >= 8000.0f)
-			{
-				TargetSegIdx = 2;
-				SegStartMeters = 8000.0f;
-				SegGenre = EMegaJamSceneGenre::Noir;
-			}
-			else if (DistMeters >= 7600.0f)
-			{
-				TargetSegIdx = 1;
-				SegStartMeters = 7600.0f;
-				SegGenre = EMegaJamSceneGenre::Western;
-			}
-
-			if (TargetSegIdx != LastAutoMontageSegmentIndex)
-			{
-				if (FlowSubsystem->IsWithinBeatWindow(0.18f) || (DistMeters - SegStartMeters) >= 28.0f)
-				{
-					LastAutoMontageSegmentIndex = TargetSegIdx;
-					ApplyMontageSubGenre(SegGenre, false);
-				}
-			}
-		}
-	}
-
 	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
 	{
 		// 21:9 / 2.76:1 Director's Cut: drain FilmMeter at 15/sec and slow hazard animations to 0.45x
@@ -914,7 +890,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			const FVector PawnLoc = GetActorLocation();
 			const int32 SmashedCount = TrackGen->CleaveObstaclesInRange(
 				static_cast<float>(PawnLoc.X) - 120.0f,
-				static_cast<float>(PawnLoc.X) + 900.0f,
+				static_cast<float>(PawnLoc.X) + 1125.0f,
 				420.0f,
 				static_cast<float>(PawnLoc.Y));
 			if (SmashedCount > 0)
@@ -1133,7 +1109,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 				const FVector PawnLoc = GetActorLocation();
 				TrackGen->CleaveObstaclesInRange(
 					static_cast<float>(PawnLoc.X) - 120.0f,
-					static_cast<float>(PawnLoc.X) + 900.0f,
+					static_cast<float>(PawnLoc.X) + 1125.0f,
 					420.0f,
 					static_cast<float>(PawnLoc.Y));
 			}
@@ -1201,13 +1177,16 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 
 void AMegaJamFlowPawn::ExecuteEditorSplice()
 {
-	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
+	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	const bool bInMontage = (FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre) == EMegaJamSceneGenre::Montage;
+	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
+
+	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1 || (bInMontage && EffectiveGenre == EMegaJamSceneGenre::Western))
 	{
 		ExecuteWesternBeatSlash();
 		return;
 	}
-	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
-	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || bInMontage)
 	{
 		if (EffectiveGenre == EMegaJamSceneGenre::Noir)
 		{
@@ -1270,7 +1249,7 @@ void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 	if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
 	{
 		const FVector PawnLoc = GetActorLocation();
-		const float ForwardSpan = bOnBeat ? 2200.0f : 1400.0f;
+		const float ForwardSpan = bOnBeat ? 2750.0f : 1750.0f;
 		CashedInCount = TrackGen->SpliceObstaclesInFront(PawnLoc, ForwardSpan, DoubleGrazeRadius);
 	}
 
@@ -1388,7 +1367,7 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 		const FVector PawnLoc = GetActorLocation();
 		CleavedCount = TrackGen->CleaveObstaclesInRange(
 			static_cast<float>(PawnLoc.X) - 120.0f,
-			static_cast<float>(PawnLoc.X) + 900.0f,
+			static_cast<float>(PawnLoc.X) + 1125.0f,
 			420.0f,
 			static_cast<float>(PawnLoc.Y));
 	}
@@ -1506,11 +1485,11 @@ void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 	{
 		if (bOnBeat)
 		{
-			CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 150.0f, PawnX + 2400.0f, 550.0f, PawnY);
+			CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 150.0f, PawnX + 3000.0f, 550.0f, PawnY);
 		}
 		else
 		{
-			CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 120.0f, PawnX + 1200.0f, 240.0f, PawnY);
+			CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 120.0f, PawnX + 1500.0f, 240.0f, PawnY);
 		}
 	}
 
@@ -1628,7 +1607,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 
 	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
 	const float PawnX = static_cast<float>(GetActorLocation().X);
-	const float ForwardMaxX = PawnX + (bOnBeat ? 3000.0f : 1800.0f);
+	const float ForwardMaxX = PawnX + (bOnBeat ? 3750.0f : 2250.0f);
 	const float HalfWidthY = bOnBeat ? MEGAJAM_CORRIDOR_HALF_WIDTH : 360.0f;
 
 	int32 CleavedCount = 0;
@@ -1721,12 +1700,6 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 
 bool AMegaJamFlowPawn::TriggerHardCut()
 {
-	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
-	{
-		ExecuteWesternBeatSlash();
-		return true;
-	}
-
 	UWorld* World = GetWorld();
 	if (bCrashed || !World)
 	{
@@ -1734,8 +1707,16 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 
 	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
+	const bool bInMontage = (FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre) == EMegaJamSceneGenre::Montage;
 	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
-	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+
+	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1 || (bInMontage && EffectiveGenre == EMegaJamSceneGenre::Western))
+	{
+		ExecuteWesternBeatSlash();
+		return true;
+	}
+
+	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || bInMontage)
 	{
 		if (EffectiveGenre == EMegaJamSceneGenre::Noir)
 		{
@@ -1783,13 +1764,13 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
 
-	// Beat-Splice Harvesting: if pressed within the 128 BPM beat window (0.18s), shred active-take obstacles ahead into Film Frames!
+	// Beat-Splice Harvesting: if pressed within the 128 BPM beat window (0.18s), shred active-take obstacles ahead (+25% reach = 1500 cm) into Film Frames!
 	int32 ShreddedCount = 0;
 	if (FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f))
 	{
 		if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
 		{
-			ShreddedCount = TrackGen->SpliceObstaclesInFront(GetActorLocation(), 1200.0f, 600.0f);
+			ShreddedCount = TrackGen->SpliceObstaclesInFront(GetActorLocation(), 1500.0f, 600.0f);
 		}
 	}
 
@@ -2097,15 +2078,43 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 
 	if (NextGenre == EMegaJamSceneGenre::Montage)
 	{
-		// Scene 05 The Final Cut: Launch off the cliff into the Hang Glider and engage Match-Cut Montage starting on Action (21:9 Beat-Splice)
+		// 7,200m Snowboard Kick-Off into Hang Glider: detach the Snowboard mesh and let it tumble downward for 2.0s
+		if (DroppedBoardMesh)
+		{
+			UStaticMesh* BoardMesh = nullptr;
+			if (const TObjectPtr<UStaticMesh>* FoundChaseMesh = SceneVehicleMeshes.Find(EMegaJamSceneGenre::Chase))
+			{
+				BoardMesh = FoundChaseMesh->Get();
+			}
+			if (!BoardMesh && VehicleStaticMesh)
+			{
+				BoardMesh = VehicleStaticMesh->GetStaticMesh();
+			}
+			if (BoardMesh)
+			{
+				DroppedBoardMesh->SetStaticMesh(BoardMesh);
+				DroppedBoardMesh->SetWorldScale3D(VehicleStaticMesh ? VehicleStaticMesh->GetComponentScale() : FVector(1.0f));
+			}
+			else if (ProceduralSlashArcMesh && ProceduralSlashArcMesh->GetStaticMesh())
+			{
+				DroppedBoardMesh->SetStaticMesh(ProceduralSlashArcMesh->GetStaticMesh());
+				DroppedBoardMesh->SetWorldScale3D(FVector(1.6f, 0.45f, 0.08f));
+			}
+
+			DroppedBoardWorldLocation = GetActorLocation() + FVector(0.0f, 0.0f, -20.0f);
+			DroppedBoardWorldRotation = VehicleStaticMesh ? VehicleStaticMesh->GetComponentRotation() : GetActorRotation();
+			DroppedBoardVelocity = FVector(static_cast<float>(Velocity.X) * 0.45f, static_cast<float>(Velocity.Y) * 0.5f, -240.0f);
+			DroppedBoardTimer = 2.0f;
+			DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+			DroppedBoardMesh->SetVisibility(true);
+		}
+
+		// Scene 05 The Final Cut: Launch off the cliff into the Hang Glider in smooth 4:3 flight without forcing aspect/altitude locks
 		ActiveMontageSubGenre = EMegaJamSceneGenre::Action;
 		LastAutoMontageSegmentIndex = 0;
-		CurrentAspect = EMegaJamAspectMode::Wide_21_9;
-		const float EntryY = static_cast<float>(GetActorLocation().Y);
-		CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
 		bHasProcessedLaneInput = false;
 		ActiveDollyBoostBonus = FMath::Max(ActiveDollyBoostBonus, 3200.0f);
-		SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	}
 	else if (NextGenre == EMegaJamSceneGenre::Western)
 	{
@@ -2140,8 +2149,10 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	}
 
-	// Vertical launch impulse into the air + mid-air hang (1900.0f for the 7,200m Cliff Drop into Hang Glider)
-	Velocity.Z = (NextGenre == EMegaJamSceneGenre::Montage) ? 1900.0f : 1800.0f;
+	// Vertical launch impulse into the air + mid-air hang (2100.0f for 5,400m Scene 04 Mountain Drop-In, 1900.0f for 7,200m Cliff Drop into Hang Glider)
+	Velocity.Z = (NextGenre == EMegaJamSceneGenre::Chase)
+		? 2100.0f
+		: ((NextGenre == EMegaJamSceneGenre::Montage) ? 1900.0f : 1800.0f);
 	TriggerMicroHitstop(0.25f, 0.0f);
 	OnClapperboardSnapped.Broadcast();
 	PlayRunStartSound();
@@ -2184,6 +2195,11 @@ void AMegaJamFlowPawn::ResetForRun()
 	CurrentCameraRoll = 0.0f;
 	ActiveSlashRoll = 0.0f;
 	ActiveTrickSpinTimer = 0.0f;
+	DroppedBoardTimer = 0.0f;
+	if (DroppedBoardMesh)
+	{
+		DroppedBoardMesh->SetVisibility(false);
+	}
 	CometSmashTimer = 0.0f;
 	bSpliceRingIsHorizontal = false;
 	SpliceRingTimer = 0.0f;
@@ -2891,6 +2907,11 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	SlamPitchPunch = 0.0f;
 	ActiveSlashRoll = 0.0f;
 	ActiveTrickSpinTimer = 0.0f;
+	DroppedBoardTimer = 0.0f;
+	if (DroppedBoardMesh)
+	{
+		DroppedBoardMesh->SetVisibility(false);
+	}
 	CometSmashTimer = 0.0f;
 	bSpliceRingIsHorizontal = false;
 	SpliceRingTimer = 0.0f;

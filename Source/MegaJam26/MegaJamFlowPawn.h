@@ -73,6 +73,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")
 	TObjectPtr<UStaticMeshComponent> VehicleStaticMesh;
 
+	/** Transient falling snowboard mesh kicked off at the 7,200m cliff drop when grabbing the Scene 05 Hang Glider. */
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> DroppedBoardMesh;
+
 	/** Per-scene vehicle static meshes (Motorcycle -> Horse -> Snowboard -> Spy Car -> Stunt Car) swapped on genre transition. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
 	TMap<EMegaJamSceneGenre, TObjectPtr<UStaticMesh>> SceneVehicleMeshes;
@@ -532,6 +536,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void CycleMontagePowerOnDemand();
 
+	/** Alias for CycleMontagePowerOnDemand(). */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void CycleMontagePower() { CycleMontagePowerOnDemand(); }
+
 	/** Applies a new Montage sub-genre power, aspect ratio lock, post-process grading, and +15 Film Meter Match-Cut bonus. */
 	void ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool bIsManualCycle);
 
@@ -757,6 +765,18 @@ protected:
 
 	/** Remaining duration (s) for the Scene 03 snowboard 360-degree Trick-Ollie spin & nose-grab (0.42s). */
 	float ActiveTrickSpinTimer = 0.0f;
+
+	/** Remaining duration (s) for the 7,200m detached snowboard falling animation (2.0s). */
+	float DroppedBoardTimer = 0.0f;
+
+	/** World-space position of the detached snowboard as it falls off the 7,200m cliff. */
+	FVector DroppedBoardWorldLocation = FVector::ZeroVector;
+
+	/** World-space velocity of the detached snowboard (gravity Z = -3200.0f). */
+	FVector DroppedBoardVelocity = FVector::ZeroVector;
+
+	/** World-space tumbling rotation of the detached snowboard. */
+	FRotator DroppedBoardWorldRotation = FRotator::ZeroRotator;
 
 	/** Remaining duration (s) for the Scene 04 Fast-Forward Comet Smash invulnerability & obstacle-cleaving state. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Overdrive")
