@@ -161,7 +161,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		ActSlot->SetZOrder(12);
 	}
 
-	// Bottom-Center Film Meter & 128 BPM Beat Indicator
+	// Bottom-Center Film Meter & 120 BPM Beat Indicator
 	FilmMeterBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("FilmMeterBorder"));
 	FilmMeterBorder->SetBrushColor(FLinearColor(0.02f, 0.025f, 0.035f, 0.88f));
 	FilmMeterBorder->SetPadding(FMargin(18.0f, 7.0f));
@@ -172,7 +172,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	BeatIndicatorText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 11));
 	BeatIndicatorText->SetColorAndOpacity(FSlateColor(FLinearColor(0.25f, 0.92f, 1.0f, 1.0f)));
 	BeatIndicatorText->SetJustification(ETextJustify::Center);
-	BeatIndicatorText->SetText(FText::FromString(TEXT("♦ 128 BPM BEAT ♦")));
+	BeatIndicatorText->SetText(FText::FromString(TEXT("♦ 120 BPM BEAT ♦")));
 	if (UVerticalBoxSlot* BeatSlot = FilmBox->AddChildToVerticalBox(BeatIndicatorText))
 	{
 		BeatSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
@@ -1105,7 +1105,7 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		}
 	}
 
-	// 3.5 Bottom-Center Film Meter & 128 BPM Beat Indicator
+	// 3.5 Bottom-Center Film Meter & Dynamic BPM Beat Indicator
 	if (FilmMeterBorder)
 	{
 		if (bIsPlaying)
@@ -1115,6 +1115,8 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			const int32 FilmPct = FMath::RoundToInt(FilmMeter);
 			const bool bInOverdrive = (Aspect == EMegaJamAspectMode::Wide_21_9 || Aspect == EMegaJamAspectMode::UltraPanavision_276_1);
 			const bool bInPanavision = (Aspect == EMegaJamAspectMode::UltraPanavision_276_1);
+			const float RawTrackBPM = FlowSubsystem ? FlowSubsystem->CurrentTrackBPM : (FlowPawn ? FlowPawn->CurrentTrackBPM : 120.0f);
+			const int32 ActiveBPM = FMath::RoundToInt((RawTrackBPM > 1.0f) ? RawTrackBPM : 120.0f);
 
 			if (BeatIndicatorText)
 			{
@@ -1133,23 +1135,25 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 				}
 				else if (bOnBeatWindow)
 				{
-					const TCHAR* BeatPromptLabel = bInPanavision
-						? TEXT("♦ 128 BPM BEAT — SLASH NOW! ♦")
+					const TCHAR* BeatActionSuffix = bInPanavision
+						? TEXT("SLASH NOW!")
 						: ((bIsChase && bInOverdrive)
-							? TEXT("♦ 128 BPM BEAT — [SPACE] COMET SMASH! ♦")
+							? TEXT("[SPACE] COMET SMASH!")
 							: ((bIsNoir && bInOverdrive)
-								? TEXT("♦ 128 BPM BEAT — [SPACE] VERTIGO PULSE! ♦")
-								: ((bIsAlpine && bInOverdrive) ? TEXT("♦ 128 BPM BEAT — [SPACE] TRICK-OLLIE CRYO-SHATTER! ♦") : TEXT("♦ 128 BPM BEAT — CUT NOW! ♦"))));
-					BeatIndicatorText->SetText(FText::FromString(BeatPromptLabel));
+								? TEXT("[SPACE] VERTIGO PULSE!")
+								: ((bIsAlpine && bInOverdrive) ? TEXT("[SPACE] TRICK-OLLIE CRYO-SHATTER!") : TEXT("CUT NOW!"))));
+					BeatIndicatorText->SetText(FText::FromString(FString::Printf(TEXT("♦ %d BPM BEAT — %s ♦"), ActiveBPM, BeatActionSuffix)));
 					BeatIndicatorText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 1.0f, 0.95f, 1.0f)));
 				}
 				else
 				{
-					const TCHAR* IdleBeatLabel = (bIsChase && bInOverdrive)
-						? TEXT("[SPACE ON BEAT] COMET SMASH INVULNERABILITY!")
+					const FString IdleBeatLabel = (bIsChase && bInOverdrive)
+						? FString(TEXT("[SPACE ON BEAT] COMET SMASH INVULNERABILITY!"))
 						: ((bIsNoir && bInOverdrive)
-							? TEXT("[SPACE ON BEAT] VERTIGO PULSE // 2x GRAZE!")
-							: ((bIsAlpine && bInOverdrive) ? TEXT("[SPACE ON BEAT] TRICK-OLLIE CRYO-SHATTER!") : TEXT("· 128 BPM BEAT ·")));
+							? FString(TEXT("[SPACE ON BEAT] VERTIGO PULSE // 2x GRAZE!"))
+							: ((bIsAlpine && bInOverdrive)
+								? FString(TEXT("[SPACE ON BEAT] TRICK-OLLIE CRYO-SHATTER!"))
+								: FString::Printf(TEXT("· %d BPM BEAT ·"), ActiveBPM)));
 					BeatIndicatorText->SetText(FText::FromString(IdleBeatLabel));
 					BeatIndicatorText->SetColorAndOpacity(FSlateColor(
 						(bIsChase && bInOverdrive) ? FLinearColor(1.0f, 0.72f, 0.22f, 0.95f) : ((bIsAlpine && bInOverdrive) ? FLinearColor(0.35f, 0.96f, 1.0f, 0.95f) : FLinearColor(0.55f, 0.62f, 0.68f, 0.85f))));

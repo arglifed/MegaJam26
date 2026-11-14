@@ -145,7 +145,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
 	void FinalizeScenePerformance(EMegaJamSceneGenre OutgoingGenre, float CurrentTimeSeconds);
 
-	/** Returns true when the continuous 128 BPM beat clock is within +/- WindowSeconds of a beat boundary. */
+	/** Returns true when the continuous dynamic BPM beat clock is within +/- WindowSeconds of a beat boundary. */
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	bool IsWithinBeatWindow(float WindowSeconds = 0.16f) const;
 
@@ -240,9 +240,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float BeatPhase = 0.0f;
 
-	/** Active scene tempo in Beats Per Minute (defaults to 128.0f). */
+	/** Active scene tempo in Beats Per Minute (defaults to 120.0f). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Audio")
-	float CurrentTrackBPM = 128.0f;
+	float CurrentTrackBPM = 120.0f;
 
 	/** Continuous audio clock time (seconds) used for dynamic beat-window modulo checks. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Audio")

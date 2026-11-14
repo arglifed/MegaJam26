@@ -218,6 +218,23 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 	{
 		Camera->SetFieldOfView(90.0f);
 	}
+
+	// Enforce canonical per-scene BPMs (Scene 01 Action = 120.0f) in PostInitializeComponents so stale Blueprint defaults cannot override them
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Action) = 120.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Western) = 136.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Alpine) = 125.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Noir) = 125.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Chase) = 110.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Montage) = 120.0f;
+
+	for (const TPair<EMegaJamSceneGenre, float>& BpmPair : SceneBPMs)
+	{
+		if (FSceneAudioConfig* AudioCfg = SceneAudioConfigs.Find(BpmPair.Key))
+		{
+			AudioCfg->TrackBPM = BpmPair.Value;
+		}
+	}
+	CurrentTrackBPM = 120.0f;
 }
 
 void AMegaJamFlowPawn::BeginPlay()
@@ -2113,7 +2130,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 			FlowSubsystem->SetDropCutBannerTimer(1.4f);
 		}
 
-		// Check 128 BPM On-Beat Cut window (±0.16s) + Match-Cut window
+		// Check dynamic BPM On-Beat Cut window (±0.16s) + Match-Cut window
 		if (!TryTriggerOnBeatCut())
 		{
 			TryTriggerMatchCut(false);
@@ -2587,7 +2604,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 		? FMath::Clamp(Velocity.Size() / TerminalVelocity + FlowBonusOffset, 0.0f, 1.0f)
 		: 0.0f;
 
-	// Check 128 BPM On-Beat Cut window (±0.16s) when scooping a Film Frame
+	// Check dynamic BPM On-Beat Cut window (±0.16s) when scooping a Film Frame
 	const bool bTriggeredOnBeat = TryTriggerOnBeatCut();
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
@@ -2759,8 +2776,8 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 	const EMegaJamSceneGenre NewGenre = TargetGenre;
 	ActiveMusicGenre = NewGenre;
 
-	// Fetch and set CurrentTrackBPM from SceneAudioConfigs or SceneBPMs (fallback 128.0f)
-	float ResolvedBPM = 128.0f;
+	// Fetch and set CurrentTrackBPM from SceneAudioConfigs or SceneBPMs (fallback 120.0f)
+	float ResolvedBPM = 120.0f;
 	if (const FSceneAudioConfig* FoundCfg = SceneAudioConfigs.Find(TargetGenre))
 	{
 		if (FoundCfg->TrackBPM > 1.0f)
@@ -2770,7 +2787,7 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 	}
 	if (const float* FoundBPM = SceneBPMs.Find(TargetGenre))
 	{
-		if (*FoundBPM > 1.0f && (!SceneAudioConfigs.Contains(TargetGenre) || FMath::IsNearlyEqual(ResolvedBPM, 128.0f)))
+		if (*FoundBPM > 1.0f && (!SceneAudioConfigs.Contains(TargetGenre) || FMath::IsNearlyEqual(ResolvedBPM, 120.0f)))
 		{
 			ResolvedBPM = *FoundBPM;
 		}

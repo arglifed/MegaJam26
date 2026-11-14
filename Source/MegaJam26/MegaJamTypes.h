@@ -18,7 +18,7 @@ struct FSceneAudioConfig
 	TObjectPtr<USoundBase> MusicTrack = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
-	float TrackBPM = 128.0f;
+	float TrackBPM = 120.0f;
 };
 
 /** Canonical corridor half-width (cm). Total corridor width is 2400.0f units. */
