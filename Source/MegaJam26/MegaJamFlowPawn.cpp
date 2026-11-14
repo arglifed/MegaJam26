@@ -205,6 +205,9 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 	WideZBounds = FVector2D(2.0, 2.0);
 	BoxZBounds.X = 2.0;
 
+	SetActorRotation(FRotator::ZeroRotator);
+	SetActorScale3D(FVector::OneVector);
+
 	if (SpringArm)
 	{
 		SpringArm->bDoCollisionTest = false;
@@ -221,7 +224,7 @@ void AMegaJamFlowPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Issue #80 / #96: Enforce grounded contact with 2.0f Z-clearance above FloorTopZ = 0.0f to prevent floor-scraping
+	// Issue #80 / #96 / #98: Enforce grounded contact with 2.0f Z-clearance and safe +X forward orientation
 	WideZBounds = FVector2D(2.0, 2.0);
 	BoxZBounds.X = 2.0;
 	bIsGrounded = true;
@@ -229,9 +232,20 @@ void AMegaJamFlowPawn::BeginPlay()
 
 	SpawnTransform = GetActorTransform();
 	FVector GroundedSpawnLoc = SpawnTransform.GetLocation();
-	GroundedSpawnLoc.Z = FMath::Max(2.0, WideZBounds.X);
+	if (!GroundedSpawnLoc.ContainsNaN())
+	{
+		GroundedSpawnLoc.Z = FMath::Max(2.0, WideZBounds.X);
+	}
+	else
+	{
+		GroundedSpawnLoc = FVector(0.0, 0.0, 2.0);
+	}
+	const FVector InitialLookAheadTarget = GroundedSpawnLoc + FVector(10.0f, 0.0f, 0.0f);
+	const FVector SafeForwardDir = (InitialLookAheadTarget - GroundedSpawnLoc).GetSafeNormal(1e-4f, FVector::ForwardVector);
 	SpawnTransform.SetLocation(GroundedSpawnLoc);
-	SetActorLocation(GroundedSpawnLoc, false, nullptr, ETeleportType::TeleportPhysics);
+	SpawnTransform.SetRotation(SafeForwardDir.Rotation().Quaternion());
+	SpawnTransform.SetScale3D(FVector::OneVector);
+	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 
 	if (SpringArm)
 	{
@@ -711,7 +725,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			{
 				const float Alpha = FMath::Clamp(1.0f - (SpliceRingTimer / 0.18f), 0.0f, 1.0f);
 				const float RadialScale = FMath::Lerp(1.2f, 11.5f, Alpha);
-				const float ThicknessZ = FMath::Lerp(0.08f, 0.005f, Alpha);
+				const float ThicknessZ = FMath::Max(0.02f, FMath::Lerp(0.08f, 0.02f, Alpha));
 				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 				ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 				ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(RadialScale, RadialScale, ThicknessZ));
@@ -734,7 +748,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 				const float Alpha = FMath::Clamp(1.0f - (SlashArcTimer / 0.16f), 0.0f, 1.0f);
 				const float SweepYaw = FMath::Lerp(-70.0f, 70.0f, Alpha);
 				const float WidthY = bActiveSlashIsOnBeat ? 24.0f : 6.5f;
-				const float ThicknessZ = FMath::Max(0.002f, FMath::Lerp(0.08f, 0.0f, Alpha));
+				const float ThicknessZ = FMath::Max(0.02f, FMath::Lerp(0.08f, 0.02f, Alpha));
 				ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
 				ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, SweepYaw, -18.0f));
 				ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, WidthY, ThicknessZ));
@@ -1236,7 +1250,20 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	}
 
 	const float MaxAllowedSpeed = (bWide ? (TargetOverdriveSpeed + 250.0f) : MaxFlightSpeed) + ActiveDollyBoostBonus;
-	Velocity = Velocity.GetClampedToMaxSize(MaxAllowedSpeed);
+	if (Velocity.ContainsNaN())
+	{
+		Velocity = FVector::ForwardVector * CruiseSpeed;
+	}
+	if (Velocity.SizeSquared() > FMath::Square(MaxAllowedSpeed) && MaxAllowedSpeed > 0.0f)
+	{
+		Velocity = Velocity.GetSafeNormal(1e-4f, FVector::ForwardVector) * MaxAllowedSpeed;
+	}
+
+	// Ensure look-ahead orientation stays locked to +X with a safe minimum forward target offset (+10.0f X)
+	const FVector CurrentPawnLoc = GetActorLocation();
+	const FVector LookAheadTarget = CurrentPawnLoc + FVector(FMath::Max(10.0f, static_cast<float>(Velocity.X) * DeltaSeconds), 0.0f, 0.0f);
+	const FVector SafeForward = (LookAheadTarget - CurrentPawnLoc).GetSafeNormal(1e-4f, FVector::ForwardVector);
+	SetActorRotation(SafeForward.Rotation());
 
 	// Swept move. A blocking hit is resolved deterministically.
 	FHitResult Hit;
@@ -1244,6 +1271,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 	if (Hit.bBlockingHit)
 	{
+		const FVector SafeImpactNormal = Hit.ImpactNormal.GetSafeNormal(1e-4f, FVector::UpVector);
 		// While CometSmashTimer > 0.0f, Pawn is 100% invulnerable and plows through roadblocks
 		if (CometSmashTimer > 0.0f)
 		{
@@ -1258,7 +1286,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 			}
 			AddActorWorldOffset(FVector(240.0f, 0.0f, 0.0f), false);
 		}
-		else if (Hit.ImpactNormal.Z > 0.7f)
+		else if (SafeImpactNormal.Z > 0.7f)
 		{
 			// Ground touchdown: resolve vertical velocity cleanly without crashing
 			Velocity.Z = FMath::Max(0.0, Velocity.Z);
@@ -1267,7 +1295,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		else
 		{
 			// Speed component driving into the surface.
-			const float ClosingSpeed = -FVector::DotProduct(Velocity, Hit.ImpactNormal);
+			const float ClosingSpeed = -FVector::DotProduct(Velocity, SafeImpactNormal);
 			if (ClosingSpeed >= CrashSpeedThreshold)
 			{
 				HandleCrash(Hit.GetActor());
@@ -1281,7 +1309,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 			else
 			{
 				// Slow contact: slide along the surface.
-				Velocity = FVector::VectorPlaneProject(Velocity, Hit.ImpactNormal);
+				Velocity = FVector::VectorPlaneProject(Velocity, SafeImpactNormal);
 			}
 		}
 	}
@@ -1387,7 +1415,7 @@ void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 		FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
 	}
 
-	Velocity += GetActorForwardVector() * CutSpeedImpulse;
+	Velocity += GetActorForwardVector().GetSafeNormal(1e-4f, FVector::ForwardVector) * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
 
 	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
@@ -1752,7 +1780,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 		FlowSubsystem->RecordSpecialMoveExecution(FlowSubsystem->ActiveGenre);
 	}
 
-	Velocity += GetActorForwardVector() * CutSpeedImpulse;
+	Velocity += GetActorForwardVector().GetSafeNormal(1e-4f, FVector::ForwardVector) * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
 
 	const bool bOnBeat = FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f);
@@ -1909,7 +1937,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 
 	// Brief forward impulse. StepPhysics re-applies the terminal velocity clamp.
-	Velocity += GetActorForwardVector() * CutSpeedImpulse;
+	Velocity += GetActorForwardVector().GetSafeNormal(1e-4f, FVector::ForwardVector) * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
 
 	// Scene 01 Action (or Scene 05 Montage Action) Beat-Splice Harvesting:
@@ -2388,6 +2416,17 @@ void AMegaJamFlowPawn::ResetForRun()
 	LastGrazeOrPickupTime = -1000.0;
 	GrazeTimes.Reset();
 
+	FVector ResetLoc = SpawnTransform.GetLocation();
+	if (ResetLoc.ContainsNaN())
+	{
+		ResetLoc = FVector(0.0, 0.0, 2.0);
+	}
+	ResetLoc.Z = FMath::Max(2.0, WideZBounds.X);
+	const FVector ResetLookAhead = ResetLoc + FVector(10.0f, 0.0f, 0.0f);
+	const FVector SafeResetDir = (ResetLookAhead - ResetLoc).GetSafeNormal(1e-4f, FVector::ForwardVector);
+	SpawnTransform.SetLocation(ResetLoc);
+	SpawnTransform.SetRotation(SafeResetDir.Rotation().Quaternion());
+	SpawnTransform.SetScale3D(FVector::OneVector);
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 
 	// Default starting mode: 4:3 Academy Frame (Flight & Charge Mode) with 50% Film Meter

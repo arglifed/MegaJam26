@@ -19,10 +19,10 @@
 
 namespace
 {
-	/** Parking spot for unused instances. Far below the floor and zero-scaled. */
+	/** Parking spot for unused instances. Far below the floor with a valid non-zero invertible scale so FMatrix::InverseFast never produces NaNs. */
 	FTransform MakeHiddenInstanceTransform()
 	{
-		return FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, -100000.0), FVector::ZeroVector);
+		return FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, -10000.0), FVector(0.05, 0.05, 0.05));
 	}
 
 	void ConfigureISM(UInstancedStaticMeshComponent* ISM, USceneComponent* Parent, bool bBlockCollision, bool bGenerateOverlaps)
@@ -315,7 +315,10 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 	UpdateFinalCutWrapArch();
 
 	// Recycle chunks that fell behind the pawn.
-	const int32 DesiredFirst = FMath::FloorToInt(static_cast<float>(BoundPawn->GetActorLocation().X) / ChunkLength) - ChunksBehind;
+	const float SafeChunkLength = FMath::Max(100.0f, ChunkLength);
+	const FVector TrackForward = ( (BoundPawn->GetActorLocation() + FVector(10.0f, 0.0f, 0.0f)) - BoundPawn->GetActorLocation() ).GetSafeNormal(1e-4f, FVector::ForwardVector);
+	const float PawnForwardX = static_cast<float>(FVector::DotProduct(BoundPawn->GetActorLocation(), TrackForward));
+	const int32 DesiredFirst = FMath::FloorToInt(PawnForwardX / SafeChunkLength) - ChunksBehind;
 	if (DesiredFirst < FirstChunkIndex)
 	{
 		RebuildTrack();
@@ -592,9 +595,12 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 			{
 				// Gentle magnet pull once within 2.5x pickup radius so blasted frames swoop cleanly into the player
 				const float MagnetRange = EffectivePickupRadius * 2.5f;
-				if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && FVector::DistSquared(PawnLocation, Pickup.Location) <= FMath::Square(MagnetRange))
+				const float DistSq = FVector::DistSquared(PawnLocation, Pickup.Location);
+				if (bIsActivelyPlaying && !BoundPawn->HasCrashed() && DistSq <= FMath::Square(MagnetRange))
 				{
-					Pickup.Location = FMath::VInterpTo(Pickup.Location, PawnLocation, DeltaSeconds, 11.0f);
+					const FVector MagnetDir = (PawnLocation - Pickup.Location).GetSafeNormal(1e-4f, FVector::ForwardVector);
+					const float PullDist = FMath::Sqrt(FMath::Max(0.0f, DistSq));
+					Pickup.Location = FMath::VInterpTo(Pickup.Location, Pickup.Location + MagnetDir * PullDist, DeltaSeconds, 11.0f);
 				}
 			}
 
@@ -667,7 +673,16 @@ void AMegaJamTrackGenerator::RebuildTrack()
 		return;
 	}
 
-	const int32 PawnChunkIndex = FMath::FloorToInt(static_cast<float>(BoundPawn->GetActorLocation().X) / ChunkLength);
+	if (TrackRoot)
+	{
+		TrackRoot->SetWorldRotation(FRotator::ZeroRotator);
+		TrackRoot->SetWorldScale3D(FVector::OneVector);
+	}
+
+	const float SafeChunkLength = FMath::Max(100.0f, ChunkLength);
+	const FVector SafeStartLookAhead = (BoundPawn->GetActorLocation() + FVector(10.0f, 0.0f, 0.0f)) - BoundPawn->GetActorLocation();
+	const FVector SafeTrackDir = SafeStartLookAhead.GetSafeNormal(1e-4f, FVector::ForwardVector);
+	const int32 PawnChunkIndex = FMath::FloorToInt(static_cast<float>(FVector::DotProduct(BoundPawn->GetActorLocation(), SafeTrackDir)) / SafeChunkLength);
 	FirstChunkIndex = PawnChunkIndex - ChunksBehind;
 	SafeUntilChunkIndex = PawnChunkIndex + FMath::Max(1, SafeChunks);
 
@@ -1841,7 +1856,7 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 		}
 
 		const FVector Scale = InstTransform.GetScale3D();
-		if (Scale.SizeSquared() < 0.01f)
+		if (Scale.SizeSquared() < 0.02f)
 		{
 			return false;
 		}
@@ -2003,7 +2018,7 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 		}
 
 		const FVector Scale = InstTransform.GetScale3D();
-		if (Scale.SizeSquared() < 0.01f)
+		if (Scale.SizeSquared() < 0.02f)
 		{
 			return false;
 		}
