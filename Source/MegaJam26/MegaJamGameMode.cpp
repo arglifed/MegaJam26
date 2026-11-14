@@ -639,7 +639,7 @@ void AMegaJamGameMode::TriggerWrapUpScoreboard()
 	}
 
 	// 2. Finalize EMegaJamSceneGenre::Montage metrics & calculate FinalBoxOfficeGross
-	//    Base $10,000,000 + ($5,000,000 per 'S') + ($2,500,000 per 'A') + ($1,000,000 per 'B') + ($500,000 per Special Move) + ($10,000 per Frame)
+	//    Base $10,000,000 + ($5,000,000 per 'S') + ($2,500,000 per 'A') + ($1,000,000 per 'B') + ($50,000 per Special Move) + ($10,000 per Frame)
 	int32 Gross = 10000000;
 	UWorld* World = GetWorld();
 	UMegaJamFlowSubsystem* FlowSubsystem = World ? World->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
@@ -672,7 +672,7 @@ void AMegaJamGameMode::TriggerWrapUpScoreboard()
 					Gross += 1000000;
 				}
 
-				Gross += FMath::Max(0, Metrics->SpecialMovesExecuted) * 500000;
+				Gross += FMath::Max(0, Metrics->SpecialMovesExecuted) * 50000;
 				Gross += FMath::Max(0, Metrics->FilmFramesCollected) * 10000;
 			}
 		}
