@@ -543,8 +543,29 @@ void AMegaJamFlowPawn::ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool
 	AddCameraTrauma(0.38f, 0.65f);
 	TriggerMicroHitstop(0.03f, 0.25f);
 
-	// Refresh post-process grading for the newly selected Montage power while preserving the player's current aspect mode and flight altitude
-	SetAspectMode(CurrentAspect);
+	// Refresh post-process grading for the newly selected Montage power.
+	// If the player is already locked into Director's Cut overdrive, align the widescreen aspect mode with the selected sub-genre;
+	// if they are in 4:3 flight, preserve 4:3 without forcing an altitude or lane lock.
+	if (IsInBulletTimeOverdrive())
+	{
+		if (NewSubGenre == EMegaJamSceneGenre::Western)
+		{
+			CurrentLane = 2;
+			bHasProcessedLaneInput = false;
+			SetAspectMode(EMegaJamAspectMode::UltraPanavision_276_1);
+		}
+		else
+		{
+			const float EntryY = static_cast<float>(GetActorLocation().Y);
+			CurrentLane = FMath::Clamp(FMath::RoundToInt((EntryY / FMath::Max(1.0f, LaneWidthY)) + 2.0f), 0, 4);
+			bHasProcessedLaneInput = false;
+			SetAspectMode(EMegaJamAspectMode::Wide_21_9);
+		}
+	}
+	else
+	{
+		SetAspectMode(CurrentAspect);
+	}
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
 	{
@@ -1177,40 +1198,13 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 
 void AMegaJamFlowPawn::ExecuteEditorSplice()
 {
-	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
-	const bool bInMontage = (FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre) == EMegaJamSceneGenre::Montage;
-	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
-
-	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1 || (bInMontage && EffectiveGenre == EMegaJamSceneGenre::Western))
-	{
-		ExecuteWesternBeatSlash();
-		return;
-	}
-	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || bInMontage)
-	{
-		if (EffectiveGenre == EMegaJamSceneGenre::Noir)
-		{
-			ExecuteNoirVertigoPulse();
-			return;
-		}
-		if (EffectiveGenre == EMegaJamSceneGenre::Chase)
-		{
-			ExecuteChaseCometSmash();
-			return;
-		}
-		if (EffectiveGenre == EMegaJamSceneGenre::Alpine)
-		{
-			ExecuteAlpineTrickOllie();
-			return;
-		}
-	}
 	TriggerHardCut();
 }
 
 void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 {
 	UWorld* World = GetWorld();
-	if (bCrashed || !World)
+	if (bCrashed || !World || !IsInBulletTimeOverdrive() || GetEffectivePowerGenre() != EMegaJamSceneGenre::Noir)
 	{
 		return;
 	}
@@ -1322,7 +1316,7 @@ void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 {
 	UWorld* World = GetWorld();
-	if (bCrashed || !World)
+	if (bCrashed || !World || !IsInBulletTimeOverdrive() || GetEffectivePowerGenre() != EMegaJamSceneGenre::Chase)
 	{
 		return;
 	}
@@ -1439,7 +1433,7 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 {
 	UWorld* World = GetWorld();
-	if (bCrashed || !World)
+	if (bCrashed || !World || !IsInBulletTimeOverdrive() || GetEffectivePowerGenre() != EMegaJamSceneGenre::Alpine)
 	{
 		return;
 	}
@@ -1573,7 +1567,7 @@ void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 {
 	UWorld* World = GetWorld();
-	if (bCrashed || !World)
+	if (bCrashed || !World || !IsInBulletTimeOverdrive() || GetEffectivePowerGenre() != EMegaJamSceneGenre::Western)
 	{
 		return;
 	}
@@ -1707,17 +1701,18 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 
 	UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
-	const bool bInMontage = (FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre) == EMegaJamSceneGenre::Montage;
+	const bool bInPowerUpMode = IsInBulletTimeOverdrive();
 	const EMegaJamSceneGenre EffectiveGenre = GetEffectivePowerGenre();
 
-	if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1 || (bInMontage && EffectiveGenre == EMegaJamSceneGenre::Western))
+	// Contextual Special Move Router: Special moves ONLY fire when locked into Director's Cut power-up mode (Ctrl / C)
+	// and strictly match the active genre (or active Montage sub-genre in Scene 05).
+	if (bInPowerUpMode)
 	{
-		ExecuteWesternBeatSlash();
-		return true;
-	}
-
-	if (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || bInMontage)
-	{
+		if (EffectiveGenre == EMegaJamSceneGenre::Western)
+		{
+			ExecuteWesternBeatSlash();
+			return true;
+		}
 		if (EffectiveGenre == EMegaJamSceneGenre::Noir)
 		{
 			ExecuteNoirVertigoPulse();
@@ -1750,23 +1745,22 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	LastEditorSpliceTime = Now;
 	LastCutTime = Now;
 
-	// When pressed in 4:3 mode (or active flight), toggle Take A / Take B state
-	if (CurrentAspect == EMegaJamAspectMode::Box_4_3 || CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+	// Toggle Take A / Take B state
+	CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
+	if (FlowSubsystem)
 	{
-		CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
-		if (FlowSubsystem)
-		{
-			FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
-		}
+		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
 	}
 
 	// Brief forward impulse. StepPhysics re-applies the terminal velocity clamp.
 	Velocity += GetActorForwardVector() * CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
 
-	// Beat-Splice Harvesting: if pressed within the 128 BPM beat window (0.18s), shred active-take obstacles ahead (+25% reach = 1500 cm) into Film Frames!
+	// Scene 01 Action (or Scene 05 Montage Action) Beat-Splice Harvesting:
+	// Strictly gated to Director's Cut power-up mode (bInPowerUpMode) AND Action genre!
+	// In 4:3 mode (or outside Action), SpaceBar only switches takes without firing the EMP shockwave or shredding obstacles.
 	int32 ShreddedCount = 0;
-	if (FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f))
+	if (bInPowerUpMode && EffectiveGenre == EMegaJamSceneGenre::Action && FlowSubsystem && FlowSubsystem->IsWithinBeatWindow(0.18f))
 	{
 		if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
 		{
