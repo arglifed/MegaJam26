@@ -2,6 +2,7 @@
 
 #include "MegaJamGameMode.h"
 
+#include "MegaJamCinemaHUD.h"
 #include "MegaJamFlowPawn.h"
 #include "MegaJamFlowSubsystem.h"
 #include "MegaJamPlayerController.h"
@@ -44,6 +45,7 @@ void AMegaJamGameMode::BeginPlay()
 		FlowSubsystem->SetFilmMeter(50.0f);
 		FlowSubsystem->SetHazardTimeScale(1.0f);
 		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		FlowSubsystem->ResetSceneMetrics(0.0f);
 	}
 
 	EnsureTrackGeneratorSpawned();
@@ -55,6 +57,7 @@ void AMegaJamGameMode::BeginPlay()
 		CurrentCheckpointDistanceMeters = 0.0f;
 		ActiveSceneGenre = EMegaJamSceneGenre::Action;
 		ParTimeBonusAwarded = 0;
+		FinalBoxOfficeGross = 0;
 		Score = 0.0f;
 		CurrentMultiplier = 1.0f;
 		CurrentTakeNumber = 1;
@@ -186,7 +189,7 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 		{
 			FlowSubsystem->SetDistanceMeters(DistanceMeters);
 		}
-		CompleteRun();
+		TriggerWrapUpScoreboard();
 	}
 }
 
@@ -324,6 +327,7 @@ void AMegaJamGameMode::StartProductionFromTitle()
 	CurrentTakeNumber = 1;
 	Score = 0.0f;
 	ParTimeBonusAwarded = 0;
+	FinalBoxOfficeGross = 0;
 	CurrentMultiplier = 1.0f;
 	TotalFramesCollected = 0;
 	HighestSpliceChain = 1;
@@ -344,6 +348,7 @@ void AMegaJamGameMode::StartProductionFromTitle()
 	{
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
+			FlowSubsystem->ResetSceneMetrics(0.0f);
 			FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
 			FlowSubsystem->SetFlowRatio(0.0f);
 			FlowSubsystem->SetCurrentMultiplier(1.0f);
@@ -402,6 +407,7 @@ void AMegaJamGameMode::RetakeCurrentAct()
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
 		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		FlowSubsystem->ResetSingleSceneMetrics(ActiveSceneGenre, RunTime);
 	}
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
@@ -454,6 +460,7 @@ void AMegaJamGameMode::WrapToTitleSlate()
 	RunTime = 0.0f;
 	DistanceMeters = 0.0f;
 	ParTimeBonusAwarded = 0;
+	FinalBoxOfficeGross = 0;
 	Score = 0.0f;
 	CurrentMultiplier = 1.0f;
 	CurrentTakeNumber = 1;
@@ -468,6 +475,7 @@ void AMegaJamGameMode::WrapToTitleSlate()
 	{
 		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 		{
+			FlowSubsystem->ResetSceneMetrics(0.0f);
 			FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
 		}
 	}
@@ -540,6 +548,7 @@ void AMegaJamGameMode::ResetRun()
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
 	{
 		FlowSubsystem->SetActiveGenre(ActiveSceneGenre);
+		FlowSubsystem->ResetSingleSceneMetrics(ActiveSceneGenre, RunTime);
 	}
 
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
@@ -600,13 +609,76 @@ FString AMegaJamGameMode::GetFormattedTakeClock() const
 
 void AMegaJamGameMode::CompleteRun()
 {
-	if (IsPlaying())
+	TriggerWrapUpScoreboard();
+}
+
+void AMegaJamGameMode::TriggerWrapUpScoreboard()
+{
+	if (!IsPlaying())
 	{
-		UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
-		const float SecondsUnderPar = FMath::Max(0.0f, SceneParTimeSeconds - RunTime);
-		ParTimeBonusAwarded = FMath::RoundToInt(SecondsUnderPar * 500.0f);
-		Score += static_cast<float>(ParTimeBonusAwarded);
-		SetRunState(EMegaJamRunState::Completed);
+		return;
+	}
+
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.0f);
+	const float SecondsUnderPar = FMath::Max(0.0f, SceneParTimeSeconds - RunTime);
+	ParTimeBonusAwarded = FMath::RoundToInt(SecondsUnderPar * 500.0f);
+	Score += static_cast<float>(ParTimeBonusAwarded);
+
+	// 1. Halt pawn forward movement (Velocity.X = 0.0f) and trigger a cinematic letterboxed freeze-frame (CustomTimeDilation = 0.05f)
+	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
+	{
+		FlowPawn->HaltForWrapUpScoreboard();
+	}
+
+	// 2. Finalize EMegaJamSceneGenre::Montage metrics & calculate FinalBoxOfficeGross
+	//    Base $10,000,000 + ($5,000,000 per 'S') + ($2,500,000 per 'A') + ($1,000,000 per 'B') + ($500,000 per Special Move) + ($10,000 per Frame)
+	int32 Gross = 10000000;
+	UWorld* World = GetWorld();
+	UMegaJamFlowSubsystem* FlowSubsystem = World ? World->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	if (FlowSubsystem)
+	{
+		FlowSubsystem->FinalizeScenePerformance(EMegaJamSceneGenre::Montage, RunTime);
+
+		const EMegaJamSceneGenre CampaignScenes[] = {
+			EMegaJamSceneGenre::Action,
+			EMegaJamSceneGenre::Western,
+			EMegaJamSceneGenre::Noir,
+			EMegaJamSceneGenre::Chase,
+			EMegaJamSceneGenre::Montage
+		};
+
+		for (EMegaJamSceneGenre Genre : CampaignScenes)
+		{
+			if (const FScenePerformanceMetrics* Metrics = FlowSubsystem->SceneMetrics.Find(Genre))
+			{
+				if (Metrics->CalculatedGrade == TEXT("S"))
+				{
+					Gross += 5000000;
+				}
+				else if (Metrics->CalculatedGrade == TEXT("A"))
+				{
+					Gross += 2500000;
+				}
+				else if (Metrics->CalculatedGrade == TEXT("B"))
+				{
+					Gross += 1000000;
+				}
+
+				Gross += FMath::Max(0, Metrics->SpecialMovesExecuted) * 500000;
+				Gross += FMath::Max(0, Metrics->FilmFramesCollected) * 10000;
+			}
+		}
+	}
+	FinalBoxOfficeGross = Gross;
+
+	SetRunState(EMegaJamRunState::Completed);
+
+	if (AMegaJamPlayerController* PC = Cast<AMegaJamPlayerController>(UGameplayStatics::GetPlayerController(this, 0)))
+	{
+		if (PC->CinemaHUDInstance && FlowSubsystem)
+		{
+			PC->CinemaHUDInstance->DisplayBoxOfficeScoreboard(FlowSubsystem->SceneMetrics, FinalBoxOfficeGross);
+		}
 	}
 }
 

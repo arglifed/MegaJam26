@@ -325,10 +325,10 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		TitleSlot->SetZOrder(30);
 	}
 
-	// ---- Final Cut Wrap-Up Scoreboard Card (RunState == Completed) ----
+	// ---- Final Cut Wrap-Up Scoreboard Card (RunState == Completed / bIsShowingScoreboard) ----
 	WrapCardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("WrapCardBorder"));
-	WrapCardBorder->SetBrushColor(FLinearColor(0.015f, 0.015f, 0.02f, 0.92f));
-	WrapCardBorder->SetPadding(FMargin(48.0f, 34.0f));
+	WrapCardBorder->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+	WrapCardBorder->SetPadding(FMargin(54.0f, 36.0f));
 	WrapCardBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	UVerticalBox* WrapBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("WrapBox"));
@@ -348,11 +348,17 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		return Block;
 	};
 
-	AddWrapLine(TEXT("WrapHeader"), TEXT("FINAL CUT // THAT'S A WRAP!"), 34, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 18.0f);
-	WrapStatsText = AddWrapLine(TEXT("WrapStats"), TEXT("FINAL SCORE: 000000"), 18, FLinearColor(0.95f, 0.95f, 0.95f, 1.0f), 18.0f);
-	WrapStarsText = AddWrapLine(TEXT("WrapStars"), TEXT("CRITIC RATING: ★★★★★"), 26, FLinearColor(1.0f, 0.88f, 0.15f, 1.0f), 8.0f);
-	WrapQuoteText = AddWrapLine(TEXT("WrapQuote"), TEXT("\"A TOUR-DE-FORCE OF HIGH-SPEED EDITING!\""), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 24.0f);
-	WrapPromptText = AddWrapLine(TEXT("WrapPrompt"), TEXT("▶ PRESS [SPACE] FOR NEW PRODUCTION"), 20, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
+	AddWrapLine(TEXT("WrapHeader"), TEXT("DIRECTOR'S CUT: THE FINAL REVIEW"), 32, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 18.0f);
+	WrapLedgerRow0Text = AddWrapLine(TEXT("WrapLedgerRow0"), TEXT("SCENE 01 // ACTION    |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
+	WrapLedgerRow1Text = AddWrapLine(TEXT("WrapLedgerRow1"), TEXT("SCENE 02 // WESTERN   |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
+	WrapLedgerRow2Text = AddWrapLine(TEXT("WrapLedgerRow2"), TEXT("SCENE 03 // NOIR      |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
+	WrapLedgerRow3Text = AddWrapLine(TEXT("WrapLedgerRow3"), TEXT("SCENE 04 // CHASE     |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
+	WrapLedgerRow4Text = AddWrapLine(TEXT("WrapLedgerRow4"), TEXT("SCENE 05 // MONTAGE   |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 18.0f);
+	WrapGrossFooterText = AddWrapLine(TEXT("WrapGrossFooter"), TEXT("GLOBAL BOX-OFFICE GROSS: $10,000,000"), 26, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 12.0f);
+	WrapStatsText = AddWrapLine(TEXT("WrapStats"), TEXT("FINAL SCORE: 000000"), 14, FLinearColor(0.85f, 0.88f, 0.92f, 0.95f), 8.0f);
+	WrapStarsText = AddWrapLine(TEXT("WrapStars"), TEXT("CRITIC RATING: ★★★★★"), 20, FLinearColor(1.0f, 0.88f, 0.15f, 1.0f), 6.0f);
+	WrapQuoteText = AddWrapLine(TEXT("WrapQuote"), TEXT("\"A TOUR-DE-FORCE OF HIGH-SPEED EDITING!\""), 14, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 18.0f);
+	WrapPromptText = AddWrapLine(TEXT("WrapPrompt"), TEXT("▶ PRESS [SPACE] FOR NEW PRODUCTION"), 18, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
 	WrapCardBorder->SetContent(WrapBox);
 	if (UCanvasPanelSlot* WrapSlot = RootCanvas->AddChildToCanvas(WrapCardBorder))
@@ -563,6 +569,108 @@ void UMegaJamCinemaHUD::TriggerSlashCutFlash(bool bIsOnBeat)
 void UMegaJamCinemaHUD::TriggerSpliceShockwaveFlash()
 {
 	SpliceShockwaveFlashTimer = 0.15f;
+}
+
+void UMegaJamCinemaHUD::DisplayBoxOfficeScoreboard(const TMap<EMegaJamSceneGenre, FScenePerformanceMetrics>& Metrics, int32 TotalGross)
+{
+	bIsShowingScoreboard = true;
+	CachedScoreboardMetrics = Metrics;
+	CachedTotalBoxOfficeGross = TotalGross;
+	DrawHUD();
+}
+
+FLinearColor UMegaJamCinemaHUD::GetCriticGradeColor(const FString& Grade)
+{
+	if (Grade == TEXT("S"))
+	{
+		return FLinearColor(1.0f, 0.8f, 0.1f, 1.0f); // Gold
+	}
+	if (Grade == TEXT("A"))
+	{
+		return FLinearColor(0.1f, 0.8f, 1.0f, 1.0f); // Cyan
+	}
+	if (Grade == TEXT("B"))
+	{
+		return FLinearColor(0.2f, 1.0f, 0.2f, 1.0f); // Green
+	}
+	if (Grade == TEXT("C"))
+	{
+		return FLinearColor(1.0f, 1.0f, 0.2f, 1.0f); // Yellow
+	}
+	return FLinearColor(1.0f, 0.2f, 0.2f, 1.0f); // Red ('D')
+}
+
+FString UMegaJamCinemaHUD::FormatDollarsWithCommas(int32 Amount)
+{
+	const int64 SafeAmount = FMath::Max<int64>(0, static_cast<int64>(Amount));
+	const FString RawDigits = FString::Printf(TEXT("%lld"), SafeAmount);
+	FString Formatted;
+	const int32 Len = RawDigits.Len();
+	for (int32 Index = 0; Index < Len; ++Index)
+	{
+		if (Index > 0 && ((Len - Index) % 3) == 0)
+		{
+			Formatted.AppendChar(TEXT(','));
+		}
+		Formatted.AppendChar(RawDigits[Index]);
+	}
+	return Formatted;
+}
+
+void UMegaJamCinemaHUD::DrawHUD()
+{
+	if (!bIsShowingScoreboard || !WrapCardBorder)
+	{
+		return;
+	}
+
+	WrapCardBorder->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+	WrapCardBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	struct FLedgerRowSpec
+	{
+		EMegaJamSceneGenre Genre;
+		const TCHAR* Label;
+		TObjectPtr<UTextBlock> RowWidget;
+	};
+
+	const FLedgerRowSpec Rows[5] = {
+		{ EMegaJamSceneGenre::Action,  TEXT("SCENE 01 // ACTION   "), WrapLedgerRow0Text },
+		{ EMegaJamSceneGenre::Western, TEXT("SCENE 02 // WESTERN  "), WrapLedgerRow1Text },
+		{ EMegaJamSceneGenre::Noir,    TEXT("SCENE 03 // NOIR     "), WrapLedgerRow2Text },
+		{ EMegaJamSceneGenre::Chase,   TEXT("SCENE 04 // CHASE    "), WrapLedgerRow3Text },
+		{ EMegaJamSceneGenre::Montage, TEXT("SCENE 05 // MONTAGE  "), WrapLedgerRow4Text }
+	};
+
+	for (int32 RowIdx = 0; RowIdx < 5; ++RowIdx)
+	{
+		UTextBlock* RowBlock = Rows[RowIdx].RowWidget;
+		if (!RowBlock)
+		{
+			continue;
+		}
+
+		const FScenePerformanceMetrics* MetricsPtr = CachedScoreboardMetrics.Find(Rows[RowIdx].Genre);
+		const FScenePerformanceMetrics Metrics = MetricsPtr ? *MetricsPtr : FScenePerformanceMetrics();
+		const FString GradeStr = Metrics.CalculatedGrade.IsEmpty() ? TEXT("C") : Metrics.CalculatedGrade;
+
+		RowBlock->SetText(FText::FromString(FString::Printf(
+			TEXT("%s  |  TIME: %04.1fs  |  MOVES: %02d  |  FRAMES: %02d  |  CRITIC RATING: [ %s ]"),
+			Rows[RowIdx].Label,
+			Metrics.TimeSpentSeconds,
+			Metrics.SpecialMovesExecuted,
+			Metrics.FilmFramesCollected,
+			*GradeStr)));
+		RowBlock->SetColorAndOpacity(FSlateColor(GetCriticGradeColor(GradeStr)));
+	}
+
+	if (WrapGrossFooterText)
+	{
+		WrapGrossFooterText->SetText(FText::FromString(FString::Printf(
+			TEXT("GLOBAL BOX-OFFICE GROSS: $%s"),
+			*FormatDollarsWithCommas(CachedTotalBoxOfficeGross))));
+		WrapGrossFooterText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.8f, 0.1f, 1.0f)));
+	}
 }
 
 void UMegaJamCinemaHUD::BindToTrackGenerator()
@@ -884,12 +992,21 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		}
 	}
 
-	// 2. Final Cut Wrap-Up Scoreboard (RunState == Completed)
+	// 2. Final Cut Wrap-Up Scoreboard (RunState == Completed || bIsShowingScoreboard)
+	if (RunState != EMegaJamRunState::Completed)
+	{
+		bIsShowingScoreboard = false;
+	}
+	else if (!bIsShowingScoreboard && FlowSubsystem && GameMode)
+	{
+		DisplayBoxOfficeScoreboard(FlowSubsystem->SceneMetrics, GameMode->GetFinalBoxOfficeGross());
+	}
+
 	if (WrapCardBorder)
 	{
-		if (RunState == EMegaJamRunState::Completed)
+		if (bIsShowingScoreboard || RunState == EMegaJamRunState::Completed)
 		{
-			WrapCardBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			DrawHUD();
 			const int32 FinalScore = GameMode ? FMath::RoundToInt(GameMode->GetScore()) : 0;
 			const int32 MaxChain = GameMode ? GameMode->GetHighestSpliceChain() : 1;
 			const int32 FramesSpliced = GameMode ? GameMode->GetTotalFramesCollected() : 0;
@@ -899,7 +1016,7 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			if (WrapStatsText)
 			{
 				WrapStatsText->SetText(FText::FromString(FString::Printf(
-					TEXT("FINAL SCORE: %06d\nTAKE TIME: %s  (PAR: 03:45.00)\nPAR-TIME SPEED BONUS: +%d PTS\nMAX MATCH-CUT CHAIN: x%d   |   FRAMES SPLICED: %d   |   TAKES: %02d"),
+					TEXT("FINAL SCORE: %06d   |   TAKE TIME: %s (PAR: 03:45.00, BONUS +%d)   |   MAX CHAIN: x%d   |   FRAMES: %d   |   TAKES: %02d"),
 					FinalScore, *TakeClock, ParBonus, MaxChain, FramesSpliced, TakeNumber)));
 			}
 

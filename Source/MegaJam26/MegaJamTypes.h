@@ -47,3 +47,22 @@ enum class EMegaJamSceneGenre : uint8
 	Montage
 };
 
+/** Per-scene performance tracking for the end-of-run Box-Office Critic Scoreboard. */
+USTRUCT(BlueprintType)
+struct FScenePerformanceMetrics
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	float TimeSpentSeconds = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	int32 SpecialMovesExecuted = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	int32 FilmFramesCollected = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	FString CalculatedGrade = TEXT("C");
+};
+

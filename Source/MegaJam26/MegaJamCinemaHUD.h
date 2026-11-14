@@ -69,6 +69,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category="MegaJam|HUD")
 	void TriggerSpliceShockwaveFlash();
 
+	/** Populates and activates the end-of-run Box-Office Critic Scoreboard with per-scene grades and total gross. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|HUD")
+	void DisplayBoxOfficeScoreboard(const TMap<EMegaJamSceneGenre, FScenePerformanceMetrics>& Metrics, int32 TotalGross);
+
+	/** Renders/updates the Box-Office Scoreboard ledger when bIsShowingScoreboard is true. */
+	void DrawHUD();
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="MegaJam|HUD")
+	bool bIsShowingScoreboard = false;
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
@@ -88,6 +98,8 @@ protected:
 	static FString GetSceneSluglineText(EMegaJamFilmScene Scene);
 	static FString GetActProgressLabel(EMegaJamFilmScene Scene);
 	static void ComputeCriticRating(int32 FinalScore, int32 MaxChain, int32 FramesSpliced, int32 TakesUsed, FString& OutStars, FString& OutQuote);
+	static FLinearColor GetCriticGradeColor(const FString& Grade);
+	static FString FormatDollarsWithCommas(int32 Amount);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasPanel> RootCanvas;
@@ -169,6 +181,24 @@ protected:
 	TObjectPtr<UBorder> WrapCardBorder;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapLedgerRow0Text;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapLedgerRow1Text;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapLedgerRow2Text;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapLedgerRow3Text;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapLedgerRow4Text;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapGrossFooterText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> WrapStatsText;
 
 	UPROPERTY(Transient)
@@ -179,6 +209,11 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> WrapPromptText;
+
+	UPROPERTY(Transient)
+	TMap<EMegaJamSceneGenre, FScenePerformanceMetrics> CachedScoreboardMetrics;
+
+	int32 CachedTotalBoxOfficeGross = 10000000;
 
 	// ---- Pause Menu Slate (IsPaused() == true) ----
 	UPROPERTY(Transient)
