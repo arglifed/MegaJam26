@@ -48,6 +48,7 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 
 	FloorISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("FloorISM"));
 	WallISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WallISM"));
+	CollisionWallISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("CollisionWallISM"));
 	TakeA_ObstaclesISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TakeA_ObstaclesISM"));
 	TakeB_ObstaclesISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("TakeB_ObstaclesISM"));
 	SetPieceISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("SetPieceISM"));
@@ -65,8 +66,11 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	StudioDressingISM->SetCanEverAffectNavigation(false);
 	StudioDressingISM->CastShadow = true;
 
-	ConfigureISM(FloorISM, TrackRoot, true, false);
-	ConfigureISM(WallISM, TrackRoot, true, false);
+	ConfigureISM(FloorISM, TrackRoot, false, false);
+	ConfigureISM(WallISM, TrackRoot, false, false);
+	ConfigureISM(CollisionWallISM, TrackRoot, true, false);
+	CollisionWallISM->SetVisibility(false);
+	CollisionWallISM->SetHiddenInGame(true);
 	ConfigureISM(TakeA_ObstaclesISM, TrackRoot, true, true);
 	ConfigureISM(TakeB_ObstaclesISM, TrackRoot, true, true);
 	TakeA_ObstaclesISM->NumCustomDataFloats = FMath::Max(TakeA_ObstaclesISM->NumCustomDataFloats, 1);
@@ -330,6 +334,10 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 	{
 		FloorISM->MarkRenderStateDirty();
 		WallISM->MarkRenderStateDirty();
+		if (CollisionWallISM)
+		{
+			CollisionWallISM->MarkRenderStateDirty();
+		}
 		TakeA_ObstaclesISM->MarkRenderStateDirty();
 		TakeB_ObstaclesISM->MarkRenderStateDirty();
 		SetPieceISM->MarkRenderStateDirty();
@@ -564,9 +572,9 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 			Pickup.Location += Pickup.Velocity * DeltaSeconds;
 			Pickup.Velocity.Z -= 2200.0f * DeltaSeconds;
 			Pickup.Location.Y = FMath::Clamp(static_cast<float>(Pickup.Location.Y), -CorridorHalfWidth + 120.0f, CorridorHalfWidth - 120.0f);
-			if (Pickup.Location.Z < 110.0f)
+			if (Pickup.Location.Z < 55.0f)
 			{
-				Pickup.Location.Z = 110.0f;
+				Pickup.Location.Z = 55.0f;
 				Pickup.Velocity.Z = FMath::Abs(Pickup.Velocity.Z) * 0.45f;
 			}
 		}
@@ -688,6 +696,10 @@ void AMegaJamTrackGenerator::RebuildTrack()
 
 	FloorISM->MarkRenderStateDirty();
 	WallISM->MarkRenderStateDirty();
+	if (CollisionWallISM)
+	{
+		CollisionWallISM->MarkRenderStateDirty();
+	}
 	TakeA_ObstaclesISM->MarkRenderStateDirty();
 	TakeB_ObstaclesISM->MarkRenderStateDirty();
 	SetPieceISM->MarkRenderStateDirty();
@@ -808,6 +820,10 @@ void AMegaJamTrackGenerator::CreatePools()
 
 	FloorISM->SetStaticMesh(FloorTileMesh ? FloorTileMesh.Get() : BlockMesh.Get());
 	WallISM->SetStaticMesh(WallSegmentMesh ? WallSegmentMesh.Get() : BlockMesh.Get());
+	if (CollisionWallISM)
+	{
+		CollisionWallISM->SetStaticMesh(BlockMesh.Get());
+	}
 	TakeA_ObstaclesISM->SetStaticMesh(ObstacleTakeAMesh ? ObstacleTakeAMesh.Get() : BlockMesh.Get());
 	TakeB_ObstaclesISM->SetStaticMesh(ObstacleTakeBMesh ? ObstacleTakeBMesh.Get() : BlockMesh.Get());
 	SetPieceISM->SetStaticMesh(SoundstageTrussMesh ? SoundstageTrussMesh.Get() : BlockMesh.Get());
@@ -826,11 +842,14 @@ void AMegaJamTrackGenerator::CreatePools()
 	PickupTakeB_ISM->SetStaticMesh(ResolvedPickupMesh);
 
 	UInstancedStaticMeshComponent* All[] = {
-		FloorISM, WallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, BoostStripISM, LaneRailsISM, WrapArchISM
+		FloorISM, WallISM, CollisionWallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, BoostStripISM, LaneRailsISM, WrapArchISM
 	};
 	for (UInstancedStaticMeshComponent* ISM : All)
 	{
-		ISM->ClearInstances();
+		if (ISM)
+		{
+			ISM->ClearInstances();
+		}
 	}
 
 	for (int32 Index = 0; Index < Pool; ++Index)
@@ -838,6 +857,11 @@ void AMegaJamTrackGenerator::CreatePools()
 		FloorISM->AddInstance(MakeHiddenInstanceTransform(), true);
 		WallISM->AddInstance(MakeHiddenInstanceTransform(), true);
 		WallISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		if (CollisionWallISM)
+		{
+			CollisionWallISM->AddInstance(MakeHiddenInstanceTransform(), true);
+			CollisionWallISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		}
 	}
 
 	TakeA_ObstaclesISM->NumCustomDataFloats = FMath::Max(TakeA_ObstaclesISM->NumCustomDataFloats, 1);
@@ -1095,20 +1119,31 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, 0.0f, FloorZ), FVector(ChunkLength / 100.0f, CorridorHalfWidth * 2.0f / 100.0f, 1.0f)),
 		true, false, true);
 
-	const FVector WallScale(ChunkLength / 100.0f, 1.0f, 10.0f);
+	// Issue #88: Separate visible 2m guardrail walls (Z-scale 2.0f, flush at Z = 100.0f) from invisible 10m collision walls (Z-scale 10.0f, Z = 500.0f)
+	const FVector VisibleWallScale(ChunkLength / 100.0f, 1.0f, 2.0f);
+	const FVector CollisionWallScale(ChunkLength / 100.0f, 1.0f, 10.0f);
 	WallISM->UpdateInstanceTransform(Slot * 2,
-		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -CorridorHalfWidth, 500.0f), WallScale), true, false, true);
+		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -CorridorHalfWidth, 100.0f), VisibleWallScale), true, false, true);
 	WallISM->UpdateInstanceTransform(Slot * 2 + 1,
-		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 500.0f), WallScale), true, false, true);
+		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 100.0f), VisibleWallScale), true, false, true);
+	if (CollisionWallISM)
+	{
+		CollisionWallISM->UpdateInstanceTransform(Slot * 2,
+			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -CorridorHalfWidth, 500.0f), CollisionWallScale), true, false, true);
+		CollisionWallISM->UpdateInstanceTransform(Slot * 2 + 1,
+			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 500.0f), CollisionWallScale), true, false, true);
+	}
 
 	// 5 Visual Magnetic Floor Rails at exact lane Y-coordinates (-700, -350, 0, 350, 700)
+	// Issue #80: Recess lane guide rails in Scenes 01-04 so their top surfaces sit flush with the Z = 0.0f roadbed; keep Scene 05 suspended at Z = 2.0f
 	const FVector RailScale(ChunkLength / 100.0f, 0.14f, 0.04f);
+	const float RailZ = (ChunkDistMeters < 7200.0f) ? -1.5f : 2.0f;
 	for (int32 LaneIdx = 0; LaneIdx < LaneRailsPerChunk; ++LaneIdx)
 	{
 		const float LaneY = static_cast<float>(LaneIdx - 2) * 350.0f;
 		LaneRailsISM->UpdateInstanceTransform(
 			Slot * LaneRailsPerChunk + LaneIdx,
-			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, LaneY, 2.0f), RailScale),
+			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, LaneY, RailZ), RailScale),
 			true, false, true);
 	}
 
@@ -1403,7 +1438,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 		const FTransform FloorLaserBar(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 130.0f),
+			FVector(HazardX, 0.0f, 90.0f),
 			FVector(ObstacleSize / 100.0f, 16.0f, 1.8f));
 		UInstancedStaticMeshComponent* LaserTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
 		LaserTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, FloorLaserBar, true, false, true);
@@ -1414,12 +1449,11 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	default:
 	{
 		// Archetype 3 — Alternating Take Cross-Beams:
-		// Low beam on one Take (Z = 140) and High beam on the opposite Take (Z = 520), so players can fly over/under in 4:3
-		// or Hard-Cut straight through the Z = 140 rail at 4,500 u/s in 21:9 Overdrive!
+		// Low beam on one Take (Z = 110, flush with Z = 0 floor) and High beam on the opposite Take (Z = 520)
 		const bool bLowIsTakeA = (TakeRoll < 0.5f);
 		const FTransform LowBeam(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 140.0f),
+			FVector(HazardX, 0.0f, 110.0f),
 			FVector(ObstacleSize / 100.0f, 16.5f, 2.2f));
 		const FTransform HighBeam(
 			FRotator::ZeroRotator,
@@ -1589,12 +1623,14 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	if (!bIsHazardChunk)
 	{
 		// Flight Charge Runway: sweeping 5-frame 3D arc aligned with the 5 lane centers (-700, -350, 0, 350, 700)
+		const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
+		const bool bGroundedScene = (ChunkDistMeters < 7200.0f);
 		const float SideSign = ((ChunkIndex / 2) % 2 == 0) ? 1.0f : -1.0f;
-		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.16f, -700.0f * SideSign, 240.0f));
-		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.33f, -350.0f * SideSign, 480.0f));
-		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.50f,    0.0f,            640.0f));
-		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.67f,  350.0f * SideSign, 480.0f));
-		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.84f,  700.0f * SideSign, 240.0f));
+		PlaceFrame(0, FVector(ChunkStartX + ChunkLength * 0.16f, -700.0f * SideSign, bGroundedScene ? 75.0f  : 240.0f));
+		PlaceFrame(1, FVector(ChunkStartX + ChunkLength * 0.33f, -350.0f * SideSign, bGroundedScene ? 160.0f : 480.0f));
+		PlaceFrame(2, FVector(ChunkStartX + ChunkLength * 0.50f,    0.0f,            bGroundedScene ? 225.0f : 640.0f));
+		PlaceFrame(3, FVector(ChunkStartX + ChunkLength * 0.67f,  350.0f * SideSign, bGroundedScene ? 160.0f : 480.0f));
+		PlaceFrame(4, FVector(ChunkStartX + ChunkLength * 0.84f,  700.0f * SideSign, bGroundedScene ? 75.0f  : 240.0f));
 	}
 	else
 	{
@@ -1648,20 +1684,22 @@ void AMegaJamTrackGenerator::PopulateBoostStripsForChunk(
 
 	const FVector StripScale(5.2f, 1.55f, 0.16f);
 	const float StripX = bIsHazardChunk ? (ChunkStartX + ChunkLength * 0.50f) : (ChunkStartX + ChunkLength * 0.45f);
+	// Issue #80: Recess Dolly Boost strips in Scenes 01-04 so their top surfaces sit flush with the Z = 0.0f roadbed; keep Scene 05 at Z = 18.0f
+	const float StripZ = (ChunkDistMeters < 7200.0f) ? -7.0f : 18.0f;
 
-	// Left Outer Wing Dolly Boost Strip (Y = -700, Z = 18 -> requires Wide_21_9)
+	// Left Outer Wing Dolly Boost Strip (Y = -700)
 	{
 		const int32 PoolIdx = BaseStripIdx;
-		const FVector StripPos(StripX, -700.0f, 18.0f);
+		const FVector StripPos(StripX, -700.0f, StripZ);
 		BoostStripSlots[PoolIdx].Location = StripPos;
 		BoostStripSlots[PoolIdx].bActive = true;
 		BoostStripISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
 	}
 
-	// Right Outer Wing Dolly Boost Strip (Y = +700, Z = 18 -> requires Wide_21_9)
+	// Right Outer Wing Dolly Boost Strip (Y = +700)
 	{
 		const int32 PoolIdx = BaseStripIdx + 1;
-		const FVector StripPos(StripX, 700.0f, 18.0f);
+		const FVector StripPos(StripX, 700.0f, StripZ);
 		BoostStripSlots[PoolIdx].Location = StripPos;
 		BoostStripSlots[PoolIdx].bActive = true;
 		BoostStripISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);

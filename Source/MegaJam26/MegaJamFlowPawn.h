@@ -231,6 +231,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
 	float CutSpeedImpulse = 420.0f;
 
+	/** Downward gravity acceleration (cm/s^2) applied in Scenes 01-04 whenever the pawn is above ground level. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Physics")
+	float StuntGravityZ = -2800.0f;
+
+	/** True when the pawn is resting on the ground surface (FloorTopZ = 0.0f) in Scenes 01-04. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Physics")
+	bool bIsGrounded = true;
+
 	// ---- Match-Cut Chain & Stale-Shot Mechanics ----
 	/** Maximum time (s) after grazing an obstacle or collecting a Film Frame in which a Hard Cut or Aspect Switch triggers a Match Cut. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Chain")
@@ -257,17 +265,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	FVector2D WideYBounds = FVector2D(-900.0, 900.0);
 
-	/** Wide_21_9: horizontal cinema rail bounds (Z = 140). */
+	/** Wide_21_9: grounded cinema rail bounds sitting flush on the Z = 0.0f roadbed (FloorTopZ). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	FVector2D WideZBounds = FVector2D(140.0, 140.0);
+	FVector2D WideZBounds = FVector2D(0.0, 0.0);
 
-	/** Box_4_3: full 2D free-flight lateral bounds. */
+	/** Box_4_3: lateral bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	FVector2D BoxYBounds = FVector2D(-850.0, 850.0);
 
-	/** Box_4_3: full 2D free-flight vertical bounds. */
+	/** Box_4_3: vertical bounds anchored at FloorTopZ = 0.0f. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	FVector2D BoxZBounds = FVector2D(60.0, 860.0);
+	FVector2D BoxZBounds = FVector2D(0.0, 860.0);
 
 	/** Lateral strafe force multiplier while in Wide_21_9 Bullet-Time Overdrive. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
@@ -797,6 +805,9 @@ protected:
 
 	/** Latch to prevent sliding across multiple 21:9 lanes from a single held stick/key press. */
 	bool bHasProcessedLaneInput = false;
+
+	/** Latch to ensure holding W/Up in 4:3 mode triggers a single ballistic stunt jump per grounded press. */
+	bool bHasProcessedJumpInput = false;
 
 	/** Current decaying additive FOV punch from TriggerHardCut / Drop-Cut Slam. */
 	float CurrentFOVPunch = 0.0f;

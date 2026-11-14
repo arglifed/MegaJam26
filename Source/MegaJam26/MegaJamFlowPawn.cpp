@@ -71,7 +71,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	ProceduralSpliceRingMesh->SetupAttachment(CollisionSphere);
 	ProceduralSpliceRingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ProceduralSpliceRingMesh->SetCastShadow(false);
-	ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+	ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 	ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 	ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 	ProceduralSpliceRingMesh->SetVisibility(false);
@@ -199,7 +199,17 @@ void AMegaJamFlowPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Issue #80: Enforce grounded FloorTopZ = 0.0f contact so VehicleStaticMesh tires/hooves/board sit flush on the roadbed
+	WideZBounds = FVector2D(0.0, 0.0);
+	BoxZBounds.X = 0.0;
+	bIsGrounded = true;
+	bHasProcessedJumpInput = false;
+
 	SpawnTransform = GetActorTransform();
+	FVector GroundedSpawnLoc = SpawnTransform.GetLocation();
+	GroundedSpawnLoc.Z = static_cast<double>(WideZBounds.X);
+	SpawnTransform.SetLocation(GroundedSpawnLoc);
+	SetActorLocation(GroundedSpawnLoc, false, nullptr, ETeleportType::TeleportPhysics);
 	ApplyCameraPOV();
 
 	if (Camera)
@@ -668,7 +678,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 				const float Alpha = FMath::Clamp(1.0f - (SpliceRingTimer / 0.18f), 0.0f, 1.0f);
 				const float RadialScale = FMath::Lerp(1.2f, 11.5f, Alpha);
 				const float ThicknessZ = FMath::Lerp(0.08f, 0.005f, Alpha);
-				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 				ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 				ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(RadialScale, RadialScale, ThicknessZ));
 			}
@@ -807,7 +817,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			const FVector Loc = GetActorLocation();
 			const float TargetY = FMath::Sin(TimeSeconds * 0.85f) * 180.0f;
 			const float NewY = FMath::FInterpTo(static_cast<float>(Loc.Y), TargetY, DeltaSeconds, 4.0f);
-			const float NewZ = FMath::FInterpTo(static_cast<float>(Loc.Z), 130.0f, DeltaSeconds, 4.0f);
+			const float NewZ = FMath::FInterpTo(static_cast<float>(Loc.Z), static_cast<float>(WideZBounds.X), DeltaSeconds, 6.0f);
 			SetActorLocation(FVector(Loc.X + AttractCruiseSpeed * DeltaSeconds, NewY, NewZ), false);
 
 			if (Camera)
@@ -981,7 +991,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			GallopZ = FMath::Sin(WorldSeconds * 3.2f) * 14.0f;
 		}
 
-		const bool bOnGround = (static_cast<float>(GetActorLocation().Z) <= WideZBounds.Y + 15.0f);
+		const bool bOnGround = bIsGrounded || (static_cast<float>(GetActorLocation().Z) <= WideZBounds.Y + 15.0f);
 		if (CurrentGenre == EMegaJamSceneGenre::Western && bOnGround && !bCrashed)
 		{
 			// Rhythmic dynamic TrackBPM sine-wave pitch and vertical Z-hop so the static horse mesh visibly gallops to the beat
@@ -1068,6 +1078,11 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		TargetOverdriveSpeed = FMath::Max(CruiseSpeed * 1.35f, OverdriveSpeed * 1.05f);
 	}
 
+	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	const EMegaJamSceneGenre ActiveGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+	const bool bIsMontageScene = (ActiveGenre == EMegaJamSceneGenre::Montage);
+	const float GroundZ = static_cast<float>(WideZBounds.X);
+
 	if (bWide)
 	{
 		if (bUltraPanavision)
@@ -1080,13 +1095,15 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		Velocity.Y = (DeltaSeconds > KINDA_SMALL_NUMBER) ? ((NextY - CurrentY) / DeltaSeconds) : 0.0f;
 
 		const float CurrentZ = static_cast<float>(GetActorLocation().Z);
-		if (CurrentZ > WideZBounds.Y + 5.0f || Velocity.Z > 1.0f)
+		if (CurrentZ > GroundZ + 1.0f || Velocity.Z > 1.0f)
 		{
-			// Let Clapperboard Stunt Transition vertical launch arc back down to the Z = 140 rail
-			Velocity.Z -= 4200.0f * DeltaSeconds;
+			// Apply strict gravity (StuntGravityZ = -2800.0f) whenever airborne above FloorTopZ = 0.0f
+			bIsGrounded = false;
+			Velocity.Z += StuntGravityZ * DeltaSeconds;
 		}
 		else
 		{
+			bIsGrounded = true;
 			Velocity.Z = 0.0f;
 		}
 		// Bullet-Time Overdrive / Ultra-Panavision Standoff: surge and sustain TargetOverdriveSpeed + ActiveDollyBoostBonus
@@ -1096,10 +1113,42 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	{
 		Velocity.Y *= CrossPlaneDamp;
 		Velocity.Y += SteerInput.X * LateralAccel * DeltaSeconds;
-		Velocity.Z *= CrossPlaneDamp;
-		Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
 
-		// 4:3 Flight & Charge Mode: accelerate toward CruiseSpeed (3800 u/s) and clamp to MaxFlightSpeed + ActiveDollyBoostBonus
+		if (bIsMontageScene)
+		{
+			// Scene 05 (Montage, Hang Glider) retains full continuous 3D aerial pitch/altitude control over the canyon
+			bIsGrounded = false;
+			Velocity.Z *= CrossPlaneDamp;
+			Velocity.Z += SteerInput.Y * VerticalAccel * DeltaSeconds;
+		}
+		else
+		{
+			// Scenes 01-04 (ActiveGenre != Montage): grounded riding on FloorTopZ = 0.0f + single ballistic stunt jump (Velocity.Z = 1150.0f) on W/Up
+			const float CurrentZ = static_cast<float>(GetActorLocation().Z);
+			if (SteerInput.Y <= 0.15f)
+			{
+				bHasProcessedJumpInput = false;
+			}
+
+			if (bIsGrounded && SteerInput.Y > 0.35f && !bHasProcessedJumpInput)
+			{
+				Velocity.Z = 1150.0f;
+				bIsGrounded = false;
+				bHasProcessedJumpInput = true;
+			}
+			else if (CurrentZ > GroundZ + 1.0f || Velocity.Z > 1.0f)
+			{
+				bIsGrounded = false;
+				Velocity.Z += StuntGravityZ * DeltaSeconds;
+			}
+			else
+			{
+				bIsGrounded = true;
+				Velocity.Z = 0.0f;
+			}
+		}
+
+		// 4:3 Mode: accelerate toward CruiseSpeed (3800 u/s) and clamp to MaxFlightSpeed + ActiveDollyBoostBonus
 		Velocity.X += Acceleration * DeltaSeconds;
 		Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
 		if (ActiveDollyBoostBonus > 1.0f)
@@ -1136,6 +1185,12 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 			}
 			AddActorWorldOffset(FVector(240.0f, 0.0f, 0.0f), false);
 		}
+		else if (Hit.ImpactNormal.Z > 0.7f)
+		{
+			// Ground touchdown: resolve vertical velocity cleanly without crashing
+			Velocity.Z = FMath::Max(0.0, Velocity.Z);
+			bIsGrounded = true;
+		}
 		else
 		{
 			// Speed component driving into the surface.
@@ -1163,9 +1218,13 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 {
+	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	const EMegaJamSceneGenre ActiveGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+	const bool bIsMontageScene = (ActiveGenre == EMegaJamSceneGenre::Montage);
 	const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1);
 	const FVector2D YBounds = bWide ? WideYBounds : BoxYBounds;
 	const FVector2D ZBounds = bWide ? WideZBounds : BoxZBounds;
+	const float GroundZ = static_cast<float>(WideZBounds.X);
 
 	const FVector Location = GetActorLocation();
 	const float ClampedY = FMath::Clamp(static_cast<float>(Location.Y), static_cast<float>(YBounds.X), static_cast<float>(YBounds.Y));
@@ -1176,10 +1235,21 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	{
 		Velocity.Y = 0.0;
 	}
-	const bool bAirborneInWide = bWide && (Location.Z > ZBounds.Y + 5.0f || Velocity.Z > 1.0f);
-	if (!bAirborneInWide && ((Location.Z >= ZBounds.Y && Velocity.Z > 0.0) || (Location.Z <= ZBounds.X && Velocity.Z < 0.0)))
+
+	const bool bBallisticAirborne = (!bIsMontageScene || bWide) && (Location.Z > GroundZ + 1.0f || Velocity.Z > 1.0f);
+	if (!bBallisticAirborne && ((Location.Z >= ZBounds.Y && Velocity.Z > 0.0) || (Location.Z <= ZBounds.X && Velocity.Z < 0.0)))
 	{
 		Velocity.Z = 0.0;
+	}
+
+	// Enforce crisp ground touchdown at FloorTopZ = 0.0f in Scenes 01-04 (and 21:9 rail mode)
+	if (!bIsMontageScene || bWide)
+	{
+		if (Location.Z <= GroundZ + 0.5f && Velocity.Z <= 0.0)
+		{
+			Velocity.Z = 0.0;
+			bIsGrounded = true;
+		}
 	}
 
 	if (FMath::IsNearlyEqual(ClampedY, static_cast<float>(Location.Y)) && FMath::IsNearlyEqual(ClampedZ, static_cast<float>(Location.Z)))
@@ -1188,11 +1258,23 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	}
 
 	// Fast interpolation toward the clamped position: a punchy squeeze, not a one-frame teleport.
-	// Bypass soft vertical smoothing while bIsDropCutSlamming or Clapperboard launch is airborne.
+	// While airborne in a ballistic stunt hop or Clapperboard launch, allow Z to follow StuntGravityZ cleanly down to GroundZ.
 	const float NewY = FMath::FInterpTo(static_cast<float>(Location.Y), ClampedY, DeltaSeconds, AspectClampInterpSpeed);
-	const float NewZ = (bIsDropCutSlamming || bAirborneInWide)
-		? FMath::Max(static_cast<float>(ZBounds.X), static_cast<float>(Location.Z))
-		: FMath::FInterpTo(static_cast<float>(Location.Z), ClampedZ, DeltaSeconds, AspectClampInterpSpeed);
+	float NewZ = static_cast<float>(Location.Z);
+	if (Location.Z < GroundZ)
+	{
+		NewZ = GroundZ;
+		Velocity.Z = FMath::Max(0.0, Velocity.Z);
+		bIsGrounded = true;
+	}
+	else if (bIsDropCutSlamming || bBallisticAirborne)
+	{
+		NewZ = FMath::Clamp(static_cast<float>(Location.Z), GroundZ, static_cast<float>(BoxZBounds.Y));
+	}
+	else
+	{
+		NewZ = FMath::FInterpTo(static_cast<float>(Location.Z), ClampedZ, DeltaSeconds, AspectClampInterpSpeed);
+	}
 	AddActorWorldOffset(FVector(0.0f, NewY - Location.Y, NewZ - Location.Z), true);
 }
 
@@ -1260,7 +1342,7 @@ void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 	}
 	if (ProceduralSpliceRingMesh)
 	{
-		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 		ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 		ProceduralSpliceRingMesh->SetVisibility(true);
@@ -1378,7 +1460,7 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 	}
 	if (ProceduralSpliceRingMesh)
 	{
-		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 		ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 		ProceduralSpliceRingMesh->SetVisibility(true);
@@ -1463,6 +1545,7 @@ void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 
 	// Vertical jump impulse while maintaining 5-lane lateral rail lock in 21:9
 	Velocity.Z = 1350.0f;
+	bIsGrounded = false;
 	Velocity.X += CutSpeedImpulse;
 	CurrentFOVPunch = CutFOVPunch;
 	ActiveTrickSpinTimer = 0.42f;
@@ -1508,7 +1591,7 @@ void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 		}
 		if (ProceduralSpliceRingMesh)
 		{
-			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 			ProceduralSpliceRingMesh->SetVisibility(true);
@@ -1789,7 +1872,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		}
 		if (ProceduralSpliceRingMesh)
 		{
-			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 			ProceduralSpliceRingMesh->SetVisibility(true);
@@ -2147,6 +2230,7 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 	Velocity.Z = (NextGenre == EMegaJamSceneGenre::Chase)
 		? 2100.0f
 		: ((NextGenre == EMegaJamSceneGenre::Montage) ? 1900.0f : 1800.0f);
+	bIsGrounded = false;
 	TriggerMicroHitstop(0.25f, 0.0f);
 	OnClapperboardSnapped.Broadcast();
 	PlayRunStartSound();
@@ -2168,6 +2252,8 @@ void AMegaJamFlowPawn::HaltForWrapUpScoreboard()
 void AMegaJamFlowPawn::ResetForRun()
 {
 	bCrashed = false;
+	bIsGrounded = true;
+	bHasProcessedJumpInput = false;
 	CustomTimeDilation = 1.0f;
 	Velocity = FVector::ZeroVector;
 	FlowRatio = 0.0f;
@@ -3040,6 +3126,7 @@ void AMegaJamFlowPawn::Input_SteerReleased()
 {
 	SteerInput = FVector2D::ZeroVector;
 	bHasProcessedLaneInput = false;
+	bHasProcessedJumpInput = false;
 }
 
 void AMegaJamFlowPawn::ToggleGodMode()
@@ -3064,9 +3151,11 @@ void AMegaJamFlowPawn::ToggleGodMode()
 void AMegaJamFlowPawn::ClearCrashStateForDebugSkip()
 {
 	bCrashed = false;
+	bIsGrounded = true;
+	bHasProcessedJumpInput = false;
 	Velocity = FVector(TerminalVelocity * 0.7f, 0.0f, 0.0f);
 	const FVector Loc = GetActorLocation();
-	SetActorLocation(FVector(Loc.X, 0.0f, 130.0f), false, nullptr, ETeleportType::TeleportPhysics);
+	SetActorLocation(FVector(Loc.X, 0.0f, static_cast<float>(WideZBounds.X)), false, nullptr, ETeleportType::TeleportPhysics);
 }
 
 void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -3121,7 +3210,7 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		}
 		if (ProceduralSpliceRingMesh)
 		{
-			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 			ProceduralSpliceRingMesh->SetVisibility(true);
