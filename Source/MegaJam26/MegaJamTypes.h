@@ -6,6 +6,7 @@
 #include "MegaJamTypes.generated.h"
 
 class USoundBase;
+class UStaticMesh;
 
 /** Per-scene music track and dynamic tempo configuration. */
 USTRUCT(BlueprintType)
@@ -104,6 +105,35 @@ struct FSceneGradeThresholds
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Grading")
 	float CRankTime = 78.0f;
+};
+
+/** Per-scene environment prop scatter configuration for outer-corridor margins (Refs #87, #90). */
+USTRUCT(BlueprintType)
+struct FScenePropConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Environment")
+	UStaticMesh* PropMesh = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Environment")
+	float MinScale = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Environment")
+	float MaxScale = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Environment")
+	float SpawnProbability = 0.5f;
+};
+
+/** UHT wrapper struct so TMap<EMegaJamSceneGenre, FScenePropList> can expose a per-scene TArray<FScenePropConfig> to Blueprints. */
+USTRUCT(BlueprintType)
+struct FScenePropList
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Environment")
+	TArray<FScenePropConfig> Props;
 };
 
 
