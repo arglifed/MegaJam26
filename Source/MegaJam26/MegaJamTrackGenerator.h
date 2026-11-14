@@ -173,6 +173,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
 	TObjectPtr<UStaticMesh> FilmFramePickupMesh;
 
+	/**
+	 * Per-scene obstacle art for Take A, indexed by scene order (0 Action, 1 Western, 2 Noir, 3 Chase, 4 Final Cut).
+	 * Each mesh must be 100 x 100 x 100 with a centred pivot. When any entry (A or B) is set, obstacles are drawn by
+	 * non-colliding per-scene skin components that mirror the TakeA/TakeB collision instances, which are then hidden.
+	 * The mesh's own material (slot 0) is used and receives TakeIndex, TakeColor and TakeGhosting = 1.
+	 * Empty entries fall back to ObstacleTakeAMesh / the cube with ObstacleMaterial.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TArray<TObjectPtr<UStaticMesh>> SceneObstacleMeshesTakeA;
+
+	/** Per-scene obstacle art for Take B. Same rules as SceneObstacleMeshesTakeA. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TArray<TObjectPtr<UStaticMesh>> SceneObstacleMeshesTakeB;
+
+	/** Optional one-piece finish arch. Placed once, uniformly scaled to span the corridor, instead of the 5 stretched ApertureRingMesh parts. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TObjectPtr<UStaticMesh> WrapArchMesh;
+
+	/** Optional outer-corridor dressing meshes (centred pivot). One is picked at random per spawn and rested on Z = 0. Empty = SoundstageTrussMesh as before. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TArray<TObjectPtr<UStaticMesh>> StudioDressingMeshes;
+
+	/** Uniform scale for StudioDressingMeshes (the art is about 100 cm on its longest side). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	float StudioDressingScale = 14.0f;
+
+	/**
+	 * When true, set pieces, pickups and the wrap arch keep the material of their assigned mesh (slot 0) instead of
+	 * ObstacleMaterial. That material should expose TakeIndex / TakeColor (M_MeshyPBR does). Engine fallback shapes still use ObstacleMaterial.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	bool bUseMeshMaterials = false;
+
 	// ---- Track tunables ----
 	/** Length of one chunk along +X (cm). 3200 cm for long, clean forward sightlines. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Track")
@@ -332,6 +365,10 @@ private:
 	void UpdateFinalCutWrapArch();
 	void HideFinalCutWrapArch();
 	FLinearColor GetSceneAccentColor(EMegaJamFilmScene Scene) const;
+	void CreateArtPools(int32 ObstacleSlots);
+	void SyncObstacleSkins();
+	UInstancedStaticMeshComponent* CreateVisualISM(UStaticMesh* Mesh);
+	UMaterialInstanceDynamic* MakeMeshMID(UInstancedStaticMeshComponent* ISM);
 
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamFlowPawn> BoundPawn;
@@ -371,6 +408,20 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FMegaJamDollyBoostStrip> BoostStripSlots;
+
+	/** Visual-only obstacle skins, one per scene (see SceneObstacleMeshesTakeA). Empty when the feature is unused. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> ObstacleSkinISMsA;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> ObstacleSkinISMsB;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> StudioDressingExtraISMs;
+
+	/** Which skin component currently shows each obstacle instance (-1 = none yet). */
+	TArray<int8> ObstacleSkinOwnerA;
+	TArray<int8> ObstacleSkinOwnerB;
 
 	bool bPoolsCreated = false;
 	bool bBuilt = false;

@@ -1,0 +1,126 @@
+"""
+MegaJam26 Issues #23 / #56 / #57: wires the imported art into the game. Run after import_issue5_assets.py and after
+the C++ module is built, headless with the editor CLOSED (same command line as import_issue5_assets.py).
+
+Creates   /Game/MegaJam26/Blueprints/BP_TrackGenerator   (parent AMegaJamTrackGenerator, MegaJam|Art slots filled)
+Edits     /Game/MegaJam26/Blueprints/BP_FlowGameMode     Track Generator Class = BP_TrackGenerator
+Edits     /Game/MegaJam26/Blueprints/BP_FlowPawn         SceneVehicleMeshes + SceneSeatOffsets
+(The two edited Blueprints are shared binary assets; the user approved editing them for this task. AGENTS.md section 5.)
+
+Search the log for "[ArtWire]". Safe to re-run: it only sets the properties listed below.
+"""
+
+import traceback
+
+import unreal
+
+ART = "/Game/MegaJam26/Art/"
+BPS = "/Game/MegaJam26/Blueprints"
+eal = unreal.EditorAssetLibrary
+errors = []
+
+
+def log(msg):
+    unreal.log("[ArtWire] " + msg)
+
+
+def err(msg):
+    errors.append(msg)
+    unreal.log_error("[ArtWire] ERROR: " + msg)
+
+
+def mesh(name):
+    asset = eal.load_asset(ART + name)
+    if not asset:
+        err("missing mesh " + name)
+    return asset
+
+
+def cdo_of(bp):
+    return unreal.get_default_object(bp.generated_class())
+
+
+def finish(bp):
+    unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+    eal.save_loaded_asset(bp, only_if_is_dirty=False)
+
+
+def wire_track_generator():
+    path = BPS + "/BP_TrackGenerator"
+    if eal.does_asset_exist(path):
+        bp = eal.load_asset(path)
+    else:
+        factory = unreal.BlueprintFactory()
+        factory.set_editor_property("parent_class", unreal.MegaJamTrackGenerator)
+        bp = unreal.AssetToolsHelpers.get_asset_tools().create_asset("BP_TrackGenerator", BPS, unreal.Blueprint, factory)
+        unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+    cdo = cdo_of(bp)
+
+    slots = {
+        "floor_tile_mesh": "SM_FloorTile",
+        "wall_segment_mesh": "SM_WallSegment",
+        "soundstage_truss_mesh": "SM_Dressing_LightingTruss",
+        "skyscraper_mesh": "SM_Dressing_Noir_Skyscraper",
+        "film_reel_mesh": "SM_SetPiece_FilmReel",
+        "aperture_ring_mesh": "SM_SetPiece_ApertureRing",
+        "film_frame_pickup_mesh": "SM_Pickup_FilmFrame",
+        "wrap_arch_mesh": "SM_SetPiece_WrapArch",
+    }
+    for prop, name in slots.items():
+        cdo.set_editor_property(prop, mesh(name))
+
+    # Scene order: 0 Action, 1 Western, 2 Noir, 3 Chase, 4 Final Cut.
+    # The laser gate is left out: it is an open frame, but obstacle collision is a solid box.
+    take_a = ["SM_Obstacle_Action_CyberBarrier", "SM_Obstacle_Western_TimberBarricade", "SM_Obstacle_Noir_Roadblock",
+              "SM_Obstacle_Chase_Snowdrift", "SM_Obstacle_Final_Monolith"]
+    take_b = ["SM_Obstacle_Action_CyberBarrier", "SM_Obstacle_Western_TimberBarricade", "SM_Obstacle_Noir_Roadblock",
+              "SM_Obstacle_Chase_IceBoulders", "SM_Obstacle_Final_Monolith"]
+    cdo.set_editor_property("scene_obstacle_meshes_take_a", [mesh(n) for n in take_a])
+    cdo.set_editor_property("scene_obstacle_meshes_take_b", [mesh(n) for n in take_b])
+
+    dressing = ["SM_Dressing_StudioSpotlight", "SM_Dressing_BoomMic", "SM_Prop_CameraCrane", "SM_Dressing_BackdropFlat",
+                "SM_Dressing_LightingTruss"]
+    cdo.set_editor_property("studio_dressing_meshes", [mesh(n) for n in dressing])
+    cdo.set_editor_property("studio_dressing_scale", 14.0)
+    cdo.set_editor_property("use_mesh_materials", True)
+    finish(bp)
+    log("BP_TrackGenerator saved: %d slots, %d + %d obstacle skins, %d dressing meshes"
+        % (len(slots), len(take_a), len(take_b), len(dressing)))
+    return bp
+
+
+def wire_game_mode(track_bp):
+    bp = eal.load_asset(BPS + "/BP_FlowGameMode")
+    cdo = cdo_of(bp)
+    cdo.set_editor_property("track_generator_class", track_bp.generated_class())
+    finish(bp)
+    log("BP_FlowGameMode.TrackGeneratorClass = %s" % cdo.get_editor_property("track_generator_class").get_name())
+
+
+def wire_pawn():
+    G = unreal.MegaJamSceneGenre
+    # Vehicle pivots sit on the ground at the pawn origin; the offset is where the orb rides (seat / hover point), in cm.
+    vehicles = {
+        G.ACTION: ("SM_Vehicle_Motorcycle", unreal.Vector(0, 0, 85)),
+        G.WESTERN: ("SM_Vehicle_Horse", unreal.Vector(0, 0, 165)),
+        G.NOIR: ("SM_Vehicle_SpyCar", unreal.Vector(-20, 0, 85)),
+        G.CHASE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 45)),
+        G.ALPINE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 45)),
+        G.MONTAGE: ("SM_Vehicle_HangGlider", unreal.Vector(0, 0, -60)),  # wing at the pawn origin, orb hangs below
+    }
+    bp = eal.load_asset(BPS + "/BP_FlowPawn")
+    cdo = cdo_of(bp)
+    cdo.set_editor_property("scene_vehicle_meshes", {g: mesh(n) for g, (n, _) in vehicles.items()})
+    cdo.set_editor_property("scene_seat_offsets", {g: off for g, (_, off) in vehicles.items()})
+    finish(bp)
+    log("BP_FlowPawn: %d vehicle meshes, %d seat offsets"
+        % (len(cdo.get_editor_property("scene_vehicle_meshes")), len(cdo.get_editor_property("scene_seat_offsets"))))
+
+
+try:
+    track = wire_track_generator()
+    wire_game_mode(track)
+    wire_pawn()
+except Exception as exc:  # noqa: BLE001 - log everything, the run is headless
+    err("%s\n%s" % (exc, traceback.format_exc()))
+log("DONE with %d error(s)" % len(errors))

@@ -111,3 +111,29 @@ These steps edit the shared binary assets `BP_FlowGameMode` and `BP_FlowPawn`. C
 - [ ] `BP_TrackGenerator` created and set on `BP_FlowGameMode`
 - [x] `Score Meta Sound` is the C++ default, inherited by `BP_FlowPawn`
 - [ ] Play `L_FlowTest`: check the cut crossfade, the graze, crash and victory stings, and that meshes have no offset or z-fighting
+
+---
+
+## 4. Art hook-up (Issues #23, #56, #57)
+
+Wired by `Scripts/wire_issue5_art.py` after `Scripts/import_issue5_assets.py`. Change the scripts and re-run them rather than hand-editing, so the set-up stays reviewable as text.
+
+**`BP_TrackGenerator`** (set as `BP_FlowGameMode` → Track Generator Class) fills these `AMegaJamTrackGenerator` → **MegaJam|Art** slots:
+
+| Slot | Asset |
+|---|---|
+| `FloorTileMesh` / `WallSegmentMesh` | `SM_FloorTile` / `SM_WallSegment` (engine-cube copies with the world-aligned grid material `M_TrackSurface`) |
+| `SoundstageTrussMesh`, `SkyscraperMesh`, `FilmReelMesh`, `ApertureRingMesh` | `SM_Dressing_LightingTruss`, `SM_Dressing_Noir_Skyscraper`, `SM_SetPiece_FilmReel`, `SM_SetPiece_ApertureRing` |
+| `FilmFramePickupMesh` | `SM_Pickup_FilmFrame` |
+| `WrapArchMesh` *(new)* | `SM_SetPiece_WrapArch`: one piece, scaled to the corridor width, replaces the 5 stretched arch parts |
+| `SceneObstacleMeshesTakeA` / `TakeB` *(new)* | One obstacle mesh per scene (Action, Western, Noir, Chase, Final Cut). Chase uses Snowdrift for Take A and Ice Boulders for Take B |
+| `StudioDressingMeshes` *(new)*, `StudioDressingScale` = 14 | Spotlight, boom mic, camera crane, backdrop flat, lighting truss |
+| `bUseMeshMaterials` *(new)* = true | Set pieces, pickups and the wrap arch keep their own textured material |
+
+**Per-scene obstacles** are a visual-only layer: `TakeA_ObstaclesISM` / `TakeB_ObstaclesISM` still own every transform, collision and splice; per-scene skin components copy their instances each tick and the two base components are hidden. With the arrays empty nothing changes.
+
+**`M_MeshyPBR`** (parent of every `MI_*`) follows the `M_TakeGhost` contract: `TakeIndex`, `TakeColor`, plus `TakeGhosting` (C++ sets it to 1 on obstacles and pickups so the other take's instances dither-fade to `GhostOpacity`). Tune `GhostOpacity`, `GhostGlow`, `TakeGlow` and `BaseColorTint` on the material or its instances.
+
+**`BP_FlowPawn`**: `SceneVehicleMeshes` = the five `SM_Vehicle_*` meshes (pivot on the ground, facing +X), `SceneSeatOffsets` Z = Motorcycle 85, Horse 165, Spy Car 85, Snowboard 45, Hang Glider −60. The seat offsets are estimates.
+
+**Still to check in `L_FlowTest`** (none of this could be viewed headless): take ghosting on the textured obstacles, texture smear on stretched obstacles and set pieces, the wrap arch opening, vehicle facing and seat heights, dressing visibility over the walls.
