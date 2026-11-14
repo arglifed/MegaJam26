@@ -23,6 +23,7 @@
 #include "Misc/App.h"
 #include "Misc/PackageName.h"
 #include "Sound/SoundBase.h"
+#include "Sound/SoundWave.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
@@ -101,6 +102,8 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	static ConstructorHelpers::FObjectFinder<USoundBase> FilmFrameFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_FuturisticSell.SW_SFX_FuturisticSell"));
 	static ConstructorHelpers::FObjectFinder<USoundBase> DollyBoostFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_PositiveRise.SW_SFX_PositiveRise"));
 	static ConstructorHelpers::FObjectFinder<USoundBase> CrashFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_VocalCut.SW_SFX_VocalCut"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> WhooshFinder(TEXT("/Game/MegaJam26/Audio/SW_SFX_CinematicWhoosh.SW_SFX_CinematicWhoosh"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> ScoreFinder(TEXT("/Game/MegaJam26/Audio/MS_DirectorScore.MS_DirectorScore"));
 
 	MusicTrack = MusicActionFinder.Object;
 	SceneMusicTracks.Add(EMegaJamSceneGenre::Action, MusicActionFinder.Object);
@@ -113,8 +116,14 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	FilmFramePickupSound = FilmFrameFinder.Object;
 	DollyBoostStripSound = DollyBoostFinder.Object;
 	CrashSound = CrashFinder.Object;
-	DirectorsCutEnterSound = DollyBoostFinder.Object;
+	// Issue #24: the cinematic whoosh is reserved for Director's Cut activation; splices/slashes and the victory keep PositiveRise.
+	DirectorsCutEnterSound = WhooshFinder.Object ? WhooshFinder.Object : DollyBoostFinder.Object;
 	DirectorsCutExitSound = RunStartFinder.Object;
+	BeatSpliceSound = DollyBoostFinder.Object;
+	VictorySound = DollyBoostFinder.Object;
+
+	// The score owns music + SFX when present (Option A). Null-safe: without the asset the C++ audio path is used.
+	ScoreMetaSound = ScoreFinder.Object;
 }
 
 void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
@@ -141,6 +150,8 @@ void AMegaJamFlowPawn::BeginPlay()
 	if (ScoreAudioComponent && ScoreMetaSound)
 	{
 		ScoreAudioComponent->SetSound(ScoreMetaSound);
+		// Instance parameters set before Play() are applied when the score starts, so the first track is ready on "On Play".
+		PushScoreWaveParameters();
 		ScoreAudioComponent->Play();
 	}
 
@@ -370,6 +381,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 				bTriggeredVictorySting = true;
 				CurrentFOVPunch = CutFOVPunch;
 				TriggerAudioEvent(TEXT("OnHardCut"));
+				PlayCue(TEXT("OnCompleted"), VictorySound, 1.0f, 0.75f);
 			}
 
 			const float VictorySpeed = AttractCruiseSpeed * 1.25f;
@@ -430,10 +442,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			{
 				FlowSubsystem->SetHazardTimeScale(1.0f);
 			}
-			if (DirectorsCutExitSound)
-			{
-				UGameplayStatics::PlaySound2D(this, DirectorsCutExitSound, 0.50f, 0.85f);
-			}
+			PlayCue(TEXT("OnDirectorsCutExit"), DirectorsCutExitSound, 0.50f, 0.85f);
 			TriggerAudioEvent(TEXT("OnAspectSwitch"));
 		}
 	}
@@ -667,10 +676,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 
 		AddCameraTrauma(0.60f);
 		TriggerMicroHitstop(0.04f, 0.2f);
-		if (DirectorsCutEnterSound)
-		{
-			UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.0f, 1.45f);
-		}
+		PlayCue(TEXT("OnBeatSplice"), BeatSpliceSound, 1.0f, 1.45f, true);
 
 		if (GEngine)
 		{
@@ -774,11 +780,8 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 
 		TriggerMicroHitstop(0.06f, 0.10f);
 		AddCameraTrauma(0.40f, 0.70f);
-		if (DirectorsCutEnterSound)
-		{
-			const float ChainPitch = FMath::Clamp(1.15f + 0.04f * static_cast<float>(SpliceChain), 1.15f, 1.45f);
-			UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.0f, ChainPitch);
-		}
+		const float ChainPitch = FMath::Clamp(1.15f + 0.04f * static_cast<float>(SpliceChain), 1.15f, 1.45f);
+		PlayCue(TEXT("OnBeatSplice"), BeatSpliceSound, 1.0f, ChainPitch, true);
 
 		if (GEngine)
 		{
@@ -871,10 +874,8 @@ void AMegaJamFlowPawn::ToggleAspect()
 		}
 
 		PushTakeAndAspectToSubsystem();
-		if (DirectorsCutEnterSound)
-		{
-			UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.05f, 1.25f);
-		}
+		// Cinematic whoosh at natural pitch: the only place DirectorsCutEnterSound plays (Issue #24).
+		PlayCue(TEXT("OnDirectorsCutEnter"), DirectorsCutEnterSound, 1.05f, 1.0f);
 		TriggerAudioEvent(TEXT("OnHardCut"));
 		TriggerAudioEvent(TEXT("OnAspectSwitch"));
 
@@ -903,10 +904,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 		}
 
 		PushTakeAndAspectToSubsystem();
-		if (DirectorsCutExitSound)
-		{
-			UGameplayStatics::PlaySound2D(this, DirectorsCutExitSound, 0.50f, 0.85f);
-		}
+		PlayCue(TEXT("OnDirectorsCutExit"), DirectorsCutExitSound, 0.50f, 0.85f);
 		TriggerAudioEvent(TEXT("OnAspectSwitch"));
 
 		if (GEngine)
@@ -1088,11 +1086,9 @@ bool AMegaJamFlowPawn::TryTriggerOnBeatCut()
 		GameMode->NotifySpliceChainUpdated(SpliceChain);
 	}
 
-	if (USoundBase* BeatSound = FilmFramePickupSound ? FilmFramePickupSound.Get() : DirectorsCutEnterSound.Get())
-	{
-		const float ChainPitch = FMath::Clamp(1.18f + 0.04f * static_cast<float>(SpliceChain), 1.18f, 1.46f);
-		UGameplayStatics::PlaySound2D(this, BeatSound, 0.95f, ChainPitch);
-	}
+	USoundBase* BeatSound = FilmFramePickupSound ? FilmFramePickupSound.Get() : BeatSpliceSound.Get();
+	const float ChainPitch = FMath::Clamp(1.18f + 0.04f * static_cast<float>(SpliceChain), 1.18f, 1.46f);
+	PlayCue(TEXT("OnBeatCut"), BeatSound, 0.95f, ChainPitch, true);
 
 	TriggerAudioEvent(TEXT("OnHardCut"));
 	return true;
@@ -1184,7 +1180,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 
 	if (!bTriggeredOnBeat)
 	{
-		PlayOneShot(FilmFramePickupSound);
+		PlayCue(TEXT("OnFilmFrame"), FilmFramePickupSound);
 	}
 	TriggerAudioEvent(TEXT("OnGraze"));
 }
@@ -1220,7 +1216,8 @@ void AMegaJamFlowPawn::NotifyDollyBoostStripCollected()
 		FlowSubsystem->SetFilmMeter(FilmMeter);
 	}
 
-	PlayOneShot(DollyBoostStripSound);
+	// Score path: OnDollyBoost plays both layers (natural + the +1.6x surge layer TriggerDollyBoost adds in the C++ path).
+	PlayCue(TEXT("OnDollyBoost"), DollyBoostStripSound);
 	TriggerAudioEvent(TEXT("OnGraze"));
 }
 
@@ -1242,9 +1239,10 @@ void AMegaJamFlowPawn::TriggerDollyBoost()
 
 	AddCameraTrauma(0.4f, 0.6f);
 
-	if (DirectorsCutEnterSound)
+	// High surge layer on top of the strip pickup sound. Fallback path only: in the score, OnDollyBoost already includes it.
+	if (!IsScoreDrivingAudio() && DollyBoostStripSound)
 	{
-		UGameplayStatics::PlaySound2D(this, DirectorsCutEnterSound, 1.0f, 1.6f);
+		UGameplayStatics::PlaySound2D(this, DollyBoostStripSound, 1.0f, 1.6f);
 	}
 
 	if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
@@ -1263,7 +1261,55 @@ void AMegaJamFlowPawn::PlayOneShot(USoundBase* Sound) const
 
 void AMegaJamFlowPawn::PlayRunStartSound() const
 {
-	PlayOneShot(RunStartSound);
+	PlayCue(TEXT("OnRunStart"), RunStartSound);
+}
+
+bool AMegaJamFlowPawn::IsScoreDrivingAudio() const
+{
+	return ScoreMetaSound && ScoreAudioComponent && ScoreAudioComponent->IsPlaying();
+}
+
+void AMegaJamFlowPawn::PlayCue(FName ScoreTrigger, USoundBase* FallbackSound, float Volume, float Pitch, bool bChainPitched) const
+{
+	if (IsScoreDrivingAudio())
+	{
+		if (bChainPitched)
+		{
+			// Pitch multiplier -> semitones for the score's Wave Player "Pitch Shift" (set right before the trigger, same frame).
+			ScoreAudioComponent->SetFloatParameter(TEXT("ChainPitchSemitones"), 12.0f * FMath::Log2(FMath::Max(Pitch, 0.01f)));
+		}
+		ScoreAudioComponent->SetTriggerParameter(ScoreTrigger);
+		return;
+	}
+
+	if (FallbackSound)
+	{
+		UGameplayStatics::PlaySound2D(this, FallbackSound, Volume, Pitch);
+	}
+}
+
+void AMegaJamFlowPawn::PushScoreWaveParameters() const
+{
+	if (!ScoreAudioComponent)
+	{
+		return;
+	}
+
+	// MetaSound WaveAsset inputs take USoundWave. A non-wave override (e.g. a SoundCue) leaves that score cue silent.
+	auto PushWave = [this](const TCHAR* InputName, USoundBase* Sound)
+	{
+		ScoreAudioComponent->SetWaveParameter(InputName, Cast<USoundWave>(Sound));
+	};
+
+	PushWave(TEXT("RunStartWave"), RunStartSound);
+	PushWave(TEXT("FilmFrameWave"), FilmFramePickupSound);
+	PushWave(TEXT("DollyBoostWave"), DollyBoostStripSound);
+	PushWave(TEXT("CrashWave"), CrashSound);
+	PushWave(TEXT("DirectorsCutEnterWave"), DirectorsCutEnterSound);
+	PushWave(TEXT("DirectorsCutExitWave"), DirectorsCutExitSound);
+	PushWave(TEXT("BeatSpliceWave"), BeatSpliceSound);
+	PushWave(TEXT("BeatCutWave"), FilmFramePickupSound ? FilmFramePickupSound.Get() : BeatSpliceSound.Get());
+	PushWave(TEXT("VictoryWave"), VictorySound);
 }
 
 void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
@@ -1291,11 +1337,6 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 		}
 	}
 
-	if (!MusicAudioComponent)
-	{
-		return;
-	}
-
 	USoundBase* DesiredSound = nullptr;
 	if (const TObjectPtr<USoundBase>* FoundTrack = SceneMusicTracks.Find(TargetGenre))
 	{
@@ -1311,6 +1352,28 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 		return;
 	}
 
+	if (IsScoreDrivingAudio())
+	{
+		// Score path: the genre -> track mapping stays here in C++; the score just loops whatever MusicWave it is given.
+		if (MusicAudioComponent && MusicAudioComponent->IsPlaying())
+		{
+			MusicAudioComponent->Stop();
+		}
+		ScoreAudioComponent->SetIntParameter(TEXT("SceneGenre"), static_cast<int32>(TargetGenre));
+		if (ScoreActiveMusicWave != DesiredSound)
+		{
+			ScoreActiveMusicWave = DesiredSound;
+			ScoreAudioComponent->SetWaveParameter(TEXT("MusicWave"), Cast<USoundWave>(DesiredSound));
+			ScoreAudioComponent->SetTriggerParameter(TEXT("OnSceneChanged"));
+		}
+		return;
+	}
+
+	if (!MusicAudioComponent)
+	{
+		return;
+	}
+
 	if (MusicAudioComponent->Sound != DesiredSound || !MusicAudioComponent->IsPlaying())
 	{
 		MusicAudioComponent->SetSound(DesiredSound);
@@ -1322,7 +1385,8 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 
 void AMegaJamFlowPawn::UpdateDynamicMusicModulation(float UnscaledDelta)
 {
-	if (!MusicAudioComponent)
+	const bool bScoreDriving = IsScoreDrivingAudio();
+	if (!MusicAudioComponent && !bScoreDriving)
 	{
 		return;
 	}
@@ -1376,6 +1440,14 @@ void AMegaJamFlowPawn::UpdateDynamicMusicModulation(float UnscaledDelta)
 	CurrentMusicPitch = FMath::FInterpTo(CurrentMusicPitch, TargetPitch, UnscaledDelta, 8.0f);
 	CurrentMusicVolume = FMath::FInterpTo(CurrentMusicVolume, TargetVolume, UnscaledDelta, 8.0f);
 
+	if (bScoreDriving)
+	{
+		// Same modulation, delivered to the score: pitch multiplier -> semitones (Wave Player Pitch Shift), volume -> mixer gain.
+		ScoreAudioComponent->SetFloatParameter(TEXT("MusicPitchSemitones"), 12.0f * FMath::Log2(FMath::Max(CurrentMusicPitch, 0.01f)));
+		ScoreAudioComponent->SetFloatParameter(TEXT("MusicVolume"), CurrentMusicVolume);
+		return;
+	}
+
 	MusicAudioComponent->SetPitchMultiplier(CurrentMusicPitch);
 	MusicAudioComponent->SetVolumeMultiplier(CurrentMusicVolume);
 }
@@ -1383,7 +1455,8 @@ void AMegaJamFlowPawn::UpdateDynamicMusicModulation(float UnscaledDelta)
 void AMegaJamFlowPawn::OnMusicFinished()
 {
 	// Loop whichever scene track is currently assigned on MusicAudioComponent.
-	if (MusicAudioComponent && MusicAudioComponent->Sound)
+	// Not while the score owns music: SyncSceneMusicTrack's Stop() also lands here and must not restart the C++ track.
+	if (MusicAudioComponent && MusicAudioComponent->Sound && !IsScoreDrivingAudio())
 	{
 		MusicAudioComponent->Play();
 	}
@@ -1528,7 +1601,11 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	LastGrazeOrPickupTime = -1000.0;
 	PushTakeAndAspectToSubsystem();
 	PushAudioParameters();
-	PlayOneShot(CrashSound);
+	// The score plays its crash cue from the existing OnCrashed trigger, so only the fallback one-shot is gated here.
+	if (!IsScoreDrivingAudio())
+	{
+		PlayOneShot(CrashSound);
+	}
 	TriggerAudioEvent(TEXT("OnCrashed"));
 
 	if (UWorld* World = GetWorld())

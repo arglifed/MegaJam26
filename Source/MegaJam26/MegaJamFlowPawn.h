@@ -80,7 +80,12 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Audio")
 	TObjectPtr<UAudioComponent> ScoreAudioComponent;
 
-	/** Optional MetaSound asset to auto-play in BeginPlay. Safely no-ops if null. */
+	/**
+	 * MetaSound score auto-played in BeginPlay (defaults to /Game/MegaJam26/Audio/MS_DirectorScore).
+	 * While it is playing it owns ALL music and SFX (Issue #24, Option A): MusicAudioComponent stays silent and every
+	 * PlaySound2D one-shot below is replaced by a named score trigger. Clear it to fall back to the plain C++ audio path.
+	 * The sound properties below are still the source of truth: BeginPlay hands them to the score as WaveAsset inputs.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Audio")
 	TObjectPtr<USoundBase> ScoreMetaSound;
 
@@ -116,9 +121,17 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="Audio")
 	EMegaJamSceneGenre ActiveMusicGenre = EMegaJamSceneGenre::Action;
 
-	/** 2D one-shot played when entering 21:9 Director's Cut (defaults to SW_SFX_PositiveRise). */
+	/** 2D one-shot played only when ACTIVATING 21:9 / 2.76:1 Director's Cut (defaults to SW_SFX_CinematicWhoosh). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
 	TObjectPtr<USoundBase> DirectorsCutEnterSound;
+
+	/** 2D one-shot for Beat-Splice harvests and Western Beat-Slashes, pitched up with SpliceChain (defaults to SW_SFX_PositiveRise). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> BeatSpliceSound;
+
+	/** 2D one-shot when the run reaches Completed (defaults to SW_SFX_PositiveRise, pitched down). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> VictorySound;
 
 	/** 2D one-shot played when exiting 21:9 Director's Cut back to 4:3 (defaults to SW_SFX_ClapperboardHit). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
@@ -503,6 +516,18 @@ protected:
 	void UpdateDynamicMusicModulation(float UnscaledDelta);
 	void TriggerAudioEvent(FName ParameterName) const;
 	void PlayOneShot(USoundBase* Sound) const;
+
+	/** True while ScoreMetaSound is playing, i.e. the score owns music + SFX and the C++ fallback audio must stay silent. */
+	bool IsScoreDrivingAudio() const;
+
+	/**
+	 * Plays one gameplay SFX cue. Score path: fires ScoreTrigger (and, if bChainPitched, first sets ChainPitchSemitones
+	 * from Pitch). Fallback path: PlaySound2D(FallbackSound, Volume, Pitch). Never both, so nothing doubles up.
+	 */
+	void PlayCue(FName ScoreTrigger, USoundBase* FallbackSound, float Volume = 1.0f, float Pitch = 1.0f, bool bChainPitched = false) const;
+
+	/** Hands every cue/music sound property to the score as WaveAsset inputs. Called before the score starts playing. */
+	void PushScoreWaveParameters() const;
 	bool TryTriggerMatchCut(bool bForceMatchCut = false);
 	bool TryTriggerOnBeatCut();
 	void UpdatePawnDynamicMaterial(float DeltaSeconds);
@@ -637,6 +662,10 @@ protected:
 
 	/** Smoothly interpolated volume multiplier for MusicAudioComponent. */
 	float CurrentMusicVolume = 0.90f;
+
+	/** Music wave last handed to the score (MusicWave input); used to only fire OnSceneChanged when the track really changes. */
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> ScoreActiveMusicWave;
 
 	/** Dev God Mode flag (toggled by F1 in non-shipping builds). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Dev")
