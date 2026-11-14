@@ -68,6 +68,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
 	TMap<EMegaJamSceneGenre, TObjectPtr<UStaticMesh>> SceneVehicleMeshes;
 
+	/** Procedural 3D shockwave ring mesh for Scene 01 Beat-Splice barrier punches (/Engine/BasicShapes/Cylinder). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="VFX")
+	TObjectPtr<UStaticMeshComponent> ProceduralSpliceRingMesh;
+
+	/** Procedural 3D emissive katana slash blade mesh for Scene 02 Western Beat-Slash (/Engine/BasicShapes/Cube). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="VFX")
+	TObjectPtr<UStaticMeshComponent> ProceduralSlashArcMesh;
+
 	/** Chase camera boom. Does not use controller rotation. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<USpringArmComponent> SpringArm;
@@ -628,6 +636,23 @@ protected:
 	/** Dynamic material instance on VisualMesh driven by FlowRatio and SpliceChain. */
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> PawnVisualMID;
+
+	/** Dynamic material instance on ProceduralSpliceRingMesh driven to electric cyan (6.0f, 35.0f, 60.0f). */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SpliceRingMID;
+
+	/** Dynamic material instance on ProceduralSlashArcMesh boosted to gold-white on-beat and silver off-beat. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SlashArcMID;
+
+	/** Remaining duration (s) for the Scene 01 3D Beat-Splice shockwave ring (0.18s). */
+	float SpliceRingTimer = 0.0f;
+
+	/** Remaining duration (s) for the Scene 02 3D Beat-Slash arc sweep (0.16s). */
+	float SlashArcTimer = 0.0f;
+
+	/** True when the active SlashArcTimer sweep was triggered on-beat. */
+	bool bActiveSlashIsOnBeat = false;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
 

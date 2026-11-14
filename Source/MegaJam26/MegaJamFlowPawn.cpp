@@ -2,8 +2,10 @@
 
 #include "MegaJamFlowPawn.h"
 
+#include "MegaJamCinemaHUD.h"
 #include "MegaJamFlowSubsystem.h"
 #include "MegaJamGameMode.h"
+#include "MegaJamPlayerController.h"
 #include "MegaJamTrackGenerator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
@@ -57,11 +59,41 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VehicleStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	VehicleStaticMesh->SetVisibility(false);
 
+	ProceduralSpliceRingMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProceduralSpliceRingMesh"));
+	ProceduralSpliceRingMesh->SetupAttachment(CollisionSphere);
+	ProceduralSpliceRingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ProceduralSpliceRingMesh->SetCastShadow(false);
+	ProceduralSpliceRingMesh->SetRelativeLocation(FVector(240.0f, 0.0f, 0.0f));
+	ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+	ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+	ProceduralSpliceRingMesh->SetVisibility(false);
+
+	ProceduralSlashArcMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProceduralSlashArcMesh"));
+	ProceduralSlashArcMesh->SetupAttachment(CollisionSphere);
+	ProceduralSlashArcMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ProceduralSlashArcMesh->SetCastShadow(false);
+	ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
+	ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, -70.0f, -18.0f));
+	ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, 24.0f, 0.08f));
+	ProceduralSlashArcMesh->SetVisibility(false);
+
 	// Default visual: engine basic sphere (100 cm diameter, matches the 50 cm collision radius).
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	if (SphereMeshFinder.Succeeded())
 	{
 		VisualMesh->SetStaticMesh(SphereMeshFinder.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMeshFinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMeshFinder.Succeeded())
+	{
+		ProceduralSpliceRingMesh->SetStaticMesh(CylinderMeshFinder.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (CubeMeshFinder.Succeeded())
+	{
+		ProceduralSlashArcMesh->SetStaticMesh(CubeMeshFinder.Object);
 	}
 
 	// Chase camera. The pawn never rotates, so the boom simply trails behind along -X and looks down slightly.
@@ -164,7 +196,42 @@ void AMegaJamFlowPawn::BeginPlay()
 
 	if (VisualMesh)
 	{
+		UMaterialInterface* BaseVFXMaterial = VisualMesh->GetMaterial(0);
 		PawnVisualMID = VisualMesh->CreateAndSetMaterialInstanceDynamic(0);
+
+		if (ProceduralSpliceRingMesh)
+		{
+			if (BaseVFXMaterial)
+			{
+				ProceduralSpliceRingMesh->SetMaterial(0, BaseVFXMaterial);
+			}
+			SpliceRingMID = ProceduralSpliceRingMesh->CreateAndSetMaterialInstanceDynamic(0);
+			if (SpliceRingMID)
+			{
+				const FLinearColor ElectricCyan(6.0f, 35.0f, 60.0f, 1.0f);
+				SpliceRingMID->SetVectorParameterValue(TEXT("Color"), ElectricCyan);
+				SpliceRingMID->SetVectorParameterValue(TEXT("BaseColor"), ElectricCyan);
+				SpliceRingMID->SetVectorParameterValue(TEXT("TakeColor"), ElectricCyan);
+				SpliceRingMID->SetVectorParameterValue(TEXT("EmissiveColor"), ElectricCyan);
+			}
+		}
+
+		if (ProceduralSlashArcMesh)
+		{
+			if (BaseVFXMaterial)
+			{
+				ProceduralSlashArcMesh->SetMaterial(0, BaseVFXMaterial);
+			}
+			SlashArcMID = ProceduralSlashArcMesh->CreateAndSetMaterialInstanceDynamic(0);
+			if (SlashArcMID)
+			{
+				const FLinearColor GoldWhite(45.0f, 28.0f, 8.0f, 1.0f);
+				SlashArcMID->SetVectorParameterValue(TEXT("Color"), GoldWhite);
+				SlashArcMID->SetVectorParameterValue(TEXT("BaseColor"), GoldWhite);
+				SlashArcMID->SetVectorParameterValue(TEXT("TakeColor"), GoldWhite);
+				SlashArcMID->SetVectorParameterValue(TEXT("EmissiveColor"), GoldWhite);
+			}
+		}
 	}
 
 	PushTakeAndAspectToSubsystem();
@@ -306,6 +373,52 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	if (!bIsDropCutSlamming)
 	{
 		SlamPitchPunch = FMath::FInterpTo(SlamPitchPunch, 0.0f, DeltaSeconds, 12.0f);
+	}
+
+	// ---- Procedural 3D Beat-Splice Shockwave Ring (Scene 01) ----
+	if (SpliceRingTimer > 0.0f)
+	{
+		SpliceRingTimer = FMath::Max(0.0f, SpliceRingTimer - UnscaledDelta);
+		if (ProceduralSpliceRingMesh)
+		{
+			if (SpliceRingTimer > 0.0f)
+			{
+				const float Alpha = FMath::Clamp(1.0f - (SpliceRingTimer / 0.18f), 0.0f, 1.0f);
+				const float RadialScale = FMath::Lerp(1.2f, 11.5f, Alpha);
+				const float ThicknessZ = FMath::Lerp(0.08f, 0.005f, Alpha);
+				const float RelX = FMath::Lerp(240.0f, 780.0f, Alpha);
+				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(RelX, 0.0f, 0.0f));
+				ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+				ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(RadialScale, RadialScale, ThicknessZ));
+			}
+			else
+			{
+				ProceduralSpliceRingMesh->SetVisibility(false);
+			}
+		}
+	}
+
+	// ---- Procedural 3D Emissive Slash Blade (Scene 02 Western Beat-Slash) ----
+	if (SlashArcTimer > 0.0f)
+	{
+		SlashArcTimer = FMath::Max(0.0f, SlashArcTimer - UnscaledDelta);
+		if (ProceduralSlashArcMesh)
+		{
+			if (SlashArcTimer > 0.0f)
+			{
+				const float Alpha = FMath::Clamp(1.0f - (SlashArcTimer / 0.16f), 0.0f, 1.0f);
+				const float SweepYaw = FMath::Lerp(-70.0f, 70.0f, Alpha);
+				const float WidthY = bActiveSlashIsOnBeat ? 24.0f : 6.5f;
+				const float ThicknessZ = FMath::Max(0.002f, FMath::Lerp(0.08f, 0.0f, Alpha));
+				ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
+				ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, SweepYaw, -18.0f));
+				ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, WidthY, ThicknessZ));
+			}
+			else
+			{
+				ProceduralSlashArcMesh->SetVisibility(false);
+			}
+		}
 	}
 
 	if (Camera)
@@ -699,6 +812,34 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 		CleavedCount = TrackGen->CleaveObstaclesInRange(PawnX - 120.0f, ForwardMaxX, HalfWidthY);
 	}
 
+	// Trigger Procedural 3D Emissive Slash Blade (0.16s sweep from -70 to +70 deg Yaw at -18 deg Roll)
+	SlashArcTimer = 0.16f;
+	bActiveSlashIsOnBeat = bOnBeat;
+	if (SlashArcMID)
+	{
+		const FLinearColor BladeEmissive = bOnBeat
+			? FLinearColor(45.0f, 28.0f, 8.0f, 1.0f)
+			: FLinearColor(8.0f, 12.0f, 20.0f, 1.0f);
+		SlashArcMID->SetVectorParameterValue(TEXT("Color"), BladeEmissive);
+		SlashArcMID->SetVectorParameterValue(TEXT("BaseColor"), BladeEmissive);
+		SlashArcMID->SetVectorParameterValue(TEXT("TakeColor"), BladeEmissive);
+		SlashArcMID->SetVectorParameterValue(TEXT("EmissiveColor"), BladeEmissive);
+	}
+	if (ProceduralSlashArcMesh)
+	{
+		ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
+		ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, -70.0f, -18.0f));
+		ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, bOnBeat ? 24.0f : 6.5f, 0.08f));
+		ProceduralSlashArcMesh->SetVisibility(true);
+	}
+	if (AMegaJamPlayerController* PC = Cast<AMegaJamPlayerController>(GetController()))
+	{
+		if (PC->CinemaHUDInstance)
+		{
+			PC->CinemaHUDInstance->TriggerSlashCutFlash(bOnBeat);
+		}
+	}
+
 	if (bOnBeat)
 	{
 		ActiveSlashRoll = -25.0f;
@@ -811,6 +952,32 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	if (ShreddedCount > 0)
 	{
 		BP_PlaySpliceVFX();
+
+		// Trigger Procedural 3D Beat-Splice Shockwave Ring (0.18s electric-cyan radial expansion)
+		SpliceRingTimer = 0.18f;
+		if (SpliceRingMID)
+		{
+			const FLinearColor ElectricCyan(6.0f, 35.0f, 60.0f, 1.0f);
+			SpliceRingMID->SetVectorParameterValue(TEXT("Color"), ElectricCyan);
+			SpliceRingMID->SetVectorParameterValue(TEXT("BaseColor"), ElectricCyan);
+			SpliceRingMID->SetVectorParameterValue(TEXT("TakeColor"), ElectricCyan);
+			SpliceRingMID->SetVectorParameterValue(TEXT("EmissiveColor"), ElectricCyan);
+		}
+		if (ProceduralSpliceRingMesh)
+		{
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(240.0f, 0.0f, 0.0f));
+			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+			ProceduralSpliceRingMesh->SetVisibility(true);
+		}
+		if (AMegaJamPlayerController* PC = Cast<AMegaJamPlayerController>(GetController()))
+		{
+			if (PC->CinemaHUDInstance)
+			{
+				PC->CinemaHUDInstance->TriggerSpliceShockwaveFlash();
+			}
+		}
+
 		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 		FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
 		EmissiveBurstTimer = 0.30f;
@@ -1056,6 +1223,16 @@ void AMegaJamFlowPawn::ResetForRun()
 	}
 	CurrentCameraRoll = 0.0f;
 	ActiveSlashRoll = 0.0f;
+	SpliceRingTimer = 0.0f;
+	SlashArcTimer = 0.0f;
+	if (ProceduralSpliceRingMesh)
+	{
+		ProceduralSpliceRingMesh->SetVisibility(false);
+	}
+	if (ProceduralSlashArcMesh)
+	{
+		ProceduralSlashArcMesh->SetVisibility(false);
+	}
 	SpliceChain = 1;
 	CurrentShotDuration = 0.0f;
 	AspectHoldTimer = 0.0f;
@@ -1678,6 +1855,16 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	bIsDropCutSlamming = false;
 	SlamPitchPunch = 0.0f;
 	ActiveSlashRoll = 0.0f;
+	SpliceRingTimer = 0.0f;
+	SlashArcTimer = 0.0f;
+	if (ProceduralSpliceRingMesh)
+	{
+		ProceduralSpliceRingMesh->SetVisibility(false);
+	}
+	if (ProceduralSlashArcMesh)
+	{
+		ProceduralSlashArcMesh->SetVisibility(false);
+	}
 	StaleDecayAccum = 0.0f;
 	OverexposureDecayAccum = 0.0f;
 	MatchCutFlashTimer = 0.0f;

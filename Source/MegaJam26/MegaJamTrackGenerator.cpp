@@ -1499,15 +1499,17 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 			const int32 PoolIdx = BaseBurstIdx + (NextBurstPickupCursor % BurstPickupPoolSize);
 			++NextBurstPickupCursor;
 
-			// "Parting the Red Sea": split half the frames violently left and half violently right with a low Z-arc
-			const float LateralSplitY = (FrameIdx % 2 == 0)
+			// "Parting the Red Sea": split half the frames violently left and half violently right so cleaved barricades part down the center lane
+			const bool bSplitLeft = (FrameIdx % 2 == 0);
+			const float LateralSplitY = bSplitLeft
 				? FMath::RandRange(-8000.0f, -4000.0f)
 				: FMath::RandRange(4000.0f, 8000.0f);
+			const FVector SplitOrigin = ImpactLocation + FVector(0.0f, bSplitLeft ? -90.0f : 90.0f, 0.0f);
 			const FVector ScatterVel(
 				PawnSpeed + FMath::RandRange(1800.0f, 3800.0f),
 				LateralSplitY,
 				FMath::RandRange(600.0f, 1400.0f));
-			PickupSlots[PoolIdx].Location = ImpactLocation;
+			PickupSlots[PoolIdx].Location = SplitOrigin;
 			PickupSlots[PoolIdx].Velocity = ScatterVel;
 			PickupSlots[PoolIdx].Scale = BurstRingScale;
 			PickupSlots[PoolIdx].RequiredTake = CurrentPawnTake;
@@ -1521,7 +1523,7 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 			}
 			if (TargetPickupISM)
 			{
-				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), ImpactLocation, BurstRingScale), true, false, true);
+				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), SplitOrigin, BurstRingScale), true, false, true);
 			}
 			bPickupsDirty = true;
 		}

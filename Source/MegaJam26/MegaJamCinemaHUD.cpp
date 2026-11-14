@@ -426,6 +426,20 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		BlackoutSlot->SetZOrder(40);
 	}
 
+	// ---- Full-Width 2D Hitstop Razor Cut-Line Streak (Scene 02 Western Beat-Slash) ----
+	SlashCutLineBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlashCutLineBorder"));
+	SlashCutLineBorder->SetBrushColor(FLinearColor(1.0f, 0.94f, 0.55f, 1.0f));
+	SlashCutLineBorder->SetPadding(FMargin(0.0f));
+	SlashCutLineBorder->SetRenderTransformAngle(-3.5f);
+	SlashCutLineBorder->SetVisibility(ESlateVisibility::Collapsed);
+	if (UCanvasPanelSlot* SlashSlot = RootCanvas->AddChildToCanvas(SlashCutLineBorder))
+	{
+		SlashSlot->SetAnchors(FAnchors(0.0f, 0.5f, 1.0f, 0.5f));
+		SlashSlot->SetAlignment(FVector2D(0.0f, 0.5f));
+		SlashSlot->SetOffsets(FMargin(0.0f, 0.0f, 0.0f, 18.0f));
+		SlashSlot->SetZOrder(18);
+	}
+
 	return Super::RebuildWidget();
 }
 
@@ -500,6 +514,30 @@ void UMegaJamCinemaHUD::HandleClapperboardSnapped()
 		SceneSluglineText->SetText(FText::FromString(TEXT("SCENE 02 // WESTERN — HIGH-NOON STANDOFF")));
 	}
 	SceneSluglineTimer = SceneSluglineFlashDuration;
+}
+
+void UMegaJamCinemaHUD::TriggerSlashCutFlash(bool bIsOnBeat)
+{
+	SlashCutFlashTimer = 0.14f;
+	bSlashCutFlashOnBeat = bIsOnBeat;
+	if (SlashCutLineBorder)
+	{
+		SlashCutLineBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+		SlashCutLineBorder->SetRenderTransformAngle(-3.5f);
+		const FLinearColor InitialColor = bIsOnBeat
+			? FLinearColor(1.0f, 0.94f, 0.55f, 0.98f)
+			: FLinearColor(0.82f, 0.90f, 1.0f, 0.72f);
+		SlashCutLineBorder->SetBrushColor(InitialColor);
+		if (UCanvasPanelSlot* SlashSlot = Cast<UCanvasPanelSlot>(SlashCutLineBorder->Slot))
+		{
+			SlashSlot->SetOffsets(FMargin(0.0f, 0.0f, 0.0f, bIsOnBeat ? 18.0f : 7.0f));
+		}
+	}
+}
+
+void UMegaJamCinemaHUD::TriggerSpliceShockwaveFlash()
+{
+	SpliceShockwaveFlashTimer = 0.15f;
 }
 
 void UMegaJamCinemaHUD::BindToTrackGenerator()
@@ -714,6 +752,71 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		{
 			RightSlot->SetOffsets(FMargin(0.0f, 0.0f, CurrentPillarboxWidth, 0.0f));
 		}
+	}
+
+	// ---- 2D HUD Hitstop Razor Cut-Line (Scene 02 Beat-Slash, unscaled 0.14s) ----
+	if (SlashCutLineBorder)
+	{
+		if (SlashCutFlashTimer > 0.0f)
+		{
+			SlashCutFlashTimer = FMath::Max(0.0f, SlashCutFlashTimer - UnscaledDelta);
+			if (SlashCutFlashTimer > 0.0f)
+			{
+				const float Norm = FMath::Clamp(SlashCutFlashTimer / 0.14f, 0.0f, 1.0f);
+				const float MaxThickness = bSlashCutFlashOnBeat ? 18.0f : 7.0f;
+				const float Thickness = FMath::Max(1.0f, MaxThickness * FMath::Pow(Norm, 1.6f));
+				const FLinearColor StreakColor = bSlashCutFlashOnBeat
+					? FLinearColor(1.0f, 0.94f, 0.55f, 0.98f * Norm)
+					: FLinearColor(0.82f, 0.90f, 1.0f, 0.72f * Norm);
+				SlashCutLineBorder->SetBrushColor(StreakColor);
+				SlashCutLineBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+				if (UCanvasPanelSlot* SlashSlot = Cast<UCanvasPanelSlot>(SlashCutLineBorder->Slot))
+				{
+					SlashSlot->SetOffsets(FMargin(0.0f, 0.0f, 0.0f, Thickness));
+				}
+			}
+			else
+			{
+				SlashCutLineBorder->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+		else
+		{
+			SlashCutLineBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	// ---- 21:9 Letterbox Electric-Cyan Border Flash (Scene 01 Beat-Splice, unscaled 0.15s) ----
+	const FLinearColor MatteBlack(0.0f, 0.0f, 0.0f, 0.96f);
+	FLinearColor ActiveMatteColor = MatteBlack;
+	if (SpliceShockwaveFlashTimer > 0.0f)
+	{
+		SpliceShockwaveFlashTimer = FMath::Max(0.0f, SpliceShockwaveFlashTimer - UnscaledDelta);
+		const float FlashAlpha = FMath::Clamp(SpliceShockwaveFlashTimer / 0.15f, 0.0f, 1.0f);
+		const FLinearColor ElectricCyanBorder(0.08f, 0.88f, 1.0f, 0.98f);
+		ActiveMatteColor = FMath::Lerp(MatteBlack, ElectricCyanBorder, FlashAlpha);
+	}
+	else if (SlashCutFlashTimer > 0.0f && bSlashCutFlashOnBeat)
+	{
+		const float SlashAlpha = FMath::Clamp(SlashCutFlashTimer / 0.14f, 0.0f, 1.0f) * 0.45f;
+		ActiveMatteColor = FMath::Lerp(MatteBlack, FLinearColor(1.0f, 0.82f, 0.22f, 0.98f), SlashAlpha);
+	}
+
+	if (TopMatteBar)
+	{
+		TopMatteBar->SetBrushColor(ActiveMatteColor);
+	}
+	if (BottomMatteBar)
+	{
+		BottomMatteBar->SetBrushColor(ActiveMatteColor);
+	}
+	if (LeftMatteBar)
+	{
+		LeftMatteBar->SetBrushColor(ActiveMatteColor);
+	}
+	if (RightMatteBar)
+	{
+		RightMatteBar->SetBrushColor(ActiveMatteColor);
 	}
 
 	const int32 TakeNumber = GameMode ? GameMode->GetCurrentTakeNumber() : 1;
