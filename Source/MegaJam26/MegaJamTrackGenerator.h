@@ -98,6 +98,9 @@ public:
 	AMegaJamTrackGenerator();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PreRegisterAllComponents() override;
+	virtual void PostInitializeComponents() override;
 
 	// ---- Components ----
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
@@ -329,6 +332,9 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Track")
 	int32 CleaveObstaclesInRange(float ForwardMinX, float ForwardMaxX, float HalfWidthY, float CenterY = 0.0f);
+
+	/** Mathematical hurtbox & graze check against the active-take obstacle pool (allows bSweep = false on the Pawn). */
+	bool CheckObstacleCollisionAndGraze(const FVector& PawnLocation, float HurtboxRadius, float GrazeRadius, bool& bOutGrazed, int32& OutGrazedInstanceIndex) const;
 
 protected:
 	virtual void BeginPlay() override;
