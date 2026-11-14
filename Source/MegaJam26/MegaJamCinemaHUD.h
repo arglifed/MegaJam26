@@ -61,6 +61,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|HUD")
 	float SceneSluglineFlashDuration = 2.5f;
 
+	/** Triggers a 0.14s unscaled-time full-width gold-white razor cut-line streak across the 2.76:1 viewport. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|HUD")
+	void TriggerSlashCutFlash(bool bIsOnBeat);
+
+	/** Triggers a 0.15s unscaled-time electric-cyan pulse on the 21:9 letterbox matte borders during a Scene 01 Beat-Splice. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|HUD")
+	void TriggerSpliceShockwaveFlash();
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
@@ -192,6 +200,10 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ClapperboardBlackoutText;
 
+	// ---- Full-Width 2D Hitstop Razor Cut-Line Streak (Scene 02 Beat-Slash) ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> SlashCutLineBorder;
+
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamTrackGenerator> BoundTrackGenerator;
 
@@ -203,6 +215,9 @@ protected:
 	float ActionFlashTimer = 0.0f;
 	float SceneSluglineTimer = 0.0f;
 	float ClapperboardBlackoutTimer = 0.0f;
+	float SlashCutFlashTimer = 0.0f;
+	bool bSlashCutFlashOnBeat = false;
+	float SpliceShockwaveFlashTimer = 0.0f;
 	int32 LastObservedTakeNumber = 0;
 	int32 LastObservedSceneIndex = -1;
 };
