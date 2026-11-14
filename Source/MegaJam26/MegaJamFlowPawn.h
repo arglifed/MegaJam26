@@ -129,6 +129,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
 	TMap<EMegaJamSceneGenre, TObjectPtr<USoundBase>> SceneMusicTracks;
 
+	/** Per-scene audio configs (MusicTrack + TrackBPM) so procedural animations and beat windows scale dynamically to any tempo. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TMap<EMegaJamSceneGenre, FSceneAudioConfig> SceneAudioConfigs;
+
+	/** Per-scene tempo overrides (BPM). Defaults to 128.0f for any genre not explicitly customized. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TMap<EMegaJamSceneGenre, float> SceneBPMs;
+
+	/** Active scene tempo in Beats Per Minute (fetched in SyncSceneMusicTrack). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	float CurrentTrackBPM = 128.0f;
+
 	/** Active genre track currently playing on MusicAudioComponent. */
 	UPROPERTY(BlueprintReadOnly, Category="Audio")
 	EMegaJamSceneGenre ActiveMusicGenre = EMegaJamSceneGenre::Action;
@@ -365,6 +377,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	FVector GetFlowVelocity() const { return Velocity; }
+
+	/** Returns base forward speed in meters/sec (so GetBaseForwardSpeed() * 100.0f == CruiseSpeed in cm/s). */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
+	float GetBaseForwardSpeed() const { return FMath::Max(1.0f, CruiseSpeed / 100.0f); }
+
+	/** Returns true when CurrentAudioTime is within +/- Tolerance seconds of the active CurrentTrackBPM beat interval. */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
+	bool IsWithinBeatWindow(float Tolerance = 0.16f) const;
 
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	bool HasCrashed() const { return bCrashed; }

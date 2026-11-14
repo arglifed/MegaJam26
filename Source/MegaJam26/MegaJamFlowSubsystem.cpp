@@ -2,9 +2,11 @@
 
 #include "MegaJamFlowSubsystem.h"
 
+#include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "Sound/SoundBase.h"
 
 bool UMegaJamFlowSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
@@ -20,12 +22,16 @@ void UMegaJamFlowSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	DropCutBannerTimer = FMath::Max(0.0f, DropCutBannerTimer - DeltaTime);
-	OnBeatFlashTimer = FMath::Max(0.0f, OnBeatFlashTimer - DeltaTime);
+	const float SafeDelta = FMath::Max(0.0f, DeltaTime);
+	DropCutBannerTimer = FMath::Max(0.0f, DropCutBannerTimer - SafeDelta);
+	OnBeatFlashTimer = FMath::Max(0.0f, OnBeatFlashTimer - SafeDelta);
 
-	// Continuous 128.0 BPM beat phase in [0.0f, 1.0f)
-	constexpr float BeatsPerSecond = 128.0f / 60.0f;
-	BeatPhase = FMath::Fmod(BeatPhase + FMath::Max(0.0f, DeltaTime) * BeatsPerSecond, 1.0f);
+	CurrentAudioTime += SafeDelta;
+	BeatAccumulator += SafeDelta;
+
+	const float SafeBPM = FMath::Max(1.0f, CurrentTrackBPM);
+	const float BeatInterval = 60.0f / SafeBPM;
+	BeatPhase = FMath::Fmod(BeatAccumulator, BeatInterval) / BeatInterval;
 
 	PushToMaterialParameterCollection();
 	OnFlowStateUpdated.Broadcast(FlowRatio, CurrentMultiplier, AudioEnvelopeValue);
@@ -153,6 +159,36 @@ void UMegaJamFlowSubsystem::SetActiveGenre(EMegaJamSceneGenre NewGenre)
 	ActiveGenre = NewGenre;
 }
 
+void UMegaJamFlowSubsystem::SetCurrentTrackBPM(float NewBPM)
+{
+	CurrentTrackBPM = FMath::Max(1.0f, NewBPM);
+}
+
+void UMegaJamFlowSubsystem::SetPrimaryAudioComponent(UAudioComponent* InAudioComp)
+{
+	PrimaryAudioComponent = InAudioComp;
+}
+
+void UMegaJamFlowSubsystem::SeekMusicToTime(float TimeSeconds)
+{
+	const float SafeTime = FMath::Max(0.0f, TimeSeconds);
+	CurrentAudioTime = SafeTime;
+	BeatAccumulator = SafeTime;
+
+	const float SafeBPM = FMath::Max(1.0f, CurrentTrackBPM);
+	const float BeatInterval = 60.0f / SafeBPM;
+	BeatPhase = FMath::Fmod(BeatAccumulator, BeatInterval) / BeatInterval;
+
+	if (PrimaryAudioComponent && PrimaryAudioComponent->Sound)
+	{
+		const float Duration = PrimaryAudioComponent->Sound->GetDuration();
+		const float SeekOffset = (Duration > KINDA_SMALL_NUMBER && Duration < INDEFINITELY_LOOPING_DURATION)
+			? FMath::Fmod(SafeTime, Duration)
+			: SafeTime;
+		PrimaryAudioComponent->Play(SeekOffset);
+	}
+}
+
 void UMegaJamFlowSubsystem::ResetSceneMetrics(float StartTimeSeconds)
 {
 	SceneMetrics.Empty();
@@ -225,9 +261,10 @@ void UMegaJamFlowSubsystem::FinalizeScenePerformance(EMegaJamSceneGenre Outgoing
 
 bool UMegaJamFlowSubsystem::IsWithinBeatWindow(float WindowSeconds) const
 {
-	constexpr float BeatDurationSeconds = 60.0f / 128.0f; // 0.46875s per beat
-	const float PhaseDistanceToNearestBeat = FMath::Min(BeatPhase, 1.0f - BeatPhase);
-	const float SecondsToNearestBeat = PhaseDistanceToNearestBeat * BeatDurationSeconds;
+	const float SafeBPM = FMath::Max(1.0f, CurrentTrackBPM);
+	const float BeatInterval = 60.0f / SafeBPM;
+	const float Remainder = FMath::Fmod(FMath::Max(0.0f, CurrentAudioTime), BeatInterval);
+	const float SecondsToNearestBeat = FMath::Min(Remainder, BeatInterval - Remainder);
 	return SecondsToNearestBeat <= FMath::Max(0.0f, WindowSeconds);
 }
 

@@ -7,6 +7,7 @@
 #include "MegaJamTypes.h"
 #include "MegaJamFlowSubsystem.generated.h"
 
+class UAudioComponent;
 class UMaterialParameterCollection;
 
 /** Fired every tick with the current flow values. Bind in Blueprint (HUD, MetaSound parameter drivers, etc). */
@@ -105,6 +106,19 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void SetActiveGenre(EMegaJamSceneGenre NewGenre);
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Audio")
+	void SetCurrentTrackBPM(float NewBPM);
+
+	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
+	float GetCurrentTrackBPM() const { return CurrentTrackBPM; }
+
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Audio")
+	void SetPrimaryAudioComponent(UAudioComponent* InAudioComp);
+
+	/** Seeks PrimaryAudioComponent to TimeSeconds and aligns BeatAccumulator / CurrentAudioTime to the new timestamp. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Audio")
+	void SeekMusicToTime(float TimeSeconds);
 
 	// ---- Per-Scene Performance Metrics & Box-Office Grading ----
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
@@ -213,9 +227,25 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float HazardTimeScale = 1.0f;
 
-	/** Continuous 128.0 BPM beat phase in [0.0f, 1.0f). */
+	/** Continuous dynamic-BPM beat phase in [0.0f, 1.0f). */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")
 	float BeatPhase = 0.0f;
+
+	/** Active scene tempo in Beats Per Minute (defaults to 128.0f). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Audio")
+	float CurrentTrackBPM = 128.0f;
+
+	/** Continuous audio clock time (seconds) used for dynamic beat-window modulo checks. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Audio")
+	float CurrentAudioTime = 0.0f;
+
+	/** Internal beat time accumulator aligned on scene start and F7 SeekMusicToTime warps. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Audio")
+	float BeatAccumulator = 0.0f;
+
+	/** Reference to the pawn's primary music audio component for F7 seek stabilization. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> PrimaryAudioComponent;
 
 	/** Remaining duration (s) for the ★ ON-BEAT CUT! HUD flash. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Flow")

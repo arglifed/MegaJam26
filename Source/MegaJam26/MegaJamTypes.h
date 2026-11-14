@@ -5,6 +5,21 @@
 #include "CoreMinimal.h"
 #include "MegaJamTypes.generated.h"
 
+class USoundBase;
+
+/** Per-scene music track and dynamic tempo configuration. */
+USTRUCT(BlueprintType)
+struct FSceneAudioConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	TObjectPtr<USoundBase> MusicTrack = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
+	float TrackBPM = 128.0f;
+};
+
 /** Canonical corridor half-width (cm). Total corridor width is 2400.0f units. */
 constexpr float MEGAJAM_CORRIDOR_HALF_WIDTH = 1200.0f;
 
