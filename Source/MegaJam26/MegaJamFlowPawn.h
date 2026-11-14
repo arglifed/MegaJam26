@@ -26,6 +26,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAspectChanged, EMegaJamAspectMode
 /** Fired when the mid-air Clapperboard stunt transition snaps between scenes. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnClapperboardSnapped);
 
+/** Arcade racing camera POV presets toggled via [V] or Gamepad Y. */
+UENUM(BlueprintType)
+enum class EMegaJamCameraPOV : uint8
+{
+	ChaseStandard,
+	ChaseFar,
+	BumperFirstPerson
+};
+
 /**
  * Raw C++ physics pawn. No ACharacter / CharacterMovementComponent.
  * Velocity is integrated in Tick() and applied with a swept AddActorWorldOffset.
@@ -71,6 +80,10 @@ public:
 	/** Per-genre seat offsets for the player orb (VisualMesh). Defaults to (0, 0, 85) for any genre not in the map. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
 	TMap<EMegaJamSceneGenre, FVector> SceneSeatOffsets;
+
+	/** Per-genre base Yaw rotation offsets (degrees) for VehicleStaticMesh (e.g. Noir = 180.0f). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Vehicles")
+	TMap<EMegaJamSceneGenre, float> SceneVehicleYawOffsets;
 
 	/** Procedural 3D shockwave ring mesh for Scene 01 Beat-Splice barrier punches (/Engine/BasicShapes/Cylinder). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="VFX")
@@ -335,6 +348,17 @@ public:
 	float AspectFOVInterpSpeed = 12.0f;
 
 	// ---- Camera Juice ----
+	/** Active racing camera POV preset (ChaseStandard, ChaseFar, BumperFirstPerson), cycled with [V]. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Camera")
+	EMegaJamCameraPOV ActiveCameraPOV = EMegaJamCameraPOV::ChaseStandard;
+
+	/** Cycles ActiveCameraPOV (ChaseStandard -> ChaseFar -> BumperFirstPerson) and updates SpringArm & VisualMesh visibility. */
+	UFUNCTION(BlueprintCallable, Category="Camera")
+	void CycleCameraPOV();
+
+	/** Applies the current ActiveCameraPOV settings to SpringArm and VisualMesh. */
+	void ApplyCameraPOV();
+
 	/** Maximum camera roll (degrees) induced by lateral strafe velocity. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Camera")
 	float MaxStrafeRoll = 4.5f;

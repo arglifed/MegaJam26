@@ -53,6 +53,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
 	VisualMesh->SetupAttachment(CollisionSphere);
 	VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	VisualMesh->SetRelativeScale3D(FVector(0.55f));
 
 	VehicleStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VehicleStaticMesh"));
 	VehicleStaticMesh->SetupAttachment(CollisionSphere);
@@ -63,8 +64,8 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	ProceduralSpliceRingMesh->SetupAttachment(CollisionSphere);
 	ProceduralSpliceRingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ProceduralSpliceRingMesh->SetCastShadow(false);
-	ProceduralSpliceRingMesh->SetRelativeLocation(FVector(240.0f, 0.0f, 0.0f));
-	ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+	ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+	ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 	ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 	ProceduralSpliceRingMesh->SetVisibility(false);
 
@@ -96,11 +97,12 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 		ProceduralSlashArcMesh->SetStaticMesh(CubeMeshFinder.Object);
 	}
 
-	// Chase camera. The pawn never rotates, so the boom simply trails behind along -X and looks down slightly.
+	// Chase camera. The pawn never rotates, so the boom simply trails behind along -X and looks down slightly over the hood.
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(CollisionSphere);
-	SpringArm->TargetArmLength = 600.0f;
-	SpringArm->SetRelativeRotation(FRotator(-10.0f, 0.0f, 0.0f));
+	SpringArm->TargetArmLength = 540.0f;
+	SpringArm->SocketOffset = FVector(0.0f, 0.0f, 135.0f);
+	SpringArm->SetRelativeRotation(FRotator(-11.0f, 0.0f, 0.0f));
 	SpringArm->bUsePawnControlRotation = false;
 	SpringArm->bEnableCameraLag = true;
 	SpringArm->CameraLagSpeed = 8.0f;
@@ -150,6 +152,13 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	SceneBPMs.Add(EMegaJamSceneGenre::Chase, 110.0f);
 	SceneBPMs.Add(EMegaJamSceneGenre::Montage, 120.0f);
 
+	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Action, 0.0f);
+	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Western, 0.0f);
+	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Alpine, 0.0f);
+	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Noir, 180.0f);
+	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Chase, 0.0f);
+	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Montage, 0.0f);
+
 	for (const TPair<EMegaJamSceneGenre, TObjectPtr<USoundBase>>& Pair : SceneMusicTracks)
 	{
 		FSceneAudioConfig AudioCfg;
@@ -184,6 +193,7 @@ void AMegaJamFlowPawn::BeginPlay()
 	Super::BeginPlay();
 
 	SpawnTransform = GetActorTransform();
+	ApplyCameraPOV();
 
 	if (Camera)
 	{
@@ -352,13 +362,95 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		PlayerInputComponent->KeyBindings.Add(SpliceBinding);
 	}
 
-	// Direct bindings for Tab / R / Gamepad_FaceButton_Top to CycleMontagePowerOnDemand() in Scene 05 Montage
-	for (const FKey& CycleKey : { EKeys::Tab, EKeys::R, EKeys::Gamepad_FaceButton_Top })
+	// Direct bindings for Tab / R to CycleMontagePowerOnDemand() in Scene 05 Montage
+	for (const FKey& CycleKey : { EKeys::Tab, EKeys::R })
 	{
 		FInputKeyBinding CycleBinding(FInputChord(CycleKey), IE_Pressed);
 		CycleBinding.bConsumeInput = false;
 		CycleBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamFlowPawn::CycleMontagePowerOnDemand);
 		PlayerInputComponent->KeyBindings.Add(CycleBinding);
+	}
+
+	// Direct bindings for V / Gamepad_FaceButton_Top (Y) to CycleCameraPOV()
+	for (const FKey& POVKey : { EKeys::V, EKeys::Gamepad_FaceButton_Top })
+	{
+		FInputKeyBinding POVBinding(FInputChord(POVKey), IE_Pressed);
+		POVBinding.bConsumeInput = false;
+		POVBinding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &AMegaJamFlowPawn::CycleCameraPOV);
+		PlayerInputComponent->KeyBindings.Add(POVBinding);
+	}
+}
+
+void AMegaJamFlowPawn::CycleCameraPOV()
+{
+	switch (ActiveCameraPOV)
+	{
+	case EMegaJamCameraPOV::ChaseStandard:
+		ActiveCameraPOV = EMegaJamCameraPOV::ChaseFar;
+		break;
+	case EMegaJamCameraPOV::ChaseFar:
+		ActiveCameraPOV = EMegaJamCameraPOV::BumperFirstPerson;
+		break;
+	case EMegaJamCameraPOV::BumperFirstPerson:
+	default:
+		ActiveCameraPOV = EMegaJamCameraPOV::ChaseStandard;
+		break;
+	}
+
+	ApplyCameraPOV();
+
+	if (GEngine)
+	{
+		const TCHAR* POVLabel = (ActiveCameraPOV == EMegaJamCameraPOV::ChaseStandard)
+			? TEXT("CHASE STANDARD")
+			: ((ActiveCameraPOV == EMegaJamCameraPOV::ChaseFar) ? TEXT("CHASE FAR") : TEXT("BUMPER FIRST-PERSON"));
+		GEngine->AddOnScreenDebugMessage(202609, 1.8f, FColor::Cyan,
+			FString::Printf(TEXT("CAMERA POV [V]: %s"), POVLabel),
+			true, FVector2D(1.3f, 1.3f));
+	}
+}
+
+void AMegaJamFlowPawn::ApplyCameraPOV()
+{
+	if (!SpringArm)
+	{
+		return;
+	}
+
+	switch (ActiveCameraPOV)
+	{
+	case EMegaJamCameraPOV::ChaseFar:
+		SpringArm->TargetArmLength = 720.0f;
+		SpringArm->SocketOffset = FVector(0.0f, 0.0f, 175.0f);
+		SpringArm->SetRelativeRotation(FRotator(-14.0f, 0.0f, 0.0f));
+		if (VisualMesh)
+		{
+			VisualMesh->SetRelativeScale3D(FVector(0.55f));
+			VisualMesh->SetVisibility(true);
+		}
+		break;
+
+	case EMegaJamCameraPOV::BumperFirstPerson:
+		SpringArm->TargetArmLength = 0.0f;
+		SpringArm->SocketOffset = FVector(135.0f, 0.0f, 45.0f);
+		SpringArm->SetRelativeRotation(FRotator(-2.0f, 0.0f, 0.0f));
+		if (VisualMesh)
+		{
+			VisualMesh->SetVisibility(false);
+		}
+		break;
+
+	case EMegaJamCameraPOV::ChaseStandard:
+	default:
+		SpringArm->TargetArmLength = 540.0f;
+		SpringArm->SocketOffset = FVector(0.0f, 0.0f, 135.0f);
+		SpringArm->SetRelativeRotation(FRotator(-11.0f, 0.0f, 0.0f));
+		if (VisualMesh)
+		{
+			VisualMesh->SetRelativeScale3D(FVector(0.55f));
+			VisualMesh->SetVisibility(true);
+		}
+		break;
 	}
 }
 
@@ -541,17 +633,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 				const float Alpha = FMath::Clamp(1.0f - (SpliceRingTimer / 0.18f), 0.0f, 1.0f);
 				const float RadialScale = FMath::Lerp(1.2f, 11.5f, Alpha);
 				const float ThicknessZ = FMath::Lerp(0.08f, 0.005f, Alpha);
-				if (bSpliceRingIsHorizontal)
-				{
-					ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -45.0f));
-					ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-				}
-				else
-				{
-					const float RelX = FMath::Lerp(240.0f, 780.0f, Alpha);
-					ProceduralSpliceRingMesh->SetRelativeLocation(FVector(RelX, 0.0f, 0.0f));
-					ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
-				}
+				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+				ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 				ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(RadialScale, RadialScale, ThicknessZ));
 			}
 			else
@@ -589,6 +672,10 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		const EMegaJamSceneGenre CamGenre = GetEffectivePowerGenre();
 		const bool bNoirVertigo = (CamGenre == EMegaJamSceneGenre::Noir && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
 
+		const float POVTargetArmLength = (ActiveCameraPOV == EMegaJamCameraPOV::ChaseStandard)
+			? 540.0f
+			: ((ActiveCameraPOV == EMegaJamCameraPOV::ChaseFar) ? 720.0f : 0.0f);
+
 		float BaseFOV = BoxFOV;
 		if (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1)
 		{
@@ -596,7 +683,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		}
 		else if (bNoirVertigo)
 		{
-			// Hitchcock Vertigo Dolly-Zoom: dynamic TrackBPM sine pulse widening FOV to 114.0f while pulling SpringArm inward (520.0f -> 310.0f)
+			// Hitchcock Vertigo Dolly-Zoom: dynamic TrackBPM sine pulse widening FOV to 114.0f while pulling SpringArm inward
 			const UMegaJamFlowSubsystem* VertigoSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
 			const float TimeSeconds = VertigoSub
 				? VertigoSub->CurrentAudioTime
@@ -605,8 +692,15 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			BaseFOV = FMath::Lerp(WideFOV, 114.0f, VertigoAlpha);
 			if (SpringArm)
 			{
-				const float TargetArm = FMath::Lerp(520.0f, 310.0f, VertigoAlpha);
-				SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, TargetArm, DeltaSeconds, 14.0f);
+				if (ActiveCameraPOV == EMegaJamCameraPOV::BumperFirstPerson)
+				{
+					SpringArm->TargetArmLength = 0.0f;
+				}
+				else
+				{
+					const float TargetArm = FMath::Lerp(POVTargetArmLength, POVTargetArmLength * 0.60f, VertigoAlpha);
+					SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, TargetArm, DeltaSeconds, 14.0f);
+				}
 			}
 		}
 		else if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
@@ -616,7 +710,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 		if (SpringArm && !bNoirVertigo)
 		{
-			SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, 600.0f, DeltaSeconds, 10.0f);
+			SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, POVTargetArmLength, DeltaSeconds, 10.0f);
 		}
 
 		if (GrazeSphere)
@@ -909,7 +1003,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			VehiclePitch = FMath::Sin(SpinAlpha * PI) * -16.0f;
 		}
 
-		VehicleStaticMesh->SetRelativeRotation(FRotator(VehiclePitch, VehicleYaw, VehicleRoll));
+		const float BaseYawOffset = SceneVehicleYawOffsets.Contains(CurrentGenre) ? SceneVehicleYawOffsets[CurrentGenre] : 0.0f;
+		VehicleStaticMesh->SetRelativeRotation(FRotator(VehiclePitch, BaseYawOffset + VehicleYaw, VehicleRoll));
 		VehicleStaticMesh->SetRelativeLocation(FVector(0.0f, 0.0f, GallopZ));
 		if (VisualMesh)
 		{
@@ -1192,7 +1287,7 @@ void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 	}
 	if (ProceduralSpliceRingMesh)
 	{
-		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -35.0f));
+		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
 		ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 		ProceduralSpliceRingMesh->SetVisibility(true);
@@ -1299,7 +1394,7 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 	}
 
 	SpliceRingTimer = 0.18f;
-	bSpliceRingIsHorizontal = false;
+	bSpliceRingIsHorizontal = true;
 	if (SpliceRingMID)
 	{
 		const FLinearColor CometAmber(55.0f, 28.0f, 6.0f, 1.0f);
@@ -1310,8 +1405,8 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 	}
 	if (ProceduralSpliceRingMesh)
 	{
-		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(240.0f, 0.0f, 0.0f));
-		ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+		ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 		ProceduralSpliceRingMesh->SetVisibility(true);
 	}
@@ -1440,7 +1535,7 @@ void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 		}
 		if (ProceduralSpliceRingMesh)
 		{
-			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -45.0f));
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 			ProceduralSpliceRingMesh->SetVisibility(true);
@@ -1572,7 +1667,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 
 	if (bOnBeat)
 	{
-		ActiveSlashRoll = -25.0f;
+		ActiveSlashRoll = -2.0f;
 		BP_PlaySlashVFX(true);
 
 		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
@@ -1607,7 +1702,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 	}
 	else
 	{
-		ActiveSlashRoll = -8.0f;
+		ActiveSlashRoll = -2.0f;
 		BP_PlaySlashVFX(false);
 		AddCameraTrauma(0.30f);
 		if (CleavedCount > 0 && GameMode)
@@ -1706,9 +1801,9 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		}
 		BP_PlaySpliceVFX();
 
-		// Trigger Procedural 3D Beat-Splice Shockwave Ring (0.18s electric-cyan radial expansion)
+		// Trigger Procedural 3D Beat-Splice Shockwave Ring (0.18s electric-cyan radial expansion underneath chassis)
 		SpliceRingTimer = 0.18f;
-		bSpliceRingIsHorizontal = false;
+		bSpliceRingIsHorizontal = true;
 		if (SpliceRingMID)
 		{
 			const FLinearColor ElectricCyan(6.0f, 35.0f, 60.0f, 1.0f);
@@ -1719,8 +1814,8 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		}
 		if (ProceduralSpliceRingMesh)
 		{
-			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(240.0f, 0.0f, 0.0f));
-			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
+			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 			ProceduralSpliceRingMesh->SetVisibility(true);
 		}
@@ -2129,6 +2224,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	// Default starting mode: 4:3 Academy Frame (Flight & Charge Mode) with 50% Film Meter
 	CurrentTake = EMegaJamTakeState::StudioTake;
 	SetAspectMode(EMegaJamAspectMode::Box_4_3);
+	ApplyCameraPOV();
 	if (Camera)
 	{
 		Camera->SetFieldOfView(BoxFOV);
@@ -2490,13 +2586,16 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 	const FVector SeatOffset = SceneSeatOffsets.Contains(NewGenre) ? SceneSeatOffsets[NewGenre] : FVector(0.0f, 0.0f, 85.0f);
 	if (VisualMesh)
 	{
-		VisualMesh->SetVisibility(true);
+		VisualMesh->SetRelativeScale3D(FVector(0.55f));
+		VisualMesh->SetVisibility(ActiveCameraPOV != EMegaJamCameraPOV::BumperFirstPerson);
 		VisualMesh->SetRelativeLocation(SeatOffset);
 	}
 
 	if (NewMesh && VehicleStaticMesh)
 	{
+		const float BaseYawOffset = SceneVehicleYawOffsets.Contains(NewGenre) ? SceneVehicleYawOffsets[NewGenre] : 0.0f;
 		VehicleStaticMesh->SetStaticMesh(NewMesh);
+		VehicleStaticMesh->SetRelativeRotation(FRotator(0.0f, BaseYawOffset, 0.0f));
 		VehicleStaticMesh->SetVisibility(true);
 	}
 	else if (VehicleStaticMesh)
@@ -3007,7 +3106,7 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		}
 		if (ProceduralSpliceRingMesh)
 		{
-			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -35.0f));
+			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -55.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
 			ProceduralSpliceRingMesh->SetVisibility(true);
