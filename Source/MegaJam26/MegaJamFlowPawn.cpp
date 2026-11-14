@@ -162,7 +162,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Action, 0.0f);
 	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Western, 0.0f);
 	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Alpine, 0.0f);
-	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Noir, 180.0f);
+	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Noir, 0.0f); // SM_Vehicle_SpyCar itself now faces +X (re-imported), so no yaw fix-up
 	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Chase, 0.0f);
 	SceneVehicleYawOffsets.Add(EMegaJamSceneGenre::Montage, 0.0f);
 

@@ -50,12 +50,13 @@ RAW = os.path.join(PROJECT_DIR, "RawAssets", "Art")
 TEX_DIR = os.path.join(RAW, ".import_1k")
 CATEGORIES = ("Obstacles", "Props", "SetPieces", "Dressing", "Vehicles")
 EMISSIVE = {"Dressing_Final_FloatingCrystal", "Obstacle_Chase_IceBoulders", "Dressing_Noir_StreetLamp"}
-VEHICLE_LENGTH_CM = {"Motorcycle": 210.0, "Horse": 240.0, "SpyCar": 450.0, "Snowboard": 155.0, "HangGlider": 900.0}
+# Longest side in cm. The car and glider are smaller than life so they do not block the view down the corridor.
+VEHICLE_LENGTH_CM = {"Motorcycle": 210.0, "Horse": 240.0, "SpyCar": 360.0, "Snowboard": 155.0, "HangGlider": 480.0}
 # Turns each Meshy vehicle so its front faces +X with Z up (checked against vertex plots of the raw imports).
 VEHICLE_BASIS = {
     "Motorcycle": lambda x, y, z: (-x, -y, z),   # front fork was at -X: half turn
     "Horse": lambda x, y, z: (y, -x, z),         # head was at +Y: quarter turn
-    "SpyCar": lambda x, y, z: (x, y, z),         # headlights already at +X
+    "SpyCar": lambda x, y, z: (-x, -y, z),       # play-test showed the grille at -X: half turn
     "Snowboard": lambda x, y, z: (x, y, z),      # symmetric
     "HangGlider": lambda x, y, z: (z, x, y),     # flat wing was standing upright: lay it down, nose to +X
     # Pickups are drawn pitched 90 degrees and squashed in Z (they were flat cylinders), so the frame's face goes in
@@ -63,6 +64,8 @@ VEHICLE_BASIS = {
     "Pickup_FilmFrame": lambda x, y, z: (z, x, y),
 }
 POST_SCALE = {"Pickup_FilmFrame": (1.0, 1.0, 10.0)}
+# Per-instance scalar overrides. Pickups keep a strong take glow: the chain-colour pulse is how players read them.
+MI_SCALARS = {"Pickup_FilmFrame": {"TakeGlow": 0.3}}
 MAPS = {  # file suffix -> (asset suffix, material parameter)
     "base_color": ("BaseColor", "BaseColor"),
     "normal": ("Normal", "Normal"),
@@ -244,8 +247,8 @@ def build_master(defaults):
     take_color = node(unreal.MaterialExpressionVectorParameter, -950, 1600)
     take_color.set_editor_property("parameter_name", "TakeColor")
     take_color.set_editor_property("default_value", unreal.LinearColor(0, 0, 0, 1))
-    ghost_glow = scalar("GhostGlow", 0.6, -950, 1850)
-    take_glow = scalar("TakeGlow", 0.12, -950, 1950)
+    ghost_glow = scalar("GhostGlow", 0.2, -950, 1850)
+    take_glow = scalar("TakeGlow", 0.03, -950, 1950)
     glow = node(unreal.MaterialExpressionLinearInterpolate, -700, 1800)
     link(ghost_glow, "", glow, "A")
     link(take_glow, "", glow, "B")
@@ -413,6 +416,8 @@ def build_instance(name, master, textures):
         mel.set_material_instance_texture_parameter_value(mi, MAPS[map_key][1], tex)
     if "emission" in textures:
         mel.set_material_instance_scalar_parameter_value(mi, "EmissiveStrength", 1.0)
+    for param, value in MI_SCALARS.get(name, {}).items():
+        mel.set_material_instance_scalar_parameter_value(mi, param, value)
     save(mi)
     return mi
 
