@@ -1283,6 +1283,7 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 	Velocity.X += CutSpeedImpulse;
 	CurrentFOVPunch = DropCutFOVPunch;
 
+	BP_PlayCometSmashVFX();
 	BP_PlayDollyBoostVFX();
 	BP_PlayAvalancheTrickVFX(bOnBeat);
 

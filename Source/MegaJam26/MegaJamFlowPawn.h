@@ -596,6 +596,10 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
 	void BP_PlayAvalancheTrickVFX(bool bIsOnBeat);
 
+	/** Blueprint VFX hook triggered on a Scene 04 Chase Fast-Forward Comet Smash. */
+	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
+	void BP_PlayCometSmashVFX();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
