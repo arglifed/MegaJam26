@@ -349,6 +349,13 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 		{
 			StudioDressingISM->MarkRenderStateDirty();
 		}
+		for (const TPair<UStaticMesh*, UInstancedStaticMeshComponent*>& Pair : ActiveScatterISMCs)
+		{
+			if (Pair.Value)
+			{
+				Pair.Value->MarkRenderStateDirty();
+			}
+		}
 	}
 
 	SyncObstacleSkins();
@@ -675,6 +682,13 @@ void AMegaJamTrackGenerator::RebuildTrack()
 			DressingISM->ClearInstances();
 		}
 	}
+	for (const TPair<UStaticMesh*, UInstancedStaticMeshComponent*>& Pair : ActiveScatterISMCs)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->ClearInstances();
+		}
+	}
 
 	for (int32 Offset = 0; Offset < PoolSize(); ++Offset)
 	{
@@ -710,6 +724,13 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	if (StudioDressingISM)
 	{
 		StudioDressingISM->MarkRenderStateDirty();
+	}
+	for (const TPair<UStaticMesh*, UInstancedStaticMeshComponent*>& Pair : ActiveScatterISMCs)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->MarkRenderStateDirty();
+		}
 	}
 
 	ApplyTakeCollision(BoundPawn->GetCurrentTake());
@@ -1186,6 +1207,86 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	PopulatePickupsForChunk(Slot, ChunkIndex, ChunkStartX, ChunkScene, bIsHazardChunk, HazardArchetype, Stream);
 	PopulateBoostStripsForChunk(Slot, ChunkIndex, ChunkStartX, bIsHazardChunk, HazardArchetype, Stream);
 	GenerateTrackChunk(ChunkStartX, ChunkStartX + ChunkLength);
+
+	// Issue #90: Per-scene outer-corridor prop scatter system (Y in [-2500, -1200] or [1200, 2500], Z = FloorTopZ)
+	{
+		EMegaJamSceneGenre CurrentGenre = EMegaJamSceneGenre::Action;
+		if (ChunkDistMeters >= 7200.0f)
+		{
+			CurrentGenre = EMegaJamSceneGenre::Montage;
+		}
+		else if (ChunkDistMeters >= 5400.0f)
+		{
+			CurrentGenre = EMegaJamSceneGenre::Chase;
+		}
+		else if (ChunkDistMeters >= 3600.0f)
+		{
+			CurrentGenre = EMegaJamSceneGenre::Noir;
+		}
+		else if (ChunkDistMeters >= 1800.0f)
+		{
+			CurrentGenre = EMegaJamSceneGenre::Western;
+		}
+		else if (UWorld* World = GetWorld())
+		{
+			if (const UMegaJamFlowSubsystem* FlowSub = World->GetSubsystem<UMegaJamFlowSubsystem>())
+			{
+				if (!SceneScatterProps.Contains(CurrentGenre) && SceneScatterProps.Contains(FlowSub->ActiveGenre))
+				{
+					CurrentGenre = FlowSub->ActiveGenre;
+				}
+			}
+		}
+
+		if (const FScenePropList* PropList = SceneScatterProps.Find(CurrentGenre))
+		{
+			constexpr float FloorTopZ = 0.0f;
+			for (const FScenePropConfig& PropConfig : PropList->Props)
+			{
+				if (!PropConfig.PropMesh || PropConfig.SpawnProbability <= 0.0f)
+				{
+					continue;
+				}
+
+				if (Stream.FRand() <= FMath::Clamp(PropConfig.SpawnProbability, 0.0f, 1.0f))
+				{
+					UInstancedStaticMeshComponent* ScatterISM = nullptr;
+					if (UInstancedStaticMeshComponent** FoundISM = ActiveScatterISMCs.Find(PropConfig.PropMesh))
+					{
+						ScatterISM = *FoundISM;
+					}
+					if (!ScatterISM)
+					{
+						ScatterISM = CreateVisualISM(PropConfig.PropMesh);
+						if (ScatterISM)
+						{
+							ScatterISM->CastShadow = true;
+							ActiveScatterISMCs.Add(PropConfig.PropMesh, ScatterISM);
+						}
+					}
+
+					if (ScatterISM)
+					{
+						const float RandX = Stream.FRandRange(ChunkStartX, ChunkStartX + ChunkLength);
+						const bool bRightMargin = (Stream.RandHelper(2) == 0);
+						const float RandY = bRightMargin
+							? Stream.FRandRange(1200.0f, 2500.0f)
+							: Stream.FRandRange(-2500.0f, -1200.0f);
+						const float MinS = FMath::Min(PropConfig.MinScale, PropConfig.MaxScale);
+						const float MaxS = FMath::Max(PropConfig.MinScale, PropConfig.MaxScale);
+						const float UniformScale = FMath::Max(0.01f, Stream.FRandRange(MinS, MaxS));
+						const float RandYaw = Stream.FRandRange(0.0f, 360.0f);
+
+						const FTransform ScatterTransform(
+							FRotator(0.0f, RandYaw, 0.0f),
+							FVector(RandX, RandY, FloorTopZ),
+							FVector(UniformScale));
+						ScatterISM->AddInstance(ScatterTransform, true);
+					}
+				}
+			}
+		}
+	}
 
 	const float RowLength = ChunkLength / Rows;
 

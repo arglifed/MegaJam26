@@ -203,6 +203,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
 	float StudioDressingScale = 14.0f;
 
+	/** Per-scene outer-corridor prop scatter table (tombstones, pine trees, sedans, etc. spawned outside Y = +/-1200). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Environment")
+	TMap<EMegaJamSceneGenre, FScenePropList> SceneScatterProps;
+
 	/**
 	 * When true, set pieces, pickups and the wrap arch keep the material of their assigned mesh (slot 0) instead of
 	 * ObstacleMaterial. That material should expose TakeIndex / TakeColor (M_MeshyPBR does). Engine fallback shapes still use ObstacleMaterial.
@@ -422,6 +426,10 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> StudioDressingExtraISMs;
+
+	/** Dynamically created non-colliding ISMCs keyed by prop mesh for SceneScatterProps. */
+	UPROPERTY(Transient)
+	TMap<UStaticMesh*, UInstancedStaticMeshComponent*> ActiveScatterISMCs;
 
 	/** Which skin component currently shows each obstacle instance (-1 = none yet). */
 	TArray<int8> ObstacleSkinOwnerA;
