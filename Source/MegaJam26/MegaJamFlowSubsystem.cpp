@@ -2,8 +2,10 @@
 
 #include "MegaJamFlowSubsystem.h"
 
+#include "MegaJamFlowPawn.h"
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "Sound/SoundBase.h"
@@ -26,8 +28,14 @@ void UMegaJamFlowSubsystem::Tick(float DeltaTime)
 	DropCutBannerTimer = FMath::Max(0.0f, DropCutBannerTimer - SafeDelta);
 	OnBeatFlashTimer = FMath::Max(0.0f, OnBeatFlashTimer - SafeDelta);
 
-	CurrentAudioTime += SafeDelta;
-	BeatAccumulator += SafeDelta;
+	float PitchMult = 1.0f;
+	if (AMegaJamFlowPawn* Pawn = GetMegaJamPawn())
+	{
+		PitchMult = Pawn->CurrentMusicPitch;
+	}
+
+	CurrentAudioTime += SafeDelta * PitchMult;
+	BeatAccumulator += SafeDelta * PitchMult;
 
 	const float SafeBPM = FMath::Max(1.0f, CurrentTrackBPM);
 	const float BeatInterval = 60.0f / SafeBPM;
@@ -169,8 +177,25 @@ void UMegaJamFlowSubsystem::SetPrimaryAudioComponent(UAudioComponent* InAudioCom
 	PrimaryAudioComponent = InAudioComp;
 }
 
+AMegaJamFlowPawn* UMegaJamFlowSubsystem::GetMegaJamPawn() const
+{
+	UWorld* World = GetWorld();
+	return World ? Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(World, 0)) : nullptr;
+}
+
+bool UMegaJamFlowSubsystem::IsScoreDrivingAudio() const
+{
+	const AMegaJamFlowPawn* Pawn = GetMegaJamPawn();
+	return Pawn && Pawn->IsScoreDrivingAudio();
+}
+
 void UMegaJamFlowSubsystem::SeekMusicToTime(float TimeSeconds)
 {
+	if (IsScoreDrivingAudio())
+	{
+		TimeSeconds = 0.0f;
+	}
+
 	const float SafeTime = FMath::Max(0.0f, TimeSeconds);
 	CurrentAudioTime = SafeTime;
 	BeatAccumulator = SafeTime;
@@ -179,7 +204,7 @@ void UMegaJamFlowSubsystem::SeekMusicToTime(float TimeSeconds)
 	const float BeatInterval = 60.0f / SafeBPM;
 	BeatPhase = FMath::Fmod(BeatAccumulator, BeatInterval) / BeatInterval;
 
-	if (PrimaryAudioComponent && PrimaryAudioComponent->Sound)
+	if (!IsScoreDrivingAudio() && PrimaryAudioComponent && PrimaryAudioComponent->Sound)
 	{
 		const float Duration = PrimaryAudioComponent->Sound->GetDuration();
 		const float SeekOffset = (Duration > KINDA_SMALL_NUMBER && Duration < INDEFINITELY_LOOPING_DURATION)

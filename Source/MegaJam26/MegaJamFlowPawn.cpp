@@ -591,7 +591,10 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		else if (bNoirVertigo)
 		{
 			// Hitchcock Vertigo Dolly-Zoom: dynamic TrackBPM sine pulse widening FOV to 114.0f while pulling SpringArm inward (520.0f -> 310.0f)
-			const float TimeSeconds = GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds()) : 0.0f;
+			const UMegaJamFlowSubsystem* VertigoSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+			const float TimeSeconds = VertigoSub
+				? VertigoSub->CurrentAudioTime
+				: (GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds()) : 0.0f);
 			const float VertigoAlpha = 0.5f + 0.5f * FMath::Sin(TimeSeconds * PI * (CurrentTrackBPM / 60.0f));
 			BaseFOV = FMath::Lerp(WideFOV, 114.0f, VertigoAlpha);
 			if (SpringArm)
@@ -885,7 +888,9 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		if (CurrentGenre == EMegaJamSceneGenre::Western && bOnGround && !bCrashed)
 		{
 			// Rhythmic dynamic TrackBPM sine-wave pitch and vertical Z-hop so the static horse mesh visibly gallops to the beat
-			const float TimeSeconds = static_cast<float>(GetWorld()->GetTimeSeconds());
+			const float TimeSeconds = FlowSubsystem
+				? FlowSubsystem->CurrentAudioTime
+				: static_cast<float>(GetWorld()->GetTimeSeconds());
 			const float GallopWave = FMath::Sin(TimeSeconds * PI * (CurrentTrackBPM / 60.0f));
 			VehiclePitch = GallopWave * 6.5f;
 			GallopZ = FMath::Abs(GallopWave) * 28.0f;
@@ -2138,6 +2143,7 @@ void AMegaJamFlowPawn::ResetForRun()
 			FlowSubsystem->SetFilmMeter(FilmMeter);
 			FlowSubsystem->SetHazardTimeScale(1.0f);
 			SyncSceneMusicTrack(FlowSubsystem->ActiveGenre);
+			FlowSubsystem->SeekMusicToTime(0.0f);
 		}
 		else
 		{
@@ -2460,13 +2466,11 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 	}
 	CurrentTrackBPM = FMath::Max(1.0f, ResolvedBPM);
 
-	if (UWorld* World = GetWorld())
+	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	if (FlowSubsystem)
 	{
-		if (UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>())
-		{
-			FlowSubsystem->SetCurrentTrackBPM(CurrentTrackBPM);
-			FlowSubsystem->SetPrimaryAudioComponent(MusicAudioComponent);
-		}
+		FlowSubsystem->SetCurrentTrackBPM(CurrentTrackBPM);
+		FlowSubsystem->SetPrimaryAudioComponent(MusicAudioComponent);
 	}
 
 	// Swap thematic vehicle static mesh when mapped in SceneVehicleMeshes (Motorcycle -> Horse -> Snowboard -> Spy Car -> Stunt Car)
@@ -2534,6 +2538,10 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 			ScoreActiveMusicWave = DesiredSound;
 			ScoreAudioComponent->SetWaveParameter(TEXT("MusicWave"), Cast<USoundWave>(DesiredSound));
 			ScoreAudioComponent->SetTriggerParameter(TEXT("OnSceneChanged"));
+			if (FlowSubsystem)
+			{
+				FlowSubsystem->SeekMusicToTime(0.0f);
+			}
 		}
 		return;
 	}
@@ -2548,7 +2556,11 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 		MusicAudioComponent->SetSound(DesiredSound);
 		MusicAudioComponent->SetPitchMultiplier(CurrentMusicPitch);
 		MusicAudioComponent->SetVolumeMultiplier(CurrentMusicVolume);
-		MusicAudioComponent->Play();
+		MusicAudioComponent->Play(0.0f);
+		if (FlowSubsystem)
+		{
+			FlowSubsystem->SeekMusicToTime(0.0f);
+		}
 	}
 }
 
