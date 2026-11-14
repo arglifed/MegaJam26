@@ -9,35 +9,52 @@ The C++ side of this issue is already done. The pawn and track generator expose 
 
 ## 1. `MS_DirectorScore` (MetaSound Source)
 
-**Location:** `Content/MegaJam26/Audio/MS_DirectorScore`
+**Location:** `Content/MegaJam26/Audio/MS_DirectorScore`. **Status:** built for Issue #24 ([#24](https://github.com/arglifed/MegaJam26/issues/24)).
+
+**The score owns all music and SFX (Option A).** While it's playing, `MusicAudioComponent` stays silent and every C++ `PlaySound2D` one-shot is replaced by a named score trigger, so nothing plays twice. Clear **Score Meta Sound** on the pawn to get the old C++ audio back as a fallback. It is the default in C++ (`ConstructorHelpers`), so `BP_FlowPawn` needs no edit.
+
+**The asset is generated. Don't hand-edit it.** Rebuild it with `Scripts/build_director_score.py` (headless; the run command is in the script header). Change the script, not the asset, so the graph stays reviewable as text.
+
+### Which sounds play: C++ is the source of truth
+
+The pawn's sound properties (`RunStartSound`, `FilmFramePickupSound`, `DirectorsCutEnterSound`, …) still choose the sounds. In BeginPlay C++ hands each one to the score as a **WaveAsset** input. The genre-to-track mapping also stays in C++ (`SceneMusicTracks`): the score just loops whatever `MusicWave` it receives. To swap a sound, change the property on `BP_FlowPawn`. It has to be a **SoundWave**: a SoundCue override leaves that cue silent in the score.
 
 ### Inputs (names are case-sensitive)
 
-| Input name       | MetaSound type | Range     | Sent by C++ | Meaning |
-|------------------|----------------|-----------|-------------|---------|
-| `ActiveTake`     | Float          | 0.0 / 1.0 | Every frame | 0 = Take A (Studio Cut), 1 = Take B (Director's Cut) |
-| `FlowRatio`      | Float          | 0.0 – 1.0 | Every frame | "Flow" intensity: current speed vs. terminal velocity |
-| `SpeedRatio`     | Float          | 0.0 – 1.0 | Every frame | Raw forward speed / terminal velocity (0 when crashed) |
-| `OnHardCut`      | Trigger        | –         | On event    | Player swapped takes (hard cut); also fires once as the **victory sting** when the run completes |
-| `OnAspectSwitch` | Trigger        | –         | On event    | Player toggled aspect ratio (letterbox) |
-| `OnGraze`        | Trigger        | –         | On event    | Near-miss graze, film-frame pickup, or a successful match cut |
-| `OnCrashed`      | Trigger        | –         | On event    | Player hit an obstacle |
+| Input | Type | Sent by C++ | Used for |
+|---|---|---|---|
+| `ActiveTake` | Float 0/1 | Every frame | Smoothed ~100 ms in the graph → high-pass 20 Hz → 250 Hz (Director's Take thins the low end, no clicks) |
+| `FlowRatio` | Float 0–1 | Every frame | Music low-pass 4 kHz (stopped/crashed) → 20 kHz (full speed) |
+| `SpeedRatio` | Float 0–1 | Every frame | Not wired yet (free for an intensity layer) |
+| `OnHardCut`, `OnGraze`, `OnAspectSwitch` | Trigger | On event | Kept for compatibility; not wired, since each fires for several events |
+| `OnCrashed` | Trigger | Crash (also God Mode hits) | Crash cue (`CrashWave`) |
+| `MusicWave` | WaveAsset | Scene change | Current genre's track (from `SceneMusicTracks`) |
+| `OnSceneChanged` | Trigger | Scene change | Restarts the looping music player with the new `MusicWave` |
+| `SceneGenre` | Int32 0–4 | Scene change | Informational (Action, Western, Noir, Chase, Montage) |
+| `MusicPitchSemitones` | Float | Every frame | Pause / title / bullet-time pitch, = 12·log2(C++ pitch) |
+| `MusicVolume` | Float | Every frame | Music gain in the mixer (pause 0.42, title 0.68, play 0.90, overdrive ~1.05) |
+| `ChainPitchSemitones` | Float | Just before a chain cue | Pitch for `OnBeatSplice` / `OnBeatCut` (rises with SpliceChain) |
 
-Source: `Source/MegaJam26/MegaJamFlowPawn.cpp`: `PushAudioParameters()` and `TriggerAudioEvent()`.
+### SFX cues (one trigger, one wave input, its own Wave Player)
+
+| Trigger | Wave input (default) | Pitch | Gain | Fired by |
+|---|---|---|---|---|
+| `OnRunStart` | `RunStartWave` (ClapperboardHit) | 0 | 1.0 | Run start, clapperboard transition |
+| `OnFilmFrame` | `FilmFrameWave` (FuturisticSell) | 0 | 1.0 | Film Frame pickup (off-beat) |
+| `OnDollyBoost` | `DollyBoostWave` (PositiveRise) | 0 **and** +8.1 st layer | 1.0 | Dolly Boost strip |
+| `OnDirectorsCutEnter` | `DirectorsCutEnterWave` (**CinematicWhoosh**) | 0 | 1.05 | **Activating** 21:9 / 2.76:1 only |
+| `OnDirectorsCutExit` | `DirectorsCutExitWave` (ClapperboardHit) | −2.8 st | 0.5 | Back to 4:3 (manual or meter empty) |
+| `OnBeatSplice` | `BeatSpliceWave` (PositiveRise) | chain | 1.0 | Beat-Splice harvest, on-beat Western Beat-Slash |
+| `OnBeatCut` | `BeatCutWave` (FuturisticSell) | chain | 0.95 | On-beat cut |
+| `OnCrashed` | `CrashWave` (VocalCut) | 0 | 1.0 | Crash |
+| `OnCompleted` | `VictoryWave` (PositiveRise) | −5 st | 1.0 | Run reaches Completed (victory) |
 
 ### Behaviour notes
 
-- **`ActiveTake` snaps** between 0 and 1; C++ doesn't ramp it. Do the crossfade **inside the graph** (for example, an `Interpolate To` or `Linear To` node, ~50–150 ms) so cuts don't click.
-- **`FlowRatio` sits at 0.35 before the run starts, rises with speed, and goes to 1.0 on completion and 0.0 on crash.** It's a good driver for stem intensity, filter cutoff and layer gain.
-- The `OnHardCut` victory sting fires once when the run reaches **Completed**. If you want a separate victory cue, ask for an `OnCompleted` trigger and it can be added in C++.
-- **Don't** build one-shot SFX as separate SoundCues that C++ would have to reference. Put them inside `MS_DirectorScore`, triggered by the inputs above. That keeps the integration to a single asset.
-- The audio component is set as a UI sound (`bIsUISound = true`): no spatialization, and it keeps playing while paused.
-- **Stems:** import into `Content/MegaJam26/Audio/` (e.g. `SW_TakeA_Stem`, `SW_TakeB_Stem`). Keep DAW projects and master WAVs in `RawAssets/`, which is git-ignored.
-
-### Hooking it up
-
-On `BP_FlowPawn` (`Content/MegaJam26/Blueprints/BP_FlowPawn`) → Class Defaults → **MegaJam|Audio → Score Meta Sound** = `MS_DirectorScore`.
-It auto-plays on BeginPlay. Leave it empty and the game runs silently with no errors.
+- **Retriggers restart.** Each cue has one Wave Player, so a cue fired again before it ends restarts instead of overlapping (unlike `PlaySound2D`). This is most noticeable on fast chained splices.
+- **Pause:** the score is a UI sound (`bIsUISound = true`) and the pawn ticks while paused, so music keeps playing, ducked to pitch 0.76 / volume 0.42.
+- **Mix:** music plus the first 7 cues go into an 8-input stereo mixer, which feeds a 4-input mixer with the last 3 cues, then out. Adjust gains in the `cues` table in the script.
+- Keep DAW projects and master WAVs in `RawAssets/` (git-ignored). Original filenames for licensing are in `RawAssets/Audio/SOURCE_IDS.txt`.
 
 ---
 
@@ -86,11 +103,11 @@ These steps edit the shared binary assets `BP_FlowGameMode` and `BP_FlowPawn`. C
 
 ## 3. Checklist
 
-- [ ] `MS_DirectorScore` with all 7 inputs, named exactly as above
-- [ ] Take A / Take B crossfade smoothed inside the graph
-- [ ] SFX for the 4 triggers built inside the MetaSound
+- [x] `MS_DirectorScore` built (Issue #24): the score owns music + SFX, inputs as above
+- [x] Take A / Take B change smoothed inside the graph
+- [x] SFX cues built inside the MetaSound
 - [ ] `SM_Obstacle_TakeA`, `SM_Obstacle_TakeB`, `SM_FloorTile`, `SM_WallSegment`: 100³, centred pivot, simple collision
 - [ ] 4 scene set-piece props
 - [ ] `BP_TrackGenerator` created and set on `BP_FlowGameMode`
-- [ ] `Score Meta Sound` assigned on `BP_FlowPawn`
+- [x] `Score Meta Sound` is the C++ default, inherited by `BP_FlowPawn`
 - [ ] Play `L_FlowTest`: check the cut crossfade, the graze, crash and victory stings, and that meshes have no offset or z-fighting
