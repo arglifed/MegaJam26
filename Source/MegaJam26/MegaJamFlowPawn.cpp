@@ -7,11 +7,9 @@
 #include "MegaJamTrackGenerator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
-#include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
-#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
@@ -54,10 +52,10 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VisualMesh->SetupAttachment(CollisionSphere);
 	VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	VehicleSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("VehicleSkeletalMesh"));
-	VehicleSkeletalMesh->SetupAttachment(CollisionSphere);
-	VehicleSkeletalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	VehicleSkeletalMesh->SetVisibility(false);
+	VehicleStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VehicleStaticMesh"));
+	VehicleStaticMesh->SetupAttachment(CollisionSphere);
+	VehicleStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	VehicleStaticMesh->SetVisibility(false);
 
 	// Default visual: engine basic sphere (100 cm diameter, matches the 50 cm collision radius).
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
@@ -412,7 +410,12 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	bIsOverexposed = false;
 	CurrentShotDuration += DeltaSeconds;
 	AspectHoldTimer = CurrentShotDuration;
+	const bool bWasShotStale = bIsShotStale;
 	bIsShotStale = (CurrentShotDuration > StaleShotThreshold);
+	if (bIsShotStale != bWasShotStale)
+	{
+		BP_OnStaleShotStateChanged(bIsShotStale);
+	}
 
 	if (bIsShotStale)
 	{
@@ -437,7 +440,11 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			FilmMeter = 0.0f;
 			CurrentShotDuration = 0.0f;
 			AspectHoldTimer = 0.0f;
-			bIsShotStale = false;
+			if (bIsShotStale)
+			{
+				bIsShotStale = false;
+				BP_OnStaleShotStateChanged(false);
+			}
 			SetAspectMode(EMegaJamAspectMode::Box_4_3);
 			if (FlowSubsystem)
 			{
@@ -456,6 +463,32 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	}
 
 	StepPhysics(DeltaSeconds);
+
+	// ---- Procedural C++ Motion for VehicleStaticMesh (Banking + Western Gallop Bob) ----
+	if (VehicleStaticMesh && VehicleStaticMesh->IsVisible())
+	{
+		const float VehicleRoll = FMath::Clamp(static_cast<float>(Velocity.Y) * 0.018f, -28.0f, 28.0f);
+		float GallopPitch = 0.0f;
+		float GallopZ = 0.0f;
+
+		const EMegaJamSceneGenre CurrentGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
+		const bool bOnGround = (static_cast<float>(GetActorLocation().Z) <= WideZBounds.Y + 15.0f);
+		if (CurrentGenre == EMegaJamSceneGenre::Western && bOnGround && !bCrashed)
+		{
+			// Rhythmic 128 BPM sine-wave pitch and vertical Z-hop so the static horse mesh visibly gallops to the beat
+			const float WorldSeconds = static_cast<float>(GetWorld()->GetTimeSeconds());
+			const float GallopWave = FMath::Sin(WorldSeconds * (128.0f / 60.0f) * 2.0f * PI);
+			GallopPitch = GallopWave * 6.5f;
+			GallopZ = FMath::Abs(GallopWave) * 28.0f;
+		}
+
+		VehicleStaticMesh->SetRelativeRotation(FRotator(GallopPitch, 0.0f, VehicleRoll));
+		VehicleStaticMesh->SetRelativeLocation(FVector(0.0f, 0.0f, GallopZ));
+		if (VisualMesh)
+		{
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 85.0f + GallopZ));
+		}
+	}
 
 	ActiveDollyBoostBonus = FMath::FInterpTo(ActiveDollyBoostBonus, 0.0f, DeltaSeconds, 3.5f);
 	MatchCutFlashTimer = FMath::Max(0.0f, MatchCutFlashTimer - DeltaSeconds);
@@ -669,7 +702,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 	if (bOnBeat)
 	{
 		ActiveSlashRoll = -25.0f;
-		BP_PlaySlashVFX();
+		BP_PlaySlashVFX(true);
 
 		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 		FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
@@ -704,6 +737,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 	else
 	{
 		ActiveSlashRoll = -8.0f;
+		BP_PlaySlashVFX(false);
 		AddCameraTrauma(0.30f);
 		if (CleavedCount > 0 && GameMode)
 		{
@@ -776,6 +810,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 
 	if (ShreddedCount > 0)
 	{
+		BP_PlaySpliceVFX();
 		SpliceChain = FMath::Clamp(SpliceChain + 1, 1, MaxSpliceChain);
 		FilmMeter = FMath::Clamp(FilmMeter + 15.0f, 0.0f, 100.0f);
 		EmissiveBurstTimer = 0.30f;
@@ -861,7 +896,11 @@ void AMegaJamFlowPawn::ToggleAspect()
 
 		CurrentShotDuration = 0.0f;
 		AspectHoldTimer = 0.0f;
-		bIsShotStale = false;
+		if (bIsShotStale)
+		{
+			bIsShotStale = false;
+			BP_OnStaleShotStateChanged(false);
+		}
 		bIsDropCutSlamming = false;
 
 		// Activate Director's Cut: +30% speed surge (or OverdriveSpeed), 0.45x HazardTimeScale, camera trauma + hitstop + white-hot burst
@@ -911,7 +950,11 @@ void AMegaJamFlowPawn::ToggleAspect()
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 		CurrentShotDuration = 0.0f;
 		AspectHoldTimer = 0.0f;
-		bIsShotStale = false;
+		if (bIsShotStale)
+		{
+			bIsShotStale = false;
+			BP_OnStaleShotStateChanged(false);
+		}
 		bIsDropCutSlamming = false;
 
 		if (FlowSubsystem)
@@ -968,7 +1011,7 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		// Programmatically force Ultra-Panavision 2.76:1, lock Center Lane, and apply +2500 speed burst
 		CurrentAspect = EMegaJamAspectMode::UltraPanavision_276_1;
 		CurrentLane = 2;
-		ActiveDollyBoostBonus += 2500.0f;
+		ActiveDollyBoostBonus = FMath::Max(ActiveDollyBoostBonus, 2500.0f);
 		SetAspectMode(EMegaJamAspectMode::UltraPanavision_276_1);
 	}
 	else if (CurrentAspect != EMegaJamAspectMode::Box_4_3)
@@ -1016,7 +1059,11 @@ void AMegaJamFlowPawn::ResetForRun()
 	SpliceChain = 1;
 	CurrentShotDuration = 0.0f;
 	AspectHoldTimer = 0.0f;
-	bIsShotStale = false;
+	if (bIsShotStale)
+	{
+		bIsShotStale = false;
+		BP_OnStaleShotStateChanged(false);
+	}
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
 	bIsDropCutSlamming = false;
@@ -1260,6 +1307,7 @@ void AMegaJamFlowPawn::TriggerDollyBoost()
 
 	ActiveDollyBoostBonus = 3500.0f;
 	FilmMeter = FMath::Clamp(FilmMeter + 12.0f, 0.0f, 100.0f);
+	BP_PlayDollyBoostVFX();
 
 	if (Camera)
 	{
@@ -1345,24 +1393,33 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 {
 	ActiveMusicGenre = TargetGenre;
 
-	// Swap thematic vehicle skeletal mesh when mapped in SceneVehicleMeshes (Runner -> Horse -> Vintage Car)
-	if (const TObjectPtr<USkeletalMesh>* FoundVehicleMesh = SceneVehicleMeshes.Find(TargetGenre))
+	// Swap thematic vehicle static mesh when mapped in SceneVehicleMeshes (Motorcycle -> Horse -> Snowboard -> Spy Car -> Stunt Car)
+	UStaticMesh* NewMesh = nullptr;
+	if (const TObjectPtr<UStaticMesh>* FoundVehicleMesh = SceneVehicleMeshes.Find(TargetGenre))
 	{
-		if (USkeletalMesh* NewMesh = FoundVehicleMesh->Get())
+		NewMesh = FoundVehicleMesh->Get();
+	}
+
+	if (NewMesh && VehicleStaticMesh)
+	{
+		VehicleStaticMesh->SetStaticMesh(NewMesh);
+		VehicleStaticMesh->SetVisibility(true);
+		if (VisualMesh)
 		{
-			if (VehicleSkeletalMesh)
-			{
-				VehicleSkeletalMesh->SetSkeletalMesh(NewMesh);
-				VehicleSkeletalMesh->SetVisibility(true);
-				if (VisualMesh)
-				{
-					VisualMesh->SetVisibility(false);
-				}
-			}
-			else if (USkeletalMeshComponent* FallbackSkelComp = FindComponentByClass<USkeletalMeshComponent>())
-			{
-				FallbackSkelComp->SetSkeletalMesh(NewMesh);
-			}
+			VisualMesh->SetVisibility(true);
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 85.0f));
+		}
+	}
+	else
+	{
+		if (VehicleStaticMesh)
+		{
+			VehicleStaticMesh->SetVisibility(false);
+		}
+		if (VisualMesh)
+		{
+			VisualMesh->SetVisibility(true);
+			VisualMesh->SetRelativeLocation(FVector::ZeroVector);
 		}
 	}
 
