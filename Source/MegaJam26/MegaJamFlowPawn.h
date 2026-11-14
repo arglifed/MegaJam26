@@ -55,6 +55,7 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PreRegisterAllComponents() override;
 	virtual void PostInitializeComponents() override;
 
 	// ---- Components ----
