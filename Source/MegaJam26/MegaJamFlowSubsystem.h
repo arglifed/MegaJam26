@@ -7,6 +7,7 @@
 #include "MegaJamTypes.h"
 #include "MegaJamFlowSubsystem.generated.h"
 
+class AMegaJamFlowPawn;
 class UAudioComponent;
 class UMaterialParameterCollection;
 
@@ -119,6 +120,14 @@ public:
 	/** Seeks PrimaryAudioComponent to TimeSeconds and aligns BeatAccumulator / CurrentAudioTime to the new timestamp. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Audio")
 	void SeekMusicToTime(float TimeSeconds);
+
+	/** Returns the possessed AMegaJamFlowPawn in this world (if any). */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
+	AMegaJamFlowPawn* GetMegaJamPawn() const;
+
+	/** True while the pawn's ScoreMetaSound is actively driving audio. */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
+	bool IsScoreDrivingAudio() const;
 
 	// ---- Per-Scene Performance Metrics & Box-Office Grading ----
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
@@ -258,6 +267,10 @@ public:
 	/** Per-scene performance tracking across Action, Western, Noir, Chase, and Montage. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
 	TMap<EMegaJamSceneGenre, FScenePerformanceMetrics> SceneMetrics;
+
+	/** Configurable thresholds for per-scene S / A / B / C / D critic grading. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Scoreboard")
+	FSceneGradeThresholds GradeThresholds;
 
 	/** Run time (seconds) when the current scene started. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")

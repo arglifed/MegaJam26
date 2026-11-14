@@ -1599,13 +1599,13 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	else
 	{
 		// Aerial Lens Hoops (10-frame ring):
-		// Z = 520.0f in Scene 03 Alpine (reachable at the apex of a Trick-Ollie!), Z = 620.0f in Scenes 01/02
+		// Z = 260.0f in Scenes 01-04 (DistanceMeters < 7200.0f), Z = 620.0f in Scene 05 (DistanceMeters >= 7200.0f)
 		const float ChunkDistMeters = FMath::Max(0.0f, ChunkStartX / 100.0f);
 		const float HoopCenterX = ChunkStartX + ChunkLength * 0.50f;
 		const float HoopCenterY = (HazardArchetype == 1)
 			? ((ChunkIndex % 4 == 0) ? -700.0f : 700.0f)
 			: ((HazardArchetype == 0) ? ((ChunkIndex % 4 == 0) ? -350.0f : 350.0f) : 0.0f);
-		const float HoopCenterZ = (ChunkDistMeters >= 3600.0f) ? 520.0f : 620.0f;
+		const float HoopCenterZ = (ChunkDistMeters < 7200.0f) ? 260.0f : 620.0f;
 		constexpr float HoopRadius = 185.0f;
 
 		for (int32 RingIdx = 0; RingIdx < PickupsPerChunk; ++RingIdx)

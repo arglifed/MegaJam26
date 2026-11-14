@@ -26,6 +26,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAspectChanged, EMegaJamAspectMode
 /** Fired when the mid-air Clapperboard stunt transition snaps between scenes. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnClapperboardSnapped);
 
+/** Arcade racing camera POV presets toggled via [V] or Gamepad Y. */
+UENUM(BlueprintType)
+enum class EMegaJamCameraPOV : uint8
+{
+	ChaseStandard,
+	ChaseFar,
+	BumperFirstPerson
+};
+
 /**
  * Raw C++ physics pawn. No ACharacter / CharacterMovementComponent.
  * Velocity is integrated in Tick() and applied with a swept AddActorWorldOffset.
@@ -64,6 +73,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")
 	TObjectPtr<UStaticMeshComponent> VehicleStaticMesh;
 
+	/** Transient falling snowboard mesh kicked off at the 7,200m cliff drop when grabbing the Scene 05 Hang Glider. */
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> DroppedBoardMesh;
+
 	/** Per-scene vehicle static meshes (Motorcycle -> Horse -> Snowboard -> Spy Car -> Stunt Car) swapped on genre transition. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
 	TMap<EMegaJamSceneGenre, TObjectPtr<UStaticMesh>> SceneVehicleMeshes;
@@ -71,6 +84,10 @@ public:
 	/** Per-genre seat offsets for the player orb (VisualMesh). Defaults to (0, 0, 85) for any genre not in the map. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Art")
 	TMap<EMegaJamSceneGenre, FVector> SceneSeatOffsets;
+
+	/** Per-genre base Yaw rotation offsets (degrees) for VehicleStaticMesh (e.g. Noir = 180.0f). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Vehicles")
+	TMap<EMegaJamSceneGenre, float> SceneVehicleYawOffsets;
 
 	/** Procedural 3D shockwave ring mesh for Scene 01 Beat-Splice barrier punches (/Engine/BasicShapes/Cylinder). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="VFX")
@@ -139,7 +156,7 @@ public:
 
 	/** Active scene tempo in Beats Per Minute (fetched in SyncSceneMusicTrack). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
-	float CurrentTrackBPM = 128.0f;
+	float CurrentTrackBPM = 120.0f;
 
 	/** Active genre track currently playing on MusicAudioComponent. */
 	UPROPERTY(BlueprintReadOnly, Category="Audio")
@@ -335,6 +352,17 @@ public:
 	float AspectFOVInterpSpeed = 12.0f;
 
 	// ---- Camera Juice ----
+	/** Active racing camera POV preset (ChaseStandard, ChaseFar, BumperFirstPerson), cycled with [V]. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Camera")
+	EMegaJamCameraPOV ActiveCameraPOV = EMegaJamCameraPOV::ChaseStandard;
+
+	/** Cycles ActiveCameraPOV (ChaseStandard -> ChaseFar -> BumperFirstPerson) and updates SpringArm & VisualMesh visibility. */
+	UFUNCTION(BlueprintCallable, Category="Camera")
+	void CycleCameraPOV();
+
+	/** Applies the current ActiveCameraPOV settings to SpringArm and VisualMesh. */
+	void ApplyCameraPOV();
+
 	/** Maximum camera roll (degrees) induced by lateral strafe velocity. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Camera")
 	float MaxStrafeRoll = 4.5f;
@@ -385,6 +413,14 @@ public:
 	/** Returns true when CurrentAudioTime is within +/- Tolerance seconds of the active CurrentTrackBPM beat interval. */
 	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
 	bool IsWithinBeatWindow(float Tolerance = 0.16f) const;
+
+	/** True while ScoreMetaSound is playing, i.e. the score owns music + SFX and the C++ fallback audio must stay silent. */
+	UFUNCTION(BlueprintPure, Category="MegaJam|Audio")
+	bool IsScoreDrivingAudio() const;
+
+	/** Smoothly interpolated pitch multiplier for MusicAudioComponent / ScoreAudioComponent. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Audio")
+	float CurrentMusicPitch = 1.0f;
 
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
 	bool HasCrashed() const { return bCrashed; }
@@ -476,7 +512,11 @@ public:
 	void ClearCrashStateForDebugSkip();
 
 	// ---- Director's Cut actions ----
-	/** Executes the Editor's Splice: toggles Take A / Take B and, if pressed within the 128 BPM beat window (0.18s), shreds obstacles ahead into Film Frames. */
+	/** Contextual SpaceBar router: dispatches the scene-specific special move when locked into Director's Cut mode, or toggles Take A/B in 4:3 mode. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void OnSpaceBarPressed() { ExecuteEditorSplice(); }
+
+	/** Executes the Editor's Splice: routes to the active genre's special move when in Director's Cut mode, or toggles Take A / Take B in 4:3 mode. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void ExecuteEditorSplice();
 
@@ -499,6 +539,10 @@ public:
 	/** Manually cycles ActiveMontageSubGenre (Action -> Western -> Noir -> Chase) during Scene 05 Final Cut Montage (Tab / R). */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void CycleMontagePowerOnDemand();
+
+	/** Alias for CycleMontagePowerOnDemand(). */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void CycleMontagePower() { CycleMontagePowerOnDemand(); }
 
 	/** Applies a new Montage sub-genre power, aspect ratio lock, post-process grading, and +15 Film Meter Match-Cut bonus. */
 	void ApplyMontageSubGenre(EMegaJamSceneGenre NewSubGenre, bool bIsManualCycle);
@@ -588,6 +632,10 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
 	void BP_PlayAvalancheTrickVFX(bool bIsOnBeat);
 
+	/** Blueprint VFX hook triggered on a Scene 04 Chase Fast-Forward Comet Smash. */
+	UFUNCTION(BlueprintImplementableEvent, Category="VFX")
+	void BP_PlayCometSmashVFX();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -605,9 +653,6 @@ protected:
 	void UpdateDynamicMusicModulation(float UnscaledDelta);
 	void TriggerAudioEvent(FName ParameterName) const;
 	void PlayOneShot(USoundBase* Sound) const;
-
-	/** True while ScoreMetaSound is playing, i.e. the score owns music + SFX and the C++ fallback audio must stay silent. */
-	bool IsScoreDrivingAudio() const;
 
 	/**
 	 * Plays one gameplay SFX cue. Score path: fires ScoreTrigger (and, if bChainPitched, first sets ChainPitchSemitones
@@ -725,6 +770,18 @@ protected:
 	/** Remaining duration (s) for the Scene 03 snowboard 360-degree Trick-Ollie spin & nose-grab (0.42s). */
 	float ActiveTrickSpinTimer = 0.0f;
 
+	/** Remaining duration (s) for the 7,200m detached snowboard falling animation (2.0s). */
+	float DroppedBoardTimer = 0.0f;
+
+	/** World-space position of the detached snowboard as it falls off the 7,200m cliff. */
+	FVector DroppedBoardWorldLocation = FVector::ZeroVector;
+
+	/** World-space velocity of the detached snowboard (gravity Z = -3200.0f). */
+	FVector DroppedBoardVelocity = FVector::ZeroVector;
+
+	/** World-space tumbling rotation of the detached snowboard. */
+	FRotator DroppedBoardWorldRotation = FRotator::ZeroRotator;
+
 	/** Remaining duration (s) for the Scene 04 Fast-Forward Comet Smash invulnerability & obstacle-cleaving state. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Overdrive")
 	float CometSmashTimer = 0.0f;
@@ -782,9 +839,6 @@ protected:
 
 	/** Ensures the celebratory victory sting triggers once when entering Completed state. */
 	bool bTriggeredVictorySting = false;
-
-	/** Smoothly interpolated pitch multiplier for MusicAudioComponent. */
-	float CurrentMusicPitch = 1.0f;
 
 	/** Smoothly interpolated volume multiplier for MusicAudioComponent. */
 	float CurrentMusicVolume = 0.90f;

@@ -310,8 +310,8 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 
 	AddTitleLine(TEXT("TitleStudio"), TEXT("FOUR SWORDS PICTURES PRESENTS"), 16, FLinearColor(0.75f, 0.78f, 0.85f, 1.0f), 6.0f);
 	AddTitleLine(TEXT("TitleMain"), TEXT("DIRECTOR'S CUT"), 44, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 18.0f);
-	AddTitleLine(TEXT("TitleControls1"), TEXT("[W / A / S / D] 4:3 FREE FLIGHT   |   [SPACE / SHIFT] HARD CUT / BEAT-SLASH / SMASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
-	AddTitleLine(TEXT("TitleControls2"), TEXT("[LEFT CTRL / C] DIRECTOR'S CUT (@ >=25% FILM)   |   [TAB / R] MONTAGE POWER CYCLE"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 16.0f);
+	AddTitleLine(TEXT("TitleControls1"), TEXT("[W / A / S / D] 4:3 STUNT STEER   |   [SPACE / SHIFT] HARD CUT / BEAT-SLASH / SMASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
+	AddTitleLine(TEXT("TitleControls2"), TEXT("[LEFT CTRL / C] DIRECTOR'S CUT (@ >=25% FILM)   |   [TAB / R] MONTAGE POWER CYCLE   |   [V] CAMERA POV"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 16.0f);
 	AddTitleLine(TEXT("TitleObj"), TEXT("SCENES 01-05 (ACTION + WESTERN + NOIR + CHASE + MONTAGE) — 9,000m CAMPAIGN (PAR 03:45.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 24.0f);
 	TitlePromptText = AddTitleLine(TEXT("TitlePrompt"), TEXT("▶ PRESS [SPACE] TO ROLL CAMERA"), 22, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
