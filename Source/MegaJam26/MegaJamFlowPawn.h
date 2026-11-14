@@ -512,7 +512,11 @@ public:
 	void ClearCrashStateForDebugSkip();
 
 	// ---- Director's Cut actions ----
-	/** Executes the Editor's Splice: toggles Take A / Take B and, if pressed within the 128 BPM beat window (0.18s), shreds obstacles ahead into Film Frames. */
+	/** Contextual SpaceBar router: dispatches the scene-specific special move when locked into Director's Cut mode, or toggles Take A/B in 4:3 mode. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
+	void OnSpaceBarPressed() { ExecuteEditorSplice(); }
+
+	/** Executes the Editor's Splice: routes to the active genre's special move when in Director's Cut mode, or toggles Take A / Take B in 4:3 mode. */
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Flow")
 	void ExecuteEditorSplice();
 
