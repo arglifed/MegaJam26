@@ -2624,6 +2624,15 @@ void AMegaJamFlowPawn::UpdateDynamicMusicModulation(float UnscaledDelta)
 		TargetVolume = 0.90f;
 	}
 
+	if (!FMath::IsFinite(CurrentMusicPitch))
+	{
+		CurrentMusicPitch = 1.0f;
+	}
+	if (!FMath::IsFinite(CurrentMusicVolume))
+	{
+		CurrentMusicVolume = 0.90f;
+	}
+
 	CurrentMusicPitch = FMath::FInterpTo(CurrentMusicPitch, TargetPitch, UnscaledDelta, 8.0f);
 	CurrentMusicVolume = FMath::FInterpTo(CurrentMusicVolume, TargetVolume, UnscaledDelta, 8.0f);
 
