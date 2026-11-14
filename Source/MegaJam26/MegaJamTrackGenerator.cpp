@@ -7,6 +7,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/PointLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -55,6 +56,14 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	BoostStripISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BoostStripISM"));
 	LaneRailsISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("LaneRailsISM"));
 	WrapArchISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("WrapArchISM"));
+	StudioDressingISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("StudioDressingISM"));
+	StudioDressingISM->SetupAttachment(RootComponent);
+	StudioDressingISM->SetMobility(EComponentMobility::Movable);
+	StudioDressingISM->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	StudioDressingISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	StudioDressingISM->SetGenerateOverlapEvents(false);
+	StudioDressingISM->SetCanEverAffectNavigation(false);
+	StudioDressingISM->CastShadow = true;
 
 	ConfigureISM(FloorISM, TrackRoot, true, false);
 	ConfigureISM(WallISM, TrackRoot, true, false);
@@ -274,6 +283,10 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 		PickupTakeB_ISM->MarkRenderStateDirty();
 		BoostStripISM->MarkRenderStateDirty();
 		LaneRailsISM->MarkRenderStateDirty();
+		if (StudioDressingISM)
+		{
+			StudioDressingISM->MarkRenderStateDirty();
+		}
 	}
 }
 
@@ -575,6 +588,11 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	FirstChunkIndex = PawnChunkIndex - ChunksBehind;
 	SafeUntilChunkIndex = PawnChunkIndex + FMath::Max(1, SafeChunks);
 
+	if (StudioDressingISM)
+	{
+		StudioDressingISM->ClearInstances();
+	}
+
 	for (int32 Offset = 0; Offset < PoolSize(); ++Offset)
 	{
 		PopulateChunk(FirstChunkIndex + Offset);
@@ -602,6 +620,10 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	PickupTakeB_ISM->MarkRenderStateDirty();
 	BoostStripISM->MarkRenderStateDirty();
 	LaneRailsISM->MarkRenderStateDirty();
+	if (StudioDressingISM)
+	{
+		StudioDressingISM->MarkRenderStateDirty();
+	}
 
 	ApplyTakeCollision(BoundPawn->GetCurrentTake());
 
@@ -716,6 +738,10 @@ void AMegaJamTrackGenerator::CreatePools()
 	BoostStripISM->SetStaticMesh(BlockMesh.Get());
 	LaneRailsISM->SetStaticMesh(BlockMesh.Get());
 	WrapArchISM->SetStaticMesh(ApertureRingMesh ? ApertureRingMesh.Get() : BlockMesh.Get());
+	if (StudioDressingISM && !StudioDressingISM->GetStaticMesh())
+	{
+		StudioDressingISM->SetStaticMesh(SoundstageTrussMesh ? SoundstageTrussMesh.Get() : BlockMesh.Get());
+	}
 
 	UStaticMesh* ResolvedPickupMesh = FilmFramePickupMesh
 		? FilmFramePickupMesh.Get()
@@ -903,6 +929,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	PopulateSetPiecesForChunk(Slot, ChunkIndex, ChunkStartX, ChunkCenterX, ChunkScene, Stream);
 	PopulatePickupsForChunk(Slot, ChunkIndex, ChunkStartX, ChunkScene, bIsHazardChunk, HazardArchetype, Stream);
 	PopulateBoostStripsForChunk(Slot, ChunkIndex, ChunkStartX, bIsHazardChunk, HazardArchetype, Stream);
+	GenerateTrackChunk(ChunkStartX, ChunkStartX + ChunkLength);
 
 	const float RowLength = ChunkLength / Rows;
 
@@ -1182,6 +1209,31 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? HighBeam : LowBeam, true, false, true);
 		break;
 	}
+	}
+}
+
+void AMegaJamTrackGenerator::GenerateTrackChunk(float StartX, float EndX)
+{
+	if (!StudioDressingISM)
+	{
+		return;
+	}
+
+	for (float X = StartX; X < EndX; X += 800.0f)
+	{
+		if (FMath::RandBool() && FMath::FRand() > 0.6f)
+		{
+			const FVector PropLoc(X, FMath::RandRange(-2800.0f, -1400.0f), 0.0f);
+			const FTransform LeftTransform(FRotator(0.0f, 90.0f, 0.0f), PropLoc, FVector::OneVector);
+			StudioDressingISM->AddInstance(LeftTransform, true);
+		}
+
+		if (FMath::RandBool() && FMath::FRand() > 0.6f)
+		{
+			const FVector PropLoc(X, FMath::RandRange(1400.0f, 2800.0f), 0.0f);
+			const FTransform RightTransform(FRotator(0.0f, -90.0f, 0.0f), PropLoc, FVector::OneVector);
+			StudioDressingISM->AddInstance(RightTransform, true);
+		}
 	}
 }
 
