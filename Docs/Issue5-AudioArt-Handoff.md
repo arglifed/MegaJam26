@@ -29,7 +29,7 @@ The pawn's sound properties (`RunStartSound`, `FilmFramePickupSound`, `Directors
 | Chase | `SW_Music_Outbreak` | 110 |
 | Montage (Final Cut) | `SW_Music_TheSnatcher` | 120 |
 
-Every track's first beat is at 0.0 s, so no offset is needed. Known gap: the beat clock is not yet tied to the score's playback (it is not reset when a track restarts, not scaled by the pause / bullet-time pitch, and the F7 seek only reaches the legacy `MusicAudioComponent`).
+Every track's first beat is at 0.0 s, so no offset is needed. The beat clock is tied to the score's playback since #74 (reset on track restart and F7 warps, scaled by the music pitch).
 
 ### Inputs (names are case-sensitive)
 
