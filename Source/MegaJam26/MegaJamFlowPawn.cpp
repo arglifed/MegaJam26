@@ -197,19 +197,39 @@ void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
 	GrazeSphere->SetSphereRadius(GrazeRadius);
 }
 
+void AMegaJamFlowPawn::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// Brutally override any Blueprint-saved defaults before Frame 1
+	WideZBounds = FVector2D(2.0, 2.0);
+	BoxZBounds.X = 2.0;
+
+	if (SpringArm)
+	{
+		SpringArm->bDoCollisionTest = false;
+		SpringArm->TargetOffset = FVector(0.0f, 0.0f, 120.0f);
+		SpringArm->TargetArmLength = 450.0f;
+	}
+	if (Camera)
+	{
+		Camera->SetFieldOfView(90.0f);
+	}
+}
+
 void AMegaJamFlowPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Issue #80: Enforce grounded FloorTopZ = 0.0f contact so VehicleStaticMesh tires/hooves/board sit flush on the roadbed
-	WideZBounds = FVector2D(0.0, 0.0);
-	BoxZBounds.X = 0.0;
+	// Issue #80 / #96: Enforce grounded contact with 2.0f Z-clearance above FloorTopZ = 0.0f to prevent floor-scraping
+	WideZBounds = FVector2D(2.0, 2.0);
+	BoxZBounds.X = 2.0;
 	bIsGrounded = true;
 	bHasProcessedJumpInput = false;
 
 	SpawnTransform = GetActorTransform();
 	FVector GroundedSpawnLoc = SpawnTransform.GetLocation();
-	GroundedSpawnLoc.Z = static_cast<double>(WideZBounds.X);
+	GroundedSpawnLoc.Z = FMath::Max(2.0, WideZBounds.X);
 	SpawnTransform.SetLocation(GroundedSpawnLoc);
 	SetActorLocation(GroundedSpawnLoc, false, nullptr, ETeleportType::TeleportPhysics);
 
@@ -869,7 +889,8 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			const FVector Loc = GetActorLocation();
 			const float TargetY = FMath::Sin(TimeSeconds * 0.85f) * 180.0f;
 			const float NewY = FMath::FInterpTo(static_cast<float>(Loc.Y), TargetY, DeltaSeconds, 4.0f);
-			const float NewZ = FMath::FInterpTo(static_cast<float>(Loc.Z), static_cast<float>(WideZBounds.X), DeltaSeconds, 6.0f);
+			const float TargetGroundZ = FMath::Max(2.0f, static_cast<float>(WideZBounds.X));
+			const float NewZ = FMath::FInterpTo(static_cast<float>(Loc.Z), TargetGroundZ, DeltaSeconds, 6.0f);
 			SetActorLocation(FVector(Loc.X + AttractCruiseSpeed * DeltaSeconds, NewY, NewZ), false);
 
 			if (Camera)
@@ -1133,7 +1154,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
 	const EMegaJamSceneGenre ActiveGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
 	const bool bIsMontageScene = (ActiveGenre == EMegaJamSceneGenre::Montage);
-	const float GroundZ = static_cast<float>(WideZBounds.X);
+	const float GroundZ = FMath::Max(2.0f, static_cast<float>(WideZBounds.X));
 
 	if (bWide)
 	{
@@ -1275,8 +1296,8 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	const bool bIsMontageScene = (ActiveGenre == EMegaJamSceneGenre::Montage);
 	const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1);
 	const FVector2D YBounds = bWide ? WideYBounds : BoxYBounds;
-	const FVector2D ZBounds = bWide ? WideZBounds : BoxZBounds;
-	const float GroundZ = static_cast<float>(WideZBounds.X);
+	const FVector2D ZBounds = bWide ? FVector2D(FMath::Max(2.0, WideZBounds.X), FMath::Max(2.0, WideZBounds.Y)) : FVector2D(FMath::Max(2.0, BoxZBounds.X), BoxZBounds.Y);
+	const float GroundZ = FMath::Max(2.0f, static_cast<float>(WideZBounds.X));
 
 	const FVector Location = GetActorLocation();
 	const float ClampedY = FMath::Clamp(static_cast<float>(Location.Y), static_cast<float>(YBounds.X), static_cast<float>(YBounds.Y));
@@ -3207,7 +3228,7 @@ void AMegaJamFlowPawn::ClearCrashStateForDebugSkip()
 	bHasProcessedJumpInput = false;
 	Velocity = FVector(TerminalVelocity * 0.7f, 0.0f, 0.0f);
 	const FVector Loc = GetActorLocation();
-	SetActorLocation(FVector(Loc.X, 0.0f, static_cast<float>(WideZBounds.X)), false, nullptr, ETeleportType::TeleportPhysics);
+	SetActorLocation(FVector(Loc.X, 0.0f, FMath::Max(2.0f, static_cast<float>(WideZBounds.X))), false, nullptr, ETeleportType::TeleportPhysics);
 }
 
 void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

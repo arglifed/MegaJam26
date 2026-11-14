@@ -55,6 +55,7 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PostInitializeComponents() override;
 
 	// ---- Components ----
 	/** Collision root. Sweeps against obstacles. */
@@ -277,17 +278,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	FVector2D WideYBounds = FVector2D(-900.0, 900.0);
 
-	/** Wide_21_9: grounded cinema rail bounds sitting flush on the Z = 0.0f roadbed (FloorTopZ). */
+	/** Wide_21_9: grounded cinema rail bounds with 2.0f Z-clearance above the Z = 0.0f roadbed (FloorTopZ). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	FVector2D WideZBounds = FVector2D(0.0, 0.0);
+	FVector2D WideZBounds = FVector2D(2.0, 2.0);
 
 	/** Box_4_3: lateral bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
 	FVector2D BoxYBounds = FVector2D(-850.0, 850.0);
 
-	/** Box_4_3: vertical bounds anchored at FloorTopZ = 0.0f. */
+	/** Box_4_3: vertical bounds anchored with 2.0f Z-clearance above FloorTopZ = 0.0f. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
-	FVector2D BoxZBounds = FVector2D(0.0, 860.0);
+	FVector2D BoxZBounds = FVector2D(2.0, 860.0);
 
 	/** Lateral strafe force multiplier while in Wide_21_9 Bullet-Time Overdrive. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Aspect")
