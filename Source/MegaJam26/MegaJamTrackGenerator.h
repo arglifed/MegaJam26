@@ -66,6 +66,14 @@ struct FMegaJamSetPieceSlot
 
 	UPROPERTY()
 	bool bActive = false;
+
+	/** Local axis the slot spins around when bRotates (Z = yaw, the original behaviour). */
+	UPROPERTY()
+	FVector SpinAxis = FVector::ZAxisVector;
+
+	/** EMegaJamFilmScene index of the chunk that placed it: picks the per-scene art component (SetPieceSceneISMs). */
+	UPROPERTY()
+	int32 SceneIdx = 0;
 };
 
 /** Runtime state for an outer-wing 21:9 Dolly Boost Strip instance. */
@@ -381,6 +389,10 @@ private:
 	FLinearColor GetSceneAccentColor(EMegaJamFilmScene Scene) const;
 	void CreateArtPools(int32 ObstacleSlots);
 	void SyncObstacleSkins();
+	/** Issue #87: places the per-scene set-piece art at its real proportions (uniform scale). Used when SetPieceSceneISMs exist. */
+	void PlaceSetPieceArtForChunk(int32 BaseSetIndex, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene);
+	UStaticMesh* GetSetPieceArtMesh(EMegaJamFilmScene Scene) const;
+	void MarkSetPiecesDirty();
 	UInstancedStaticMeshComponent* CreateVisualISM(UStaticMesh* Mesh);
 	UMaterialInstanceDynamic* MakeMeshMID(UInstancedStaticMeshComponent* ISM);
 
@@ -422,6 +434,17 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FMegaJamDollyBoostStrip> BoostStripSlots;
+
+	/**
+	 * Issue #87: visual-only set-piece components, one per EMegaJamFilmScene (truss, skyscraper, film reel, aperture ring),
+	 * each holding every set-piece slot. Each chunk draws its own scene's art, so nothing swaps or pops at scene changes.
+	 * Empty when no set-piece art is assigned (SetPieceISM and the stretched cube layout are used instead).
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> SetPieceSceneISMs;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> SetPieceSceneMIDs;
 
 	/** Visual-only obstacle skins, one per scene (see SceneObstacleMeshesTakeA). Empty when the feature is unused. */
 	UPROPERTY(Transient)
