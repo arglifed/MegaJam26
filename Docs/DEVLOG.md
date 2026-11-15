@@ -102,7 +102,8 @@ The hand-offs were smooth and easy, mostly because we were both using AI. Each o
 - HUD spacing polish, the title changed to DIRECTOR'S CUT!, and one more camera NaN fix (#132).
 - The Rehearsal tutorial gained a Director's Cut step: you have to use the overdrive before the tutorial lets you go on (#133). A follow-up fix makes sure only the Director's Cut button passes that step (#134).
 - Per-genre "bad take" title cards on a crash: THE END, HERO DOWN, CASE CLOSED, WHITEOUT, BURIED, TO BE CONTINUED... (#135).
-<!-- TODO: refresh at freeze (git log origin/main --first-parent --since="2026-11-15T15:45-05:00"); drop #135 if it isn't merged -->
+- A last pass on the Rehearsal tutorial: its steps run in the right order, the HUD shows the right prompt first, and the Director's Cut step completes cleanly when you press it (#136).
+<!-- TODO: at the freeze, add anything merged after #135/#136 (gh pr list --state merged) -->
 
 ## Case studies
 
