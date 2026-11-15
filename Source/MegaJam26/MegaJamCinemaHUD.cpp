@@ -481,6 +481,47 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		SlashSlot->SetZOrder(18);
 	}
 
+	// ---- Interactive 'Rehearsal' Tutorial Prompt & Hold-to-Skip Overlay (-3000m to 0m) ----
+	TutorialPromptBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TutorialPromptBorder"));
+	TutorialPromptBorder->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.03f, 0.92f));
+	TutorialPromptBorder->SetPadding(FMargin(28.0f, 14.0f));
+	TutorialPromptBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	TutorialPromptText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TutorialPromptText"));
+	TutorialPromptText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 24));
+	TutorialPromptText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.88f, 0.25f, 1.0f)));
+	TutorialPromptText->SetJustification(ETextJustify::Center);
+	TutorialPromptText->SetText(FText::FromString(TEXT("► REHEARSAL: PRESS [A] OR [D] TO STEER ◄")));
+	TutorialPromptBorder->SetContent(TutorialPromptText);
+	if (UCanvasPanelSlot* TutPromptSlot = RootCanvas->AddChildToCanvas(TutorialPromptBorder))
+	{
+		TutPromptSlot->SetAnchors(FAnchors(0.5f, 0.34f, 0.5f, 0.34f));
+		TutPromptSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		TutPromptSlot->SetPosition(FVector2D(0.0f, 0.0f));
+		TutPromptSlot->SetAutoSize(true);
+		TutPromptSlot->SetZOrder(25);
+	}
+
+	TutorialSkipBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TutorialSkipBorder"));
+	TutorialSkipBorder->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.03f, 0.86f));
+	TutorialSkipBorder->SetPadding(FMargin(18.0f, 6.0f));
+	TutorialSkipBorder->SetVisibility(ESlateVisibility::Collapsed);
+
+	TutorialSkipText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TutorialSkipText"));
+	TutorialSkipText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
+	TutorialSkipText->SetColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.90f, 0.95f, 0.95f)));
+	TutorialSkipText->SetJustification(ETextJustify::Center);
+	TutorialSkipText->SetText(FText::FromString(TEXT("HOLD [TAB] TO SKIP REHEARSAL")));
+	TutorialSkipBorder->SetContent(TutorialSkipText);
+	if (UCanvasPanelSlot* TutSkipSlot = RootCanvas->AddChildToCanvas(TutorialSkipBorder))
+	{
+		TutSkipSlot->SetAnchors(FAnchors(0.5f, 1.0f, 0.5f, 1.0f));
+		TutSkipSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+		TutSkipSlot->SetPosition(FVector2D(0.0f, -94.0f));
+		TutSkipSlot->SetAutoSize(true);
+		TutSkipSlot->SetZOrder(25);
+	}
+
 	return Super::RebuildWidget();
 }
 
@@ -561,7 +602,11 @@ void UMegaJamCinemaHUD::HandleClapperboardSnapped()
 				? TEXT("SCENE 04 // FAST-FORWARD CHASE!")
 				: (bIsNoir
 					? TEXT("SCENE 03 // NOIR!")
-					: (bIsAlpine ? TEXT("SCENE 03 // ALPINE AVALANCHE!") : TEXT("SCENE 02 // ACTION!"))));
+					: (bIsAlpine
+						? TEXT("SCENE 03 // ALPINE AVALANCHE!")
+						: ((ActiveGenre == EMegaJamSceneGenre::Western)
+							? TEXT("SCENE 02 // WESTERN — ACTION!")
+							: TEXT("SCENE 01 // ACTION — ROLL CAMERA!")))));
 		ClapperboardBlackoutText->SetText(FText::FromString(BlackoutMsg));
 	}
 	if (ClapperboardBlackoutOverlay)
@@ -1532,9 +1577,10 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	}
 
 	// 6. Top-Center 2.5s Scene Slugline flash
+	const bool bInRehearsal = bIsPlaying && FlowPawn && FlowPawn->bIsRehearsalMode && RunState != EMegaJamRunState::Crashed && !bIsPaused;
 	if (SceneSluglineBorder)
 	{
-		if (bIsPlaying && SceneSluglineTimer > 0.0f)
+		if (bIsPlaying && !bInRehearsal && SceneSluglineTimer > 0.0f)
 		{
 			SceneSluglineTimer = FMath::Max(0.0f, SceneSluglineTimer - InDeltaTime);
 			SceneSluglineBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -1542,6 +1588,45 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		else
 		{
 			SceneSluglineBorder->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	// 6.5 Interactive 'Rehearsal' Tutorial Prompts (-3000m to 0m)
+	if (TutorialPromptBorder && TutorialPromptText && TutorialSkipBorder && TutorialSkipText)
+	{
+		if (bInRehearsal)
+		{
+			TutorialPromptBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			const TCHAR* TutPromptStr = TEXT("► REHEARSAL: PRESS [A] OR [D] TO STEER ◄");
+			if (FlowPawn->TutorialState == ETutorialState::JumpCheck)
+			{
+				TutPromptStr = TEXT("► REHEARSAL: PRESS [W] TO STUNT-HOP ◄");
+			}
+			else if (FlowPawn->TutorialState == ETutorialState::CutCheck)
+			{
+				TutPromptStr = TEXT("► REHEARSAL: PRESS [SPACE] TO SPLICE CUT & ROLL SCENE 01! ◄");
+			}
+			TutorialPromptText->SetText(FText::FromString(TutPromptStr));
+			TutorialPromptText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.90f, 0.25f, PulseAlpha)));
+
+			TutorialSkipBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			if (FlowPawn->SkipHoldTimer > 0.05f)
+			{
+				TutorialSkipText->SetText(FText::FromString(FString::Printf(
+					TEXT("HOLD [TAB] TO SKIP REHEARSAL (%.1fs / 1.5s)"),
+					FMath::Clamp(FlowPawn->SkipHoldTimer, 0.0f, 1.5f))));
+				TutorialSkipText->SetColorAndOpacity(FSlateColor(FLinearColor(0.25f, 0.95f, 1.0f, 1.0f)));
+			}
+			else
+			{
+				TutorialSkipText->SetText(FText::FromString(TEXT("HOLD [TAB] TO SKIP REHEARSAL")));
+				TutorialSkipText->SetColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.90f, 0.95f, 0.92f)));
+			}
+		}
+		else
+		{
+			TutorialPromptBorder->SetVisibility(ESlateVisibility::Collapsed);
+			TutorialSkipBorder->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 
@@ -1563,7 +1648,7 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			CenterBannerText->SetText(FText::FromString(RewindLabel));
 			CenterBannerText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.2f, 0.2f, 1.0f)));
 		}
-		else if (bIsPlaying && ActionFlashTimer > 0.0f)
+		else if (bIsPlaying && !bInRehearsal && ActionFlashTimer > 0.0f)
 		{
 			ActionFlashTimer = FMath::Max(0.0f, ActionFlashTimer - InDeltaTime);
 			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
