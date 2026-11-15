@@ -4,13 +4,17 @@
 
 #include "MegaJamFlowPawn.h"
 #include "MegaJamFlowSubsystem.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/ExponentialHeightFog.h"
 #include "Engine/Level.h"
 #include "Engine/PointLight.h"
+#include "Engine/SkyLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -216,6 +220,8 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	StudioDressingISM->SetCanEverAffectNavigation(false);
 	StudioDressingISM->CastShadow = true;
 
+	DistantSkyPillarsISM = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("DistantSkyPillarsISM"));
+
 	ConfigureISM(FloorISM, TrackRoot, false, false);
 	ConfigureISM(WallISM, TrackRoot, false, false);
 	ConfigureISM(CollisionWallISM, TrackRoot, true, false);
@@ -232,6 +238,7 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	ConfigureISM(BoostStripISM, TrackRoot, false, false);
 	ConfigureISM(LaneRailsISM, TrackRoot, false, false);
 	ConfigureISM(WrapArchISM, TrackRoot, false, false);
+	ConfigureISM(DistantSkyPillarsISM, TrackRoot, false, false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeFinder.Succeeded())
@@ -454,6 +461,15 @@ void AMegaJamTrackGenerator::BeginPlay()
 		LaneRailMID->SetScalarParameterValue(TEXT("Opacity"), 0.35f);
 		LaneRailMID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.12f, 0.72f, 0.95f, 1.0f));
 		LaneRailsISM->SetMaterial(0, LaneRailMID);
+
+		if (DistantSkyPillarsISM)
+		{
+			SkyPillarMID = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+			SkyPillarMID->SetScalarParameterValue(TEXT("TakeIndex"), 0.0f);
+			SkyPillarMID->SetScalarParameterValue(TEXT("Opacity"), 0.85f);
+			SkyPillarMID->SetVectorParameterValue(TEXT("TakeColor"), FLinearColor(0.15f, 0.85f, 1.0f, 1.0f));
+			DistantSkyPillarsISM->SetMaterial(0, SkyPillarMID);
+		}
 	}
 	else
 	{
@@ -463,6 +479,69 @@ void AMegaJamTrackGenerator::BeginPlay()
 		PickupMatB = PickupTakeB_ISM->CreateAndSetMaterialInstanceDynamic(0);
 		BoostStripMID = BoostStripISM->CreateAndSetMaterialInstanceDynamic(0);
 		LaneRailMID = LaneRailsISM->CreateAndSetMaterialInstanceDynamic(0);
+		if (DistantSkyPillarsISM)
+		{
+			SkyPillarMID = DistantSkyPillarsISM->CreateAndSetMaterialInstanceDynamic(0);
+		}
+	}
+
+	// Issue #106: Find or spawn ExponentialHeightFog and SkyLight so the distant horizon abyss is filled with per-scene atmospheric fog
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AExponentialHeightFog> FogIt(World); FogIt; ++FogIt)
+		{
+			if (IsValid(*FogIt))
+			{
+				BoundHeightFog = *FogIt;
+				break;
+			}
+		}
+		if (!BoundHeightFog)
+		{
+			FActorSpawnParameters FogSpawnParams;
+			FogSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			BoundHeightFog = World->SpawnActor<AExponentialHeightFog>(
+				AExponentialHeightFog::StaticClass(),
+				FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, 120.0), FVector::OneVector),
+				FogSpawnParams);
+		}
+		if (BoundHeightFog)
+		{
+			BoundHeightFog->SetActorHiddenInGame(false);
+			if (UExponentialHeightFogComponent* FogComp = BoundHeightFog->GetComponent())
+			{
+				FogComp->SetVisibility(true);
+				FogComp->SetFogDensity(CurrentFogDensity);
+				FogComp->SetFogHeightFalloff(0.06f);
+				FogComp->SetStartDistance(500.0f);
+				FogComp->SetFogInscatteringColor(CurrentFogColor);
+				FogComp->SetDirectionalInscatteringColor(CurrentFogColor * 1.35f);
+			}
+		}
+
+		for (TActorIterator<ASkyLight> SkyIt(World); SkyIt; ++SkyIt)
+		{
+			if (IsValid(*SkyIt))
+			{
+				BoundSkyLight = *SkyIt;
+				break;
+			}
+		}
+		if (!BoundSkyLight)
+		{
+			FActorSpawnParameters SkySpawnParams;
+			SkySpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			BoundSkyLight = World->SpawnActor<ASkyLight>(
+				ASkyLight::StaticClass(),
+				FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, 1000.0), FVector::OneVector),
+				SkySpawnParams);
+		}
+		if (BoundSkyLight && BoundSkyLight->GetLightComponent())
+		{
+			BoundSkyLight->GetLightComponent()->SetMobility(EComponentMobility::Movable);
+			BoundSkyLight->GetLightComponent()->SetVisibility(true);
+			BoundSkyLight->GetLightComponent()->SetIntensity(1.35f);
+		}
 	}
 
 	// Obstacle skins without art for their scene reuse the base mesh, so give them the shared take material created above.
@@ -657,6 +736,10 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 		{
 			StudioDressingISM->MarkRenderStateDirty();
 		}
+		if (DistantSkyPillarsISM)
+		{
+			DistantSkyPillarsISM->MarkRenderStateDirty();
+		}
 		for (const TPair<UStaticMesh*, UInstancedStaticMeshComponent*>& Pair : ActiveScatterISMCs)
 		{
 			if (Pair.Value)
@@ -820,6 +903,73 @@ void AMegaJamTrackGenerator::UpdateSceneMaterials(float DeltaSeconds)
 		LaneRailMID->SetVectorParameterValue(TEXT("TakeColor"), RailColor);
 		LaneRailMID->SetVectorParameterValue(TEXT("Color"), RailColor);
 		LaneRailMID->SetVectorParameterValue(TEXT("EmissiveColor"), RailColor);
+	}
+
+	// Issue #106: Dynamic per-scene ExponentialHeightFog, SkyLight tint, and beat-pulsing distant sky pillars
+	EMegaJamSceneGenre ActiveGenre = EMegaJamSceneGenre::Action;
+	float BeatPhaseVal = 0.0f;
+	if (UWorld* World = GetWorld())
+	{
+		if (const UMegaJamFlowSubsystem* FlowSub = World->GetSubsystem<UMegaJamFlowSubsystem>())
+		{
+			ActiveGenre = FlowSub->ActiveGenre;
+			BeatPhaseVal = FlowSub->BeatPhase;
+		}
+	}
+
+	FLinearColor TargetFogColor(0.02f, 0.18f, 0.35f, 1.0f); // Scene 01 (Action): Deep Cyber Cyan/Blue
+	float TargetFogDensity = 0.018f;
+	switch (ActiveGenre)
+	{
+	case EMegaJamSceneGenre::Western:
+		TargetFogColor = FLinearColor(0.38f, 0.16f, 0.04f, 1.0f); // Scene 02 (Western): Warm Sunset Amber/Gold
+		TargetFogDensity = 0.022f;
+		break;
+	case EMegaJamSceneGenre::Noir:
+		TargetFogColor = FLinearColor(0.18f, 0.20f, 0.22f, 1.0f); // Scene 03 (Noir): Dense Silver-Gray soundstage mist
+		TargetFogDensity = 0.028f;
+		break;
+	case EMegaJamSceneGenre::Chase:
+	case EMegaJamSceneGenre::Alpine:
+		TargetFogColor = FLinearColor(0.08f, 0.24f, 0.42f, 1.0f); // Scene 04 (Chase): Crisp Glacial Ice Blue
+		TargetFogDensity = 0.020f;
+		break;
+	case EMegaJamSceneGenre::Montage:
+		TargetFogColor = FLinearColor(0.32f, 0.05f, 0.28f, 1.0f); // Scene 05 (Montage): Neon Magenta/Gold synthwave glow
+		TargetFogDensity = 0.022f;
+		break;
+	case EMegaJamSceneGenre::Action:
+	default:
+		break;
+	}
+
+	CurrentFogColor = FMath::CInterpTo(CurrentFogColor, TargetFogColor, DeltaSeconds, 2.5f);
+	CurrentFogDensity = FMath::FInterpTo(CurrentFogDensity, TargetFogDensity, DeltaSeconds, 2.5f);
+
+	if (BoundHeightFog)
+	{
+		if (UExponentialHeightFogComponent* FogComp = BoundHeightFog->GetComponent())
+		{
+			FogComp->SetFogDensity(CurrentFogDensity);
+			FogComp->SetFogInscatteringColor(CurrentFogColor);
+			FogComp->SetDirectionalInscatteringColor(CurrentFogColor * 1.35f);
+		}
+	}
+	if (BoundSkyLight && BoundSkyLight->GetLightComponent())
+	{
+		const FLinearColor SkyTint = (CurrentFogColor * 1.6f + FLinearColor(0.22f, 0.22f, 0.25f, 1.0f)).GetClamped(0.1f, 1.0f);
+		BoundSkyLight->GetLightComponent()->SetLightColor(SkyTint);
+	}
+
+	if (SkyPillarMID)
+	{
+		const float BeatGlow = 1.35f + 1.15f * FMath::Cos(BeatPhaseVal * 2.0f * PI);
+		const FLinearColor PillarGlow = (CurrentFogColor * 3.2f + ChainTint * 0.65f) * BeatGlow;
+		SkyPillarMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
+		SkyPillarMID->SetVectorParameterValue(TEXT("TakeColor"), PillarGlow);
+		SkyPillarMID->SetVectorParameterValue(TEXT("Color"), PillarGlow);
+		SkyPillarMID->SetVectorParameterValue(TEXT("BaseColor"), PillarGlow);
+		SkyPillarMID->SetVectorParameterValue(TEXT("EmissiveColor"), PillarGlow);
 	}
 }
 
@@ -1175,6 +1325,10 @@ void AMegaJamTrackGenerator::CreatePools()
 	{
 		StudioDressingISM->SetStaticMesh(SoundstageTrussMesh ? SoundstageTrussMesh.Get() : BlockMesh.Get());
 	}
+	if (DistantSkyPillarsISM)
+	{
+		DistantSkyPillarsISM->SetStaticMesh(BlockMesh.Get());
+	}
 
 	UStaticMesh* ResolvedPickupMesh = FilmFramePickupMesh
 		? FilmFramePickupMesh.Get()
@@ -1183,7 +1337,7 @@ void AMegaJamTrackGenerator::CreatePools()
 	PickupTakeB_ISM->SetStaticMesh(ResolvedPickupMesh);
 
 	UInstancedStaticMeshComponent* All[] = {
-		FloorISM, WallISM, CollisionWallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, BoostStripISM, LaneRailsISM, WrapArchISM
+		FloorISM, WallISM, CollisionWallISM, TakeA_ObstaclesISM, TakeB_ObstaclesISM, SetPieceISM, PickupISM, PickupTakeB_ISM, BoostStripISM, LaneRailsISM, WrapArchISM, DistantSkyPillarsISM
 	};
 	for (UInstancedStaticMeshComponent* ISM : All)
 	{
@@ -1243,6 +1397,14 @@ void AMegaJamTrackGenerator::CreatePools()
 	for (int32 Index = 0; Index < Pool * LaneRailsPerChunk; ++Index)
 	{
 		LaneRailsISM->AddInstance(MakeHiddenInstanceTransform(), true);
+	}
+
+	if (DistantSkyPillarsISM)
+	{
+		for (int32 Index = 0; Index < Pool * SkyPillarsPerChunk; ++Index)
+		{
+			DistantSkyPillarsISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		}
 	}
 
 	for (int32 Index = 0; Index < WrapArchParts; ++Index)
@@ -1631,6 +1793,86 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 					}
 				}
 			}
+
+			// Issue #106: Colossal Distant Vista Silhouettes (Y in [+-3400, +-7200], Scale 10x-22x >= 1.0f on all axes)
+			if (PropList->Props.Num() > 0)
+			{
+				for (int32 Side = 0; Side < 2; ++Side)
+				{
+					const FScenePropConfig& VistaCfg = PropList->Props[Stream.RandHelper(PropList->Props.Num())];
+					UStaticMesh* VistaMesh = VistaCfg.PropMesh ? VistaCfg.PropMesh : (SkyscraperMesh ? SkyscraperMesh.Get() : SoundstageTrussMesh.Get());
+					if (!VistaMesh)
+					{
+						continue;
+					}
+					UInstancedStaticMeshComponent* VistaISM = nullptr;
+					if (UInstancedStaticMeshComponent** FoundVistaISM = ActiveScatterISMCs.Find(VistaMesh))
+					{
+						VistaISM = *FoundVistaISM;
+					}
+					if (!VistaISM)
+					{
+						VistaISM = CreateVisualISM(VistaMesh);
+						if (VistaISM)
+						{
+							VistaISM->CastShadow = false;
+							ActiveScatterISMCs.Add(VistaMesh, VistaISM);
+						}
+					}
+					if (VistaISM)
+					{
+						const float VistaX = Stream.FRandRange(ChunkStartX + 300.0f, ChunkStartX + ChunkLength - 300.0f);
+						const float AbsVistaY = Stream.FRandRange(3500.0f, 6800.0f);
+						const float VistaY = (Side == 0) ? -AbsVistaY : AbsVistaY;
+						const float VistaScale = FMath::Max(1.0f, Stream.FRandRange(10.0f, 22.0f));
+						const float VistaYaw = Stream.FRandRange(0.0f, 360.0f);
+						const FTransform VistaTransform(
+							FRotator(0.0f, VistaYaw, 0.0f),
+							FVector(VistaX, VistaY, -120.0f),
+							FVector(VistaScale, VistaScale, VistaScale * 1.25f));
+						SafeAddInstance(VistaISM, VistaTransform, true);
+					}
+				}
+			}
+		}
+
+		// High-altitude Soundstage Overhead Truss Span at Z = 1800.0f & Beat-Pulsing Distant Sky Pillars at Y = +-3000.0f
+		if (SoundstageTrussMesh && (ChunkIndex % 2 == 0))
+		{
+			UInstancedStaticMeshComponent* TrussVistaISM = nullptr;
+			if (UInstancedStaticMeshComponent** FoundTruss = ActiveScatterISMCs.Find(SoundstageTrussMesh.Get()))
+			{
+				TrussVistaISM = *FoundTruss;
+			}
+			if (!TrussVistaISM)
+			{
+				TrussVistaISM = CreateVisualISM(SoundstageTrussMesh.Get());
+				if (TrussVistaISM)
+				{
+					TrussVistaISM->CastShadow = false;
+					ActiveScatterISMCs.Add(SoundstageTrussMesh.Get(), TrussVistaISM);
+				}
+			}
+			if (TrussVistaISM)
+			{
+				const FTransform HighTrussArch(
+					FRotator::ZeroRotator,
+					FVector(ChunkCenterX, 0.0f, 1800.0f),
+					FVector(4.0f, 38.0f, 2.5f));
+				SafeAddInstance(TrussVistaISM, HighTrussArch, true);
+			}
+		}
+
+		if (DistantSkyPillarsISM)
+		{
+			const int32 BasePillarSlot = Slot * SkyPillarsPerChunk;
+			const FVector PillarScale(1.8f, 1.8f, 30.0f); // Spans Z = -500.0f to +2500.0f around Z = 1000.0f
+			const float X0 = ChunkStartX + ChunkLength * 0.25f;
+			const float X1 = ChunkStartX + ChunkLength * 0.75f;
+			SafeUpdateInstanceTransform(DistantSkyPillarsISM, BasePillarSlot + 0, FTransform(FRotator::ZeroRotator, FVector(X0, -3000.0f, 1000.0f), PillarScale), true, false, true);
+			SafeUpdateInstanceTransform(DistantSkyPillarsISM, BasePillarSlot + 1, FTransform(FRotator::ZeroRotator, FVector(X0,  3000.0f, 1000.0f), PillarScale), true, false, true);
+			SafeUpdateInstanceTransform(DistantSkyPillarsISM, BasePillarSlot + 2, FTransform(FRotator::ZeroRotator, FVector(X1, -3200.0f, 1000.0f), PillarScale), true, false, true);
+			SafeUpdateInstanceTransform(DistantSkyPillarsISM, BasePillarSlot + 3, FTransform(FRotator::ZeroRotator, FVector(X1,  3200.0f, 1000.0f), PillarScale), true, false, true);
 		}
 	}
 

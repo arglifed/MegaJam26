@@ -174,11 +174,17 @@ protected:
 	TObjectPtr<UBorder> TitleCardBorder;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TitleRecordText;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TitlePromptText;
 
 	// ---- Final Cut Wrap-Up Scoreboard (RunState == Completed) ----
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> WrapCardBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapNewRecordText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> WrapLedgerRow0Text;
@@ -206,6 +212,9 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> WrapQuoteText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> WrapTop3LeaderboardText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> WrapPromptText;
