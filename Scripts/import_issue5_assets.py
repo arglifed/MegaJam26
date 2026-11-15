@@ -26,7 +26,8 @@ plus the shared master material M_MeshyPBR (masked, lit): BaseColor * BaseColorT
 Emissive * EmissiveStrength, and the take contract the track generator drives:
     TakeIndex (0 = Take A, 1 = Take B), TakeColor (adds a glow; black by default), TakeGhosting (0 = always solid,
     1 = dither-fade to GhostOpacity while MPC_FlowState.ActiveTake is the other take), GhostGlow / TakeGlow.
-FORCE_MASTER=1 rebuilds that graph in place (instances keep their parent).
+FORCE_MASTER=1 rebuilds that graph in place (instances keep their parent). MASTER_ONLY=1 rebuilds just M_MeshyPBR and
+saves nothing else. RoughnessMin (default 0) floors the roughness map, for instances that read too mirror-like.
 Also creates the track surface: M_TrackSurface (world-aligned grid, so it survives any stretch), MI_FloorTile,
 MI_WallSegment and SM_FloorTile / SM_WallSegment (copies of the engine cube: 100^3, centred, box collision).
 
@@ -181,7 +182,15 @@ def build_master(defaults):
     metal = tex_param("Metallic", defaults["metallic"], S.SAMPLERTYPE_MASKS, -100)
     mel.connect_material_property(metal, "R", unreal.MaterialProperty.MP_METALLIC)
     rough = tex_param("Roughness", defaults["roughness"], S.SAMPLERTYPE_MASKS, 150)
-    mel.connect_material_property(rough, "R", unreal.MaterialProperty.MP_ROUGHNESS)
+    # Issue #87: Meshy roughness maps sit near 0.4, so stretched obstacles mirror the sky and the cream backdrop
+    # flats. RoughnessMin (default 0 = unchanged) lets an instance floor it to read matte.
+    rough_min = mel.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -700, 300)
+    rough_min.set_editor_property("parameter_name", "RoughnessMin")
+    rough_min.set_editor_property("default_value", 0.0)
+    rough_max = mel.create_material_expression(mat, unreal.MaterialExpressionMax, -300, 200)
+    mel.connect_material_expressions(rough, "R", rough_max, "A")
+    mel.connect_material_expressions(rough_min, "", rough_max, "B")
+    mel.connect_material_property(rough_max, "", unreal.MaterialProperty.MP_ROUGHNESS)
     normal = tex_param("Normal", defaults["normal"], S.SAMPLERTYPE_NORMAL, 400)
     mel.connect_material_property(normal, "RGB", unreal.MaterialProperty.MP_NORMAL)
 
@@ -515,7 +524,22 @@ def import_mesh(category, name):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+def rebuild_master_only():
+    # MASTER_ONLY=1: rebuild the M_MeshyPBR graph in place (instances keep their parent and overrides) and touch
+    # nothing else. Defaults come from the instances that already exist, so no texture is re-imported.
+    master = eal.load_asset(ART + "/M_MeshyPBR")
+    if not master:
+        err("M_MeshyPBR not found; run a full import first")
+        return
+    defaults = {k: mel.get_material_default_texture_parameter_value(master, MAPS[k][1]) for k in MAPS}
+    os.environ["FORCE_MASTER"] = "1"
+    build_master(defaults)
+
+
 def main():
+    if os.environ.get("MASTER_ONLY") == "1":
+        rebuild_master_only()
+        return
     if not os.path.isdir(TEX_DIR):
         err("missing %s: run Scripts/downscale_art_textures.py first" % TEX_DIR)
         return

@@ -139,6 +139,23 @@ def tint_materials():
         eal.save_loaded_asset(mi, only_if_is_dirty=False)
         log("%s BaseColorTint = %s" % (name, mel.get_material_instance_vector_parameter_value(mi, "BaseColorTint")))
 
+    # Issue #87: these two read cream / beige instead of gunmetal / black. Two causes, found by toggling inputs in PIE:
+    #  - RoughnessMin: the low Meshy roughness made them mirror the sky and the cream backdrop flats (needs
+    #    M_MeshyPBR with RoughnessMin: import_issue5_assets.py MASTER_ONLY=1).
+    #  - TakeGlow: the active take's faint TakeColor glow (Take A orange) swamps a near-black albedo and reads brown.
+    #    The ghosted (inactive) take still shows the take colour through GhostGlow.
+    dark = {"MI_Obstacle_Action_CyberBarrier": {"RoughnessMin": 0.85, "TakeGlow": 0.005},
+            "MI_Obstacle_Final_Monolith": {"RoughnessMin": 0.85, "TakeGlow": 0.005}}
+    for name, scalars in dark.items():
+        mi = eal.load_asset(ART + name)
+        if not mi:
+            err("missing material instance " + name)
+            continue
+        for param, value in scalars.items():
+            mel.set_material_instance_scalar_parameter_value(mi, param, value)
+        eal.save_loaded_asset(mi, only_if_is_dirty=False)
+        log("%s %s" % (name, {p: round(mel.get_material_instance_scalar_parameter_value(mi, p), 3) for p in scalars}))
+
 
 def wire_game_mode(track_bp):
     bp = eal.load_asset(BPS + "/BP_FlowGameMode")
