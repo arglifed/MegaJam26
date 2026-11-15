@@ -7,9 +7,14 @@ Edits     /Game/MegaJam26/Blueprints/BP_FlowGameMode     Track Generator Class =
 Edits     /Game/MegaJam26/Blueprints/BP_FlowPawn         SceneVehicleMeshes + SceneSeatOffsets
 (The two edited Blueprints are shared binary assets; the user approved editing them for this task. AGENTS.md section 5.)
 
+Edits     /Game/MegaJam26/Art/MI_Obstacle_Action_CyberBarrier, MI_Vehicle_SpyCar   BaseColorTint (issue #87)
+
 Search the log for "[ArtWire]". Safe to re-run: it only sets the properties listed below.
+Set ART_ONLY=1 in the environment to leave the two shared Blueprints (BP_FlowGameMode, BP_FlowPawn) unsaved, for runs
+that only change BP_TrackGenerator or the art material instances.
 """
 
+import os
 import traceback
 
 import unreal
@@ -83,10 +88,56 @@ def wire_track_generator():
     cdo.set_editor_property("studio_dressing_meshes", [mesh(n) for n in dressing])
     cdo.set_editor_property("studio_dressing_scale", 14.0)
     cdo.set_editor_property("use_mesh_materials", True)
+
+    # Issue #87: per-scene props scattered outside the corridor walls (spawner from #90). The art is about 100 cm on
+    # its longest side, so the scale is the prop's size in metres; C++ rests each one on Z = 0 clear of the wall.
+    # Each entry is rolled once per 32 m chunk: (mesh, min scale, max scale, spawn probability).
+    G = unreal.MegaJamSceneGenre
+    scatter = {
+        G.WESTERN: [("SM_Prop_Western_Tombstone", 3.0, 4.5, 0.6), ("SM_Prop_Western_GraveCross", 4.0, 6.0, 0.5),
+                    ("SM_Dressing_Western_Cactus", 7.0, 11.0, 0.8), ("SM_Dressing_Western_Tumbleweed", 2.5, 4.0, 0.5)],
+        G.NOIR: [("SM_Prop_Noir_BlackSedan", 6.0, 7.0, 0.5), ("SM_Dressing_Noir_StreetLamp", 9.0, 12.0, 0.9)],
+        G.CHASE: [("SM_Dressing_Chase_PineTree", 10.0, 18.0, 0.9), ("SM_Dressing_Chase_SnowRock", 4.0, 9.0, 0.7)],
+        G.MONTAGE: [("SM_Dressing_Final_FloatingCrystal", 5.0, 10.0, 0.8)],
+    }
+    scatter_map = {}
+    for genre, props in scatter.items():
+        configs = []
+        for name, lo, hi, chance in props:
+            # Constructor arguments: the struct fields are EditDefaultsOnly, so they cannot be set after construction.
+            configs.append(unreal.ScenePropConfig(prop_mesh=mesh(name), min_scale=lo, max_scale=hi,
+                                                  spawn_probability=chance))
+        prop_list = unreal.ScenePropList(props=configs)
+        scatter_map[genre] = prop_list
+    cdo.set_editor_property("scene_scatter_props", scatter_map)
+
     finish(bp)
-    log("BP_TrackGenerator saved: %d slots, %d + %d obstacle skins, %d dressing meshes"
-        % (len(slots), len(take_a), len(take_b), len(dressing)))
+    log("BP_TrackGenerator saved: %d slots, %d + %d obstacle skins, %d dressing meshes, %d scatter props in %d scenes"
+        % (len(slots), len(take_a), len(take_b), len(dressing), sum(len(p) for p in scatter.values()), len(scatter)))
+    saved = cdo_of(eal.load_asset(path)).get_editor_property("scene_scatter_props")
+    for genre, prop_list in saved.items():
+        log("  scatter %s: %s" % (genre, ", ".join(
+            "%s x%.1f-%.1f p=%.1f" % (c.prop_mesh.get_name(), c.min_scale, c.max_scale, c.spawn_probability)
+            for c in prop_list.props)))
     return bp
+
+
+def tint_materials():
+    # Issue #87: BaseColorTint multiplies the baked base colour (linear RGB). Both textures are a mid grey that reads
+    # cream / silver under the sky light; #56 and #57 asked for dark gunmetal and dark, desaturated colours.
+    tints = {
+        "MI_Obstacle_Action_CyberBarrier": (0.26, 0.30, 0.36),
+        "MI_Vehicle_SpyCar": (0.22, 0.23, 0.26),
+    }
+    mel = unreal.MaterialEditingLibrary
+    for name, rgb in tints.items():
+        mi = eal.load_asset(ART + name)
+        if not mi:
+            err("missing material instance " + name)
+            continue
+        mel.set_material_instance_vector_parameter_value(mi, "BaseColorTint", unreal.LinearColor(rgb[0], rgb[1], rgb[2], 1))
+        eal.save_loaded_asset(mi, only_if_is_dirty=False)
+        log("%s BaseColorTint = %s" % (name, mel.get_material_instance_vector_parameter_value(mi, "BaseColorTint")))
 
 
 def wire_game_mode(track_bp):
@@ -119,8 +170,12 @@ def wire_pawn():
 
 try:
     track = wire_track_generator()
-    wire_game_mode(track)
-    wire_pawn()
+    tint_materials()
+    if os.environ.get("ART_ONLY") == "1":
+        log("ART_ONLY=1: BP_FlowGameMode and BP_FlowPawn left untouched")
+    else:
+        wire_game_mode(track)
+        wire_pawn()
 except Exception as exc:  # noqa: BLE001 - log everything, the run is headless
     err("%s\n%s" % (exc, traceback.format_exc()))
 log("DONE with %d error(s)" % len(errors))

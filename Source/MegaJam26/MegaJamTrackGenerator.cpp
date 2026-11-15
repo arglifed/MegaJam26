@@ -1292,9 +1292,19 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 						const float UniformScale = FMath::Max(0.01f, Stream.FRandRange(MinS, MaxS));
 						const float RandYaw = Stream.FRandRange(0.0f, 360.0f);
 
+						// Issue #87: the art has a centred pivot, so lift the prop until its base rests on the floor
+						// plane, and keep its whole footprint outside the corridor wall whichever way it is turned.
+						const FBox PropBox = PropConfig.PropMesh->GetBoundingBox();
+						const float RestZ = FloorTopZ - static_cast<float>(PropBox.Min.Z) * UniformScale;
+						const float HalfFootprint = static_cast<float>(FMath::Max(
+							FMath::Max(FMath::Abs(PropBox.Min.X), FMath::Abs(PropBox.Max.X)),
+							FMath::Max(FMath::Abs(PropBox.Min.Y), FMath::Abs(PropBox.Max.Y)))) * UniformScale;
+						const float MinAbsY = MEGAJAM_CORRIDOR_HALF_WIDTH + HalfFootprint + 150.0f;
+						const float SafeY = (FMath::Abs(RandY) < MinAbsY) ? (bRightMargin ? MinAbsY : -MinAbsY) : RandY;
+
 						const FTransform ScatterTransform(
 							FRotator(0.0f, RandYaw, 0.0f),
-							FVector(RandX, RandY, FloorTopZ),
+							FVector(RandX, SafeY, RestZ),
 							FVector(UniformScale));
 						ScatterISM->AddInstance(ScatterTransform, true);
 					}
