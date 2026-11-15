@@ -91,7 +91,12 @@ The hand-offs were smooth and easy, mostly because we were both using AI. Each o
 - The packaging script (#125).
 - Credits and licence checks for every asset (#126, #127).
 - This dev log.
-<!-- TODO: anything that lands after 1:30 PM -->
+- Gamepad support: PS5 DualSense and 6-button USB joysticks, with controller prompts in the HUD (#130).
+- A procedural studio skyline, volumetric clouds and darker fog, all spawned from C++ by the track generator (#131).
+- HUD spacing polish, the title changed to DIRECTOR'S CUT!, and one more camera NaN fix (#132).
+- The Rehearsal tutorial gained a Director's Cut step: you have to use the overdrive before the tutorial lets you go on (#133). A follow-up fix makes sure only the Director's Cut button passes that step (#134).
+- Per-genre "bad take" title cards on a crash: THE END, HERO DOWN, CASE CLOSED, WHITEOUT, BURIED, TO BE CONTINUED... (#135).
+<!-- TODO: refresh at freeze (git log origin/main --first-parent --since="2026-11-15T15:45-05:00"); drop #135 if it isn't merged -->
 
 ## Case studies
 
