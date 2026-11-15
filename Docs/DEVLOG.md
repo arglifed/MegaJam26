@@ -11,8 +11,19 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
 **Team Four Swords Pictures:** Anthony (gameplay C++) and Hendrixsan (art and audio).
 **Built:** Nov 12–15, 2026, in Unreal Engine 5.8, for the Epic AI MegaJam.
 
-<!-- TODO: one-paragraph pitch, plus a hero screenshot or GIF (capture fresh, or pick from Docs/devlog_images/) -->
-*Director's Cut* is a high-speed, rhythm-infused arcade racer. You play the lead in a blockbuster that smash-cuts across five movie genres on one continuous, procedurally generated 9,000 m track. Each genre has its own vehicle, BPM, aspect ratio and special move.
+<!-- HERO IMAGE: Docs/devlog_images/playtest_captures/orb_review_povs.png (all five scenes, three camera views each).
+     Optional upgrade: a fresh in-game capture or GIF with the HUD visible. -->
+
+**Drop the clapperboard. Roll camera.** *Director's Cut* is a rhythm arcade racer where you're the star of a blockbuster that won't stop rolling. The whole film is one continuous 9,000-metre take that smash-cuts across five genres. Each genre swaps your vehicle, the music's tempo, the colour grade and even the aspect ratio of the screen:
+- a widescreen **Action** chase on a motorcycle
+- an Ultra-Panavision **Western** on horseback
+- a black-and-white **Noir** run in a spy car
+- a downhill **Chase** on a snowboard
+- a **Final Cut** hang-glider dive through a golden film-aperture tunnel
+
+You steer, hop and graze obstacles on the beat to stay in flow. Each genre gives you its own special move: a barrier punch, a katana slash, an adrenaline cash-in or a comet smash. Your Director's Cut overdrive flips the set into its alternate take. Reach the Golden Wrap Arch and the Box-Office Scoreboard grades every scene from S to D.
+
+Two people built it in four days. One worked in C++ and one on art and audio, each with an AI partner. The rest of this post shows how we did it: the rules we gave the AIs, what they made, what broke, and the numbers.
 
 ## How we worked
 
@@ -90,13 +101,13 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
 ## By the numbers
 
 <!-- STATS:BEGIN -->
-_Generated 2026-11-15 13:44 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
+_Generated 2026-11-15 14:29 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
 
 ### AI usage
 
 | Person | Tool | Sessions | Prompts | Model turns | Tool calls | Input tok | Output tok | Cache write | Cache read | Models |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Hendrixsan | Claude Code (PowerShell) | 16 | 158 | 1,019 | 1,286 | 2,247 | 863,353 | 5,041,566 | 191,669,885 | claude-opus-5-5 (800), claude-fable-5-2 (219) |
+| Hendrixsan | Claude Code (PowerShell) | 16 | 160 | 1,034 | 1,301 | 2,279 | 875,601 | 5,067,301 | 193,534,061 | claude-opus-5-5 (815), claude-fable-5-2 (219) |
 | Hendrixsan | Claude Code (UE Terminal) | 2 | 9 | 29 | 27 | 62 | 21,538 | 57,755 | 2,091,207 | claude-opus-5-5 (29) |
 | Anthony | Gemini 4 Argon (IDE integration) | TODO | TODO | - | - | TODO | TODO | - | - | TODO |
 
@@ -109,21 +120,21 @@ _Cache read is the context re-sent to the model on each turn and billed at a dis
 | Thu Nov 12 | 4 | 30 | 113 | 70,911 |
 | Fri Nov 13 | 7 | 52 | 388 | 308,371 |
 | Sat Nov 14 | 5 | 70 | 393 | 368,372 |
-| Sun Nov 15 | 5 | 15 | 154 | 137,237 |
+| Sun Nov 15 | 5 | 17 | 169 | 149,485 |
 
 ### Meshy (3D generation)
 
-- Jam account: Meshy Pro (jam partner perk), 1,100 starting credits, 587 left on 2026-11-15, so 513 spent
+- Jam account: Meshy Pro: 1,000 credits from the jam partner perk on top of the free plan's 100, so 1,100 in total. 587 left on 2026-11-15, so 513 spent
 - Tasks on jam account: 68: 66 text-to-3d (preview + refine passes, including retries), 1 text-to-image and 1 image-to-3d (the Hang Glider redo)
 - Models in game: 31 (30 on the jam account, plus the Motorcycle made on a free account)
 
 ### Repository
 
-- **156 commits** on main (Nov 12: 28, Nov 13: 49, Nov 14: 67, Nov 15: 12)
+- **158 commits** on main (Nov 12: 28, Nov 13: 49, Nov 14: 67, Nov 15: 14)
 - **25** commits carry a Claude co-author line
-- **57 pull requests** (57 merged): arglifed 48, ninjacom 9
-- **71 issues** (68 closed): arglifed 53, ninjacom 18
-- **13,032 lines of C++** in 15 files under `Source/`
+- **59 pull requests** (58 merged): arglifed 49, ninjacom 10
+- **71 issues** (69 closed): arglifed 53, ninjacom 18
+- **13,116 lines of C++** in 15 files under `Source/`
 - **219 assets** (`.uasset`) and 1 map under `Content/MegaJam26/`
 - **7 scripts** in `Scripts/`
 <!-- STATS:END -->
