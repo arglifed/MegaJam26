@@ -248,6 +248,19 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> SlashCutLineBorder;
 
+	// ---- Interactive 'Rehearsal' Tutorial Overlay (-3000m to 0m) ----
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> TutorialPromptBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TutorialPromptText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> TutorialSkipBorder;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TutorialSkipText;
+
 	UPROPERTY(Transient)
 	TObjectPtr<AMegaJamTrackGenerator> BoundTrackGenerator;
 

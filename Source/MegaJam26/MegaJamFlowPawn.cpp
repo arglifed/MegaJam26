@@ -20,9 +20,11 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/PlatformTime.h"
 #include "InputAction.h"
+#include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/App.h"
@@ -471,7 +473,7 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 		{ EMegaJamSceneGenre::Noir,    TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar"),     TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar.SM_Vehicle_SpyCar"),         FVector(-25.0f, 0.0f, 66.0f) },
 		{ EMegaJamSceneGenre::Chase,   TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 28.0f) },
 		{ EMegaJamSceneGenre::Alpine,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 28.0f) },
-		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, 50.0f) },
+		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, 42.0f) },
 	};
 	for (const FVehicleFallbackSpec& Spec : VehicleFallbacks)
 	{
@@ -980,6 +982,43 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	}
 	UpdateDynamicMusicModulation(UnscaledDelta);
 
+	// ---- Rehearsal Mode Hold-to-Skip ([Tab] or [Esc] held for 1.5s) ----
+	if (bIsRehearsalMode && !bCrashed)
+	{
+		const AMegaJamGameMode* RehearsalGM = GetWorld() ? GetWorld()->GetAuthGameMode<AMegaJamGameMode>() : nullptr;
+		if (!RehearsalGM || RehearsalGM->IsPlaying())
+		{
+			APlayerController* PC = Cast<APlayerController>(GetController());
+			const bool bSkipKeyHeld = PC && (
+				PC->IsInputKeyDown(EKeys::Tab) ||
+				PC->IsInputKeyDown(EKeys::Escape) ||
+				PC->IsInputKeyDown(EKeys::Gamepad_Special_Right));
+			if (bSkipKeyHeld)
+			{
+				SkipHoldTimer += UnscaledDelta;
+				if (SkipHoldTimer >= 1.5f)
+				{
+					if (AMegaJamPlayerController* MegaJamPC = Cast<AMegaJamPlayerController>(PC))
+					{
+						if (MegaJamPC->IsPaused())
+						{
+							MegaJamPC->SetPaused(false);
+						}
+					}
+					CompleteRehearsalAndStartScene01();
+				}
+			}
+			else
+			{
+				SkipHoldTimer = 0.0f;
+			}
+		}
+	}
+	else
+	{
+		SkipHoldTimer = 0.0f;
+	}
+
 	if (UGameplayStatics::IsGamePaused(this))
 	{
 		return;
@@ -1267,10 +1306,19 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 	// ---- 4:3 Flight Charge vs. 21:9 Bullet-Time Overdrive + Anti-Camping Stale-Shot Decay ----
 	AirExposureTimer = 0.0f;
 	bIsOverexposed = false;
-	CurrentShotDuration += DeltaSeconds;
-	AspectHoldTimer = CurrentShotDuration;
+	if (bIsRehearsalMode)
+	{
+		CurrentShotDuration = 0.0f;
+		AspectHoldTimer = 0.0f;
+		bIsShotStale = false;
+	}
+	else
+	{
+		CurrentShotDuration += DeltaSeconds;
+		AspectHoldTimer = CurrentShotDuration;
+	}
 	const bool bWasShotStale = bIsShotStale;
-	bIsShotStale = (CurrentShotDuration > StaleShotThreshold);
+	bIsShotStale = (!bIsRehearsalMode && CurrentShotDuration > StaleShotThreshold);
 	if (bIsShotStale != bWasShotStale)
 	{
 		BP_OnStaleShotStateChanged(bIsShotStale);
@@ -1570,26 +1618,34 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 			}
 		}
 
-		// 4:3 Mode: accelerate toward CruiseSpeed (3800 u/s) and clamp to MaxFlightSpeed + ActiveDollyBoostBonus
-		Velocity.X += Acceleration * DeltaSeconds;
-		Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
-		if (ActiveDollyBoostBonus > 1.0f)
+		if (bIsRehearsalMode)
 		{
-			Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), CruiseSpeed + ActiveDollyBoostBonus, DeltaSeconds, 9.0f);
+			// Interactive Rehearsal runway (-3000m to 0m): steady 1200.0f cruise between button-check gates
+			Velocity.X = 1200.0f;
 		}
-		else if (Velocity.X > CruiseSpeed)
+		else
 		{
-			Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), CruiseSpeed, DeltaSeconds, 3.5f);
+			// 4:3 Mode: accelerate toward CruiseSpeed (3800 u/s) and clamp to MaxFlightSpeed + ActiveDollyBoostBonus
+			Velocity.X += Acceleration * DeltaSeconds;
+			Velocity.X *= FMath::Exp(-Drag * DeltaSeconds);
+			if (ActiveDollyBoostBonus > 1.0f)
+			{
+				Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), CruiseSpeed + ActiveDollyBoostBonus, DeltaSeconds, 9.0f);
+			}
+			else if (Velocity.X > CruiseSpeed)
+			{
+				Velocity.X = FMath::FInterpTo(static_cast<float>(Velocity.X), CruiseSpeed, DeltaSeconds, 3.5f);
+			}
+			Velocity.X = FMath::Clamp(static_cast<float>(Velocity.X), 0.0f, MaxFlightSpeed + ActiveDollyBoostBonus);
 		}
-		Velocity.X = FMath::Clamp(static_cast<float>(Velocity.X), 0.0f, MaxFlightSpeed + ActiveDollyBoostBonus);
 	}
 
 	const float MaxAllowedSpeed = (bWide ? (TargetOverdriveSpeed + 250.0f) : MaxFlightSpeed) + ActiveDollyBoostBonus;
 	if (Velocity.ContainsNaN())
 	{
-		Velocity = FVector::ForwardVector * CruiseSpeed;
+		Velocity = FVector::ForwardVector * (bIsRehearsalMode ? 1200.0f : CruiseSpeed);
 	}
-	if (Velocity.SizeSquared() > FMath::Square(MaxAllowedSpeed) && MaxAllowedSpeed > 0.0f)
+	if (!bIsRehearsalMode && Velocity.SizeSquared() > FMath::Square(MaxAllowedSpeed) && MaxAllowedSpeed > 0.0f)
 	{
 		Velocity = Velocity.GetSafeNormal(1e-4f, FVector::ForwardVector) * MaxAllowedSpeed;
 	}
@@ -1603,6 +1659,84 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	// Un-swept mathematical move (bSweep = false) so the Pawn never snags on L_FlowTest's legacy hand-placed Floor/Obstacle_00..17 actors.
 	AddActorWorldOffset(Velocity * DeltaSeconds, false);
 	ApplyAspectClamp(DeltaSeconds);
+
+	// ---- Interactive 'Rehearsal' Tutorial Gates (-3000m to 0m) ----
+	if (bIsRehearsalMode)
+	{
+		const FVector RehearsalLoc = GetActorLocation();
+		const float CurrentX = static_cast<float>(RehearsalLoc.X);
+		const APlayerController* PC = Cast<APlayerController>(GetController());
+
+		if (TutorialState == ETutorialState::None)
+		{
+			TutorialState = ETutorialState::SteerCheck;
+		}
+
+		if (TutorialState == ETutorialState::SteerCheck && CurrentX >= -2000.0f)
+		{
+			const bool bSteered = FMath::Abs(SteerInput.X) > 0.2f ||
+				(PC && (PC->IsInputKeyDown(EKeys::A) || PC->IsInputKeyDown(EKeys::D) ||
+				        PC->IsInputKeyDown(EKeys::Left) || PC->IsInputKeyDown(EKeys::Right)));
+			if (bSteered)
+			{
+				TutorialState = ETutorialState::JumpCheck;
+				Velocity.X = 1200.0f;
+				PlayCue(TEXT("OnFilmFrame"), FilmFramePickupSound, 0.85f, 1.10f);
+			}
+			else
+			{
+				SetActorLocation(FVector(-2000.0, RehearsalLoc.Y, RehearsalLoc.Z), false);
+				Velocity.X = 0.0f;
+			}
+		}
+		else if (TutorialState == ETutorialState::JumpCheck && CurrentX >= -1000.0f)
+		{
+			const bool bJumped = SteerInput.Y > 0.35f || !bIsGrounded || Velocity.Z > 50.0f ||
+				(PC && (PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up) || PC->IsInputKeyDown(EKeys::Gamepad_DPad_Up)));
+			if (bJumped)
+			{
+				if (bIsGrounded && Velocity.Z <= 0.0f)
+				{
+					Velocity.Z = StuntJumpVelocityZ;
+					bIsGrounded = false;
+					bHasProcessedJumpInput = true;
+				}
+				TutorialState = ETutorialState::CutCheck;
+				Velocity.X = 1200.0f;
+				PlayCue(TEXT("OnFilmFrame"), FilmFramePickupSound, 0.90f, 1.25f);
+			}
+			else
+			{
+				SetActorLocation(FVector(-1000.0, RehearsalLoc.Y, RehearsalLoc.Z), false);
+				Velocity.X = 0.0f;
+			}
+		}
+		else if (TutorialState == ETutorialState::CutCheck && CurrentX >= -100.0f)
+		{
+			const bool bCutPressed = PC && (
+				PC->IsInputKeyDown(EKeys::SpaceBar) ||
+				PC->IsInputKeyDown(EKeys::LeftShift) ||
+				PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Right) ||
+				PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Bottom));
+			if (bCutPressed)
+			{
+				CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
+				PushTakeAndAspectToSubsystem();
+				OnTakeCut.Broadcast(CurrentTake);
+				OnTakeCutEvent(CurrentTake);
+				CompleteRehearsalAndStartScene01();
+			}
+			else
+			{
+				SetActorLocation(FVector(-100.0, RehearsalLoc.Y, RehearsalLoc.Z), false);
+				Velocity.X = 0.0f;
+			}
+		}
+		else if (CurrentX >= 0.0f)
+		{
+			CompleteRehearsalAndStartScene01();
+		}
+	}
 
 	// Mathematical obstacle collision & near-miss graze detection against AMegaJamTrackGenerator
 	if (UWorld* World = GetWorld())
@@ -2248,7 +2382,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 
 	AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
-	if (GameMode && (!GameMode->IsPlaying() || GameMode->GetRunTime() < 0.05f))
+	if (GameMode && (!GameMode->IsPlaying() || (!bIsRehearsalMode && GameMode->GetRunTime() < 0.05f)))
 	{
 		return false;
 	}
@@ -2267,6 +2401,17 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	if (FlowSubsystem)
 	{
 		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
+	}
+
+	if (bIsRehearsalMode && TutorialState == ETutorialState::CutCheck && GetActorLocation().X >= -250.0)
+	{
+		PushTakeAndAspectToSubsystem();
+		PushAudioParameters();
+		TriggerAudioEvent(TEXT("OnHardCut"));
+		OnTakeCut.Broadcast(CurrentTake);
+		OnTakeCutEvent(CurrentTake);
+		CompleteRehearsalAndStartScene01();
+		return true;
 	}
 
 	// Brief forward impulse. StepPhysics re-applies the terminal velocity clamp.
@@ -2707,6 +2852,26 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 	SyncSceneMusicTrack(NextGenre);
 }
 
+void AMegaJamFlowPawn::CompleteRehearsalAndStartScene01()
+{
+	bIsRehearsalMode = false;
+	TutorialState = ETutorialState::Completed;
+	SkipHoldTimer = 0.0f;
+	CurrentShotDuration = 0.0f;
+	AspectHoldTimer = 0.0f;
+	bIsShotStale = false;
+
+	const FVector CurLoc = GetActorLocation();
+	const float GroundZ = FMath::Max(2.0f, static_cast<float>(WideZBounds.X));
+	SetActorLocation(FVector(0.0, CurLoc.Y, FMath::Max(GroundZ, static_cast<float>(CurLoc.Z))), false, nullptr, ETeleportType::TeleportPhysics);
+	Velocity.X = FMath::Max(1200.0f, CruiseSpeed);
+	CurrentFOVPunch = CutFOVPunch;
+	EmissiveBurstTimer = 0.25f;
+
+	OnClapperboardSnapped.Broadcast();
+	PlayRunStartSound();
+}
+
 void AMegaJamFlowPawn::HaltForWrapUpScoreboard()
 {
 	Velocity.X = 0.0f;
@@ -2725,7 +2890,9 @@ void AMegaJamFlowPawn::ResetForRun()
 	bIsGrounded = true;
 	bHasProcessedJumpInput = false;
 	CustomTimeDilation = 1.0f;
-	Velocity = FVector(FMath::Max(1200.0f, CruiseSpeed), 0.0f, 0.0f);
+	SkipHoldTimer = 0.0f;
+	TutorialState = bIsRehearsalMode ? ETutorialState::SteerCheck : ETutorialState::Completed;
+	Velocity = FVector(bIsRehearsalMode ? 1200.0f : FMath::Max(1200.0f, CruiseSpeed), 0.0f, 0.0f);
 	FlowRatio = 0.5f;
 	FilmMeter = 50.0f;
 	SteerInput = FVector2D::ZeroVector;
@@ -2800,13 +2967,20 @@ void AMegaJamFlowPawn::ResetForRun()
 	{
 		ResetLoc = FVector(0.0, 0.0, 2.0);
 	}
+	ResetLoc.X = 0.0;
 	ResetLoc.Z = FMath::Max(2.0, WideZBounds.X);
 	const FVector ResetLookAhead = ResetLoc + FVector(10.0f, 0.0f, 0.0f);
 	const FVector SafeResetDir = (ResetLookAhead - ResetLoc).GetSafeNormal(1e-4f, FVector::ForwardVector);
 	SpawnTransform.SetLocation(ResetLoc);
 	SpawnTransform.SetRotation(SafeResetDir.Rotation().Quaternion());
 	SpawnTransform.SetScale3D(FVector::OneVector);
-	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
+
+	FTransform EffectiveSpawnTransform = SpawnTransform;
+	if (bIsRehearsalMode)
+	{
+		EffectiveSpawnTransform.SetLocation(FVector(-3000.0, 0.0, FMath::Max(2.0, WideZBounds.X)));
+	}
+	SetActorTransform(EffectiveSpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 
 	// Default starting mode: 4:3 Academy Frame (Flight & Charge Mode) with 50% Film Meter
 	CurrentTake = EMegaJamTakeState::StudioTake;
@@ -3422,9 +3596,14 @@ void AMegaJamFlowPawn::UpdatePawnDynamicMaterial(float DeltaSeconds)
 
 	if (OrbLight)
 	{
+		const UMegaJamFlowSubsystem* FlowSub = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+		const EMegaJamSceneGenre CurrentGenre = FlowSub ? FlowSub->ActiveGenre : ActiveMusicGenre;
+		const bool bIsNoirScene = (CurrentGenre == EMegaJamSceneGenre::Noir || GetEffectivePowerGenre() == EMegaJamSceneGenre::Noir);
+		const float BaseLightIntensity = bIsNoirScene ? 800.0f : 2500.0f;
+		const float BurstLightIntensity = bIsNoirScene ? 1250.0f : 3800.0f;
 		const FLinearColor LightTint = FMath::Lerp(FLinearColor(0.85f, 0.96f, 1.0f, 1.0f), FinalTint, 0.75f);
 		OrbLight->SetLightColor(LightTint);
-		OrbLight->SetIntensity(FMath::Lerp(2500.0f, 3800.0f, BurstAlpha) * BeatPulse);
+		OrbLight->SetIntensity(FMath::Lerp(BaseLightIntensity, BurstLightIntensity, BurstAlpha) * BeatPulse);
 	}
 }
 
@@ -3674,6 +3853,9 @@ void AMegaJamFlowPawn::ToggleGodMode()
 void AMegaJamFlowPawn::ClearCrashStateForDebugSkip()
 {
 	bCrashed = false;
+	bIsRehearsalMode = false;
+	TutorialState = ETutorialState::Completed;
+	SkipHoldTimer = 0.0f;
 	bIsGrounded = true;
 	bHasProcessedJumpInput = false;
 	Velocity = FVector(TerminalVelocity * 0.7f, 0.0f, 0.0f);

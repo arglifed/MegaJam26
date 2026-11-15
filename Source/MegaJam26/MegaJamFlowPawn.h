@@ -36,6 +36,17 @@ enum class EMegaJamCameraPOV : uint8
 	BumperFirstPerson
 };
 
+/** Interactive 'Rehearsal' tutorial state (-3000m to 0m) before Scene 01 begins. */
+UENUM(BlueprintType)
+enum class ETutorialState : uint8
+{
+	None,
+	SteerCheck,
+	JumpCheck,
+	CutCheck,
+	Completed
+};
+
 /**
  * Raw C++ physics pawn. No ACharacter / CharacterMovementComponent.
  * Velocity is integrated in Tick() and applied with a swept AddActorWorldOffset.
@@ -409,6 +420,22 @@ public:
 	/** Steady forward cruise speed (cm/s) during the Attract-Mode Title Screen and Victory Cruise. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Attract")
 	float AttractCruiseSpeed = 1600.0f;
+
+	// ---- Interactive 'Rehearsal' Tutorial (-3000m to 0m) ----
+	/** True while the player is in the pre-Scene 01 interactive Rehearsal runway (-3000.0f to 0.0f). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Tutorial")
+	bool bIsRehearsalMode = true;
+
+	/** Active Rehearsal gate step (SteerCheck -> JumpCheck -> CutCheck -> Completed). */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="MegaJam|Tutorial")
+	ETutorialState TutorialState = ETutorialState::SteerCheck;
+
+	/** Seconds [Tab] or [Esc] has been continuously held to skip Rehearsal (skips at 1.5s). */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="MegaJam|Tutorial")
+	float SkipHoldTimer = 0.0f;
+
+	/** Completes the pre-Scene 01 Rehearsal tutorial, warps to X=0.0f, snaps the clapperboard, and engages CruiseSpeed. */
+	void CompleteRehearsalAndStartScene01();
 
 	// ---- Enhanced Input actions (assign in a Blueprint subclass) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Input")

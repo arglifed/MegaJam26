@@ -102,15 +102,17 @@ void AMegaJamGameMode::Tick(float DeltaSeconds)
 	UMegaJamFlowSubsystem* FlowSubsystem = GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>();
 	const float FlowRatio = FlowSubsystem ? FlowSubsystem->FlowRatio : 0.0f;
 
-	// Take Clock runs continuously while playing
-	RunTime += DeltaSeconds;
-
-	// Track distance traveled in meters along +X from SceneStartOriginX (0m to 3,600m)
+	// Track distance traveled in meters along +X from SceneStartOriginX (0m to 9,000m)
 	AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!FlowPawn || !FlowPawn->bIsRehearsalMode)
+	{
+		// Take Clock runs continuously while playing (paused during -3000m..0m Rehearsal)
+		RunTime += DeltaSeconds;
+	}
 	if (FlowPawn)
 	{
 		const float PawnX = static_cast<float>(FlowPawn->GetActorLocation().X);
-		DistanceMeters = FMath::Max(0.0f, (PawnX - SceneStartOriginX) / 100.0f);
+		DistanceMeters = FlowPawn->bIsRehearsalMode ? 0.0f : FMath::Max(0.0f, (PawnX - SceneStartOriginX) / 100.0f);
 	}
 
 	// Scene 02 Transition at 1,800m: trigger mid-air Clapperboard Stunt Transition into Western Standoff
@@ -352,7 +354,7 @@ void AMegaJamGameMode::StartProductionFromTitle()
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
-		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
+		SceneStartOriginX = FlowPawn->bIsRehearsalMode ? 0.0f : static_cast<float>(FlowPawn->GetActorLocation().X);
 	}
 
 	if (World)
@@ -425,7 +427,7 @@ void AMegaJamGameMode::RetakeCurrentAct()
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
-		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
+		SceneStartOriginX = FlowPawn->bIsRehearsalMode ? 0.0f : static_cast<float>(FlowPawn->GetActorLocation().X);
 		if (CurrentCheckpointDistanceMeters > 0.0f)
 		{
 			FlowPawn->SetActorLocation(
@@ -496,7 +498,7 @@ void AMegaJamGameMode::WrapToTitleSlate()
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
-		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
+		SceneStartOriginX = FlowPawn->bIsRehearsalMode ? 0.0f : static_cast<float>(FlowPawn->GetActorLocation().X);
 	}
 
 	if (World)
@@ -568,7 +570,7 @@ void AMegaJamGameMode::ResetRun()
 	if (AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(UGameplayStatics::GetPlayerPawn(this, 0)))
 	{
 		FlowPawn->ResetForRun();
-		SceneStartOriginX = static_cast<float>(FlowPawn->GetActorLocation().X);
+		SceneStartOriginX = FlowPawn->bIsRehearsalMode ? 0.0f : static_cast<float>(FlowPawn->GetActorLocation().X);
 		if (CurrentCheckpointDistanceMeters > 0.0f)
 		{
 			FlowPawn->SetActorLocation(
