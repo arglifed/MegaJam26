@@ -1,0 +1,75 @@
+{
+  "_comment": "Hand-entered numbers for Scripts/devlog_stats.py. ai_tools rows are added to the AI usage table as-is (use \"-\" for unknown). arglifed's rows are self-reported approximations (issue #121 comment, 2026-11-15). The Claude Desktop row was self-counted by Claude Desktop from its own chat history on 2026-11-15 (the data export never arrived); its token figures are low-confidence estimates of unique text, not billed tokens.",
+  "ai_tools": [
+    {
+      "person": "Hendrixsan",
+      "tool": "Claude Desktop chat (art and process planning, Meshy prompts, issue drafts; Unreal setup help)",
+      "sessions": "3",
+      "prompts": "~17–22",
+      "turns": "-",
+      "tool_calls": "-",
+      "input_tokens": "~90–160k (est.)",
+      "output_tokens": "~45–80k (est.)",
+      "cache_write": "-",
+      "cache_read": "-",
+      "models": "not shown in chat history"
+    },
+    {
+      "person": "arglifed",
+      "tool": "Antigravity IDE (C++ architecture, track/skyline generation, camera systems, PR merges)",
+      "sessions": "~18",
+      "prompts": "~65",
+      "turns": "-",
+      "tool_calls": "-",
+      "input_tokens": "n/a",
+      "output_tokens": "n/a",
+      "cache_write": "-",
+      "cache_read": "-",
+      "models": "Gemini 4 Argon"
+    },
+    {
+      "person": "arglifed",
+      "tool": "Antigravity IDE (targeted bug fixes, HUD/tutorial patches, GitHub CLI and scripts)",
+      "sessions": "~12",
+      "prompts": "~40",
+      "turns": "-",
+      "tool_calls": "-",
+      "input_tokens": "n/a",
+      "output_tokens": "n/a",
+      "cache_write": "-",
+      "cache_read": "-",
+      "models": "Gemini 4 Flash"
+    },
+    {
+      "person": "arglifed",
+      "tool": "Gemini web chat (system planning, prompt engineering, play-test checklists, submission copy)",
+      "sessions": "~15",
+      "prompts": "~95",
+      "turns": "-",
+      "tool_calls": "-",
+      "input_tokens": "n/a",
+      "output_tokens": "n/a",
+      "cache_write": "-",
+      "cache_read": "-",
+      "models": "Gemini"
+    },
+    {
+      "person": "arglifed",
+      "tool": "Ollama, local on an RTX 5080 (offline C++ error parsing, script checks)",
+      "sessions": "~8",
+      "prompts": "~30",
+      "turns": "-",
+      "tool_calls": "-",
+      "input_tokens": "n/a",
+      "output_tokens": "n/a",
+      "cache_write": "-",
+      "cache_read": "-",
+      "models": "Qwen2.5-coder 7B"
+    }
+  ],
+  "meshy": {
+    "jam_account": "Meshy Pro: 1,000 credits from the jam partner perk on top of the free plan's 100, so 1,100 in total. 587 left on 2026-11-15, so 513 spent",
+    "tasks_on_jam_account": "68: 66 text-to-3d (preview + refine passes, including retries), 1 text-to-image and 1 image-to-3d (the Hang Glider redo)",
+    "models_in_game": "31 (30 on the jam account, plus the Motorcycle made on a free account)"
+  }
+}
