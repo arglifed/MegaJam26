@@ -51,7 +51,13 @@ The hand-offs were smooth and easy, mostly because we were both using AI. Each o
 - **Holding a merge.** Big physics changes waited for the art merge (#80, "Held for Art Merge"). Neither lane ever had to resolve a conflict in a binary asset.
 
 ### The AI toolchain
-- **arglifed:** Gemini 4 Argon in the IDE for the C++ lane, run in plan mode first as `AGENTS.md` requires. <!-- TODO: arglifed to confirm tools and models -->
+- **arglifed:** the Antigravity IDE for the C++ lane, using four tools:
+  - **Gemini 4 Argon** for gameplay architecture, procedural track and skyline generation, the camera and aspect-ratio systems, and PR merges.
+  - **Gemini 4 Flash** for targeted bug fixes, HUD and tutorial patches, and GitHub CLI and script tasks.
+  - **Gemini web chat** for system planning, prompt engineering, play-test checklists and submission copy.
+  - **Qwen2.5-coder 7B** running locally in Ollama on an RTX 5080, for offline C++ error parsing and script checks.
+
+  The coding agents were never allowed to touch a `.uasset` or `.umap`. Every task went through a structured plan-then-execute prompt on its own feature branch. Even environment polish (the procedural skyline, the soundstage dressing, the tutorial gates) was built as readable C++ that runs at runtime, never as edits to the binary map.
 - **Hendrixsan:** Claude Code in a PowerShell terminal and in Unreal's built-in terminal for the art and audio lane:
   - import scripts and material wiring
   - Meshy generation through its MCP server
@@ -185,15 +191,18 @@ The player character is the orb: the star of the film, riding whatever vehicle t
 ## By the numbers
 
 <!-- STATS:BEGIN -->
-_Generated 2026-11-15 14:29 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
+_Generated 2026-11-15 16:05 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
 
 ### AI usage
 
 | Person | Tool | Sessions | Prompts | Model turns | Tool calls | Input tok | Output tok | Cache write | Cache read | Models |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Hendrixsan | Claude Code (PowerShell) | 16 | 160 | 1,034 | 1,301 | 2,279 | 875,601 | 5,067,301 | 193,534,061 | claude-opus-5-5 (815), claude-fable-5-2 (219) |
-| Hendrixsan | Claude Code (UE Terminal) | 2 | 9 | 29 | 27 | 62 | 21,538 | 57,755 | 2,091,207 | claude-opus-5-5 (29) |
-| arglifed | Gemini 4 Argon (IDE integration) | TODO | TODO | - | - | TODO | TODO | - | - | TODO |
+| Hendrixsan | Claude Code (PowerShell) | 16 | 165 | 1,058 | 1,322 | 2,334 | 896,328 | 5,249,818 | 197,249,984 | claude-opus-5-5 (839), claude-fable-5-2 (219) |
+| Hendrixsan | Claude Code (UE Terminal) | 4 | 26 | 106 | 94 | 248 | 57,679 | 195,222 | 8,593,309 | claude-opus-5-5 (106) |
+| arglifed | Antigravity IDE (C++ architecture, track/skyline generation, camera systems, PR merges) | ~18 | ~65 | - | - | n/a | n/a | - | - | Gemini 4 Argon |
+| arglifed | Antigravity IDE (targeted bug fixes, HUD/tutorial patches, GitHub CLI and scripts) | ~12 | ~40 | - | - | n/a | n/a | - | - | Gemini 4 Flash |
+| arglifed | Gemini web chat (system planning, prompt engineering, play-test checklists, submission copy) | ~15 | ~95 | - | - | n/a | n/a | - | - | Gemini |
+| arglifed | Ollama, local on an RTX 5080 (offline C++ error parsing, script checks) | ~8 | ~30 | - | - | n/a | n/a | - | - | Qwen2.5-coder 7B |
 
 _Cache read is the context re-sent to the model on each turn and billed at a discount. It is reported separately so it doesn't inflate the other numbers. "Model turns" counts unique assistant messages._
 
@@ -204,7 +213,7 @@ _Cache read is the context re-sent to the model on each turn and billed at a dis
 | Thu Nov 12 | 4 | 30 | 113 | 70,911 |
 | Fri Nov 13 | 7 | 52 | 388 | 308,371 |
 | Sat Nov 14 | 5 | 70 | 393 | 368,372 |
-| Sun Nov 15 | 5 | 17 | 169 | 149,485 |
+| Sun Nov 15 | 7 | 39 | 270 | 206,353 |
 
 ### Meshy (3D generation)
 
@@ -214,18 +223,18 @@ _Cache read is the context re-sent to the model on each turn and billed at a dis
 
 ### Repository
 
-- **158 commits** on main (Nov 12: 28, Nov 13: 49, Nov 14: 67, Nov 15: 14)
-- **25** commits carry a Claude co-author line
-- **59 pull requests** (58 merged): arglifed 49, ninjacom 10
-- **71 issues** (69 closed): arglifed 53, ninjacom 18
-- **13,116 lines of C++** in 15 files under `Source/`
+- **170 commits** on main (Nov 12: 28, Nov 13: 49, Nov 14: 67, Nov 15: 26)
+- **26** commits carry a Claude co-author line
+- **65 pull requests** (64 merged): arglifed 54, ninjacom 11
+- **71 issues** (70 closed): arglifed 53, ninjacom 18
+- **13,447 lines of C++** in 15 files under `Source/`
 - **219 assets** (`.uasset`) and 1 map under `Content/MegaJam26/`
 - **7 scripts** in `Scripts/`
 <!-- STATS:END -->
 
 ## Declarations
 
-- **Prepared before the jam (Nov 12):** the commit "Pre-jam UE 5.8 C++ Audio-Kinetic Flow Template & MCP setup". That is the four baseline C++ classes (GameMode, PlayerController, FlowPawn, FlowSubsystem), the module setup and the MCP configuration. Everything else was made during the jam. <!-- TODO: list any prompts or scripts written before the jam -->
+- **Prepared before the jam (Nov 12):** the commit "Pre-jam UE 5.8 C++ Audio-Kinetic Flow Template & MCP setup". That is the four baseline C++ classes (GameMode, PlayerController, FlowPawn, FlowSubsystem), the module setup and the MCP configuration. It also included the first `AGENTS.md` guardrails and the Antigravity and Ollama IDE setup. Everything else was made during the jam.
 - **AI-generated assets:** all 31 meshes come from Meshy AI, from our own text prompts. 30 were made on Meshy Pro (the jam perk) and the Motorcycle on a free account (CC BY 4.0, credit Meshy).
 - **Licensed audio:** all music and SFX come from WeLoveIndies under its Epic MegaJam project licence.
 - Full credits follow below and are also on the game page.
