@@ -151,11 +151,26 @@ The player character is the orb: the star of the film, riding whatever vehicle t
 - **Cross-lane in parallel.** While the orb was being built, arglifed added a dynamic point light that follows it (#112). The art PR only hooked the orb up to the pawn Blueprint in a time slot agreed with arglifed, so nothing was overwritten.
 
 ## What went wrong (and how we fixed it)
-- **NaN cascade (Sat).** Zero-length vectors, zero-scale instance transforms and bad camera matrices set off engine ensures and render glitches. We fixed them in a run of PRs (#95–#103) and then made safe transforms the rule (#123/#124).
-- **Beat sync drift.** The audio beat clock fell out of step with the MetaSound score after F7 warps and pitch changes. Fixed in #75 and #77.
-- **Riderless vehicles.** Meshy kept adding riders, as described in case study 1.
+
+**Engine and code**
+- **The NaN cascade (Sat).** Once the game ran end to end, the log filled with NaN errors and engine ensures:
+  - zero-length vectors on the track start
+  - camera matrices built from bad values on the title screen
+  - instanced meshes placed at zero scale
+  - a legacy floor collision that locked the pawn for the first 190 m
+
+  arglifed fixed them one at a time in a run of PRs (#95, #97, #99, #103). A last flood of about 4,200 `InverseFast` ensures per play session sat on the render thread with no gameplay callstack. It turned out to be a zero-scale family again: something the art lane first thought was a mesh bug (#119) and split out once the evidence pointed elsewhere (#123). The final fix made safe instance transforms a rule in code (#124): every procedural scale is clamped to at least 0.05.
 - **NaN mesh bounds (#119).** Three meshes logged "NaN in Bounds" on every load. The import script used Unreal's fast mesh build, which in UE 5.8 writes the render data to the derived-data cache *before* the bounds are set, so garbage got cached. Re-importing didn't help, because the cache key comes from the mesh content. The fix was a full build plus a 0.1 mm offset to force a fresh cache key. A vertex-by-vertex check confirmed the meshes were otherwise identical (#122).
-<!-- TODO: anything else: build hangs (-NoUBA), RAM limits on a 16 GB PC, LFS quota -->
+- **Beat-sync drift.** The beat clock behind on-beat moves ran free from level start, while the music restarted at every scene change and every F7 warp and changed pitch in bullet time. So "on the beat" slowly stopped matching what you heard. The art and audio lane found this by reading the C++ and wrote up the three causes (#74). arglifed tied the clock to the score's playback and added NaN guards for pitch and warp maths (#75, #77).
+
+**Assets**
+- **Meshy's habits.** Riders on the vehicles, a paper-thin Hang Glider, mirror-shiny obstacles, cars at the wrong scale. Covered in case study 1.
+- **Git LFS quota.** Binary assets live in Git LFS, which has a storage quota. On the first afternoon we kept raw source files (WAV masters, source meshes, 2K textures) out of the repo altogether (`RawAssets/` is git-ignored). Devlog screenshots stay out too.
+
+**Hardware and tooling**
+- **One editor at a time.** On Hendrixsan's 16 GB laptop, two copies of the Unreal editor didn't fit in memory, so the automated play-test could only run with the user's editor closed. A cold editor load took about 8 minutes, and one capture run was killed by a 5-minute timeout before the editor had finished starting. Later runs allowed for that.
+- **Stuck builds.** Some C++ builds hung, with the compiler sitting at a few seconds of CPU forever. Killing the build and rebuilding with Unreal's distributed build accelerator turned off (`-NoUBA`) got past it every time.
+- **Lost scratch work.** Claude Code's per-session scratch folder is wiped when a session restarts, and the first capture scripts went with it. After that, reusable scripts lived in a durable temp folder and were noted down so the next session could find them.
 
 ## By the numbers
 
@@ -203,4 +218,28 @@ _Cache read is the context re-sent to the model on each turn and billed at a dis
 - **Prepared before the jam (Nov 12):** the commit "Pre-jam UE 5.8 C++ Audio-Kinetic Flow Template & MCP setup". That is the four baseline C++ classes (GameMode, PlayerController, FlowPawn, FlowSubsystem), the module setup and the MCP configuration. Everything else was made during the jam. <!-- TODO: list any prompts or scripts written before the jam -->
 - **AI-generated assets:** all 31 meshes come from Meshy AI, from our own text prompts. 30 were made on Meshy Pro (the jam perk) and the Motorcycle on a free account (CC BY 4.0, credit Meshy).
 - **Licensed audio:** all music and SFX come from WeLoveIndies under its Epic MegaJam project licence.
-- Full credits are on the game page. <!-- TODO: paste the Docs/CREDITS.md summary for the itch post -->
+- Full credits follow below and are also on the game page.
+
+## Credits
+
+**Team Four Swords Pictures**
+- **arglifed:** gameplay, systems and C++
+- **Hendrixsan:** art, audio and tooling
+
+**3D models: [Meshy AI](https://www.meshy.ai).** All 31 models were generated with Meshy AI from our own text prompts, with no third-party images or brand references:
+- **Vehicles:** Motorcycle, Horse, Spy Car, Snowboard, Hang Glider
+- **Obstacles:** Cyber Barrier, Timber Barricade, Roadblock, Snowdrift, Ice Boulders, Monolith, Laser Gate
+- **Props and pickup:** Grave Cross, Tombstone, Black Sedan, Camera Crane, Film Frame
+- **Set pieces:** Wrap Arch, Film Reel, Aperture Ring
+- **Studio dressing:** Lighting Truss, Backdrop Flat, Studio Spotlight, Boom Mic, Cactus, Tumbleweed, Street Lamp, Skyscraper, Pine Tree, Snow Rock, Floating Crystal
+
+The Motorcycle was made on a free Meshy account and is used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) with credit to Meshy. The other 30 were made on Meshy Pro through the jam's partner perk.
+
+**Music and sound effects: [WeLoveIndies](https://www.weloveindies.com).** Used under the WeLoveIndies licence for the 2026 Epic AI MegaJam project (non-commercial).
+- **Music:** "Too Clever" (Action), "Brixxx" (Western), "Lucid Dreaming" (Noir), "Outbreak" (Chase), "The Snatcher" (Final Cut)
+- **Sound effects:** clapperboard hit, futuristic sell, positive pitch rise, vocal cut, cinematic whoosh
+
+**Made by us:** the movie magic orb (a procedural mesh and material), the track materials, the MetaSound score that plays and syncs the music, all C++ gameplay code and all tooling scripts.
+
+**Built with:** Unreal Engine 5.8, used under the Unreal Engine EULA.
+**AI tools:** Claude Code and Claude Desktop (Anthropic), Gemini 4 Argon (arglifed's IDE), and Meshy AI.
