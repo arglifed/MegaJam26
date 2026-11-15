@@ -120,7 +120,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		DevSlot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
 		DevSlot->SetAlignment(FVector2D(0.0f, 0.0f));
-		DevSlot->SetPosition(FVector2D(30.0f, 54.0f));
+		DevSlot->SetPosition(FVector2D(30.0f, 64.0f));
 		DevSlot->SetAutoSize(true);
 		DevSlot->SetZOrder(10);
 	}
@@ -128,7 +128,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// Top-Center Distance Progress Readout & Progress Bar (visible during active gameplay)
 	ActProgressBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ActProgressBorder"));
 	ActProgressBorder->SetBrushColor(FLinearColor(0.04f, 0.04f, 0.04f, 0.78f));
-	ActProgressBorder->SetPadding(FMargin(14.0f, 5.0f));
+	ActProgressBorder->SetPadding(FMargin(22.0f, 10.0f));
 
 	UVerticalBox* ActBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ActBox"));
 	ActProgressText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ActProgressText"));
@@ -138,7 +138,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	ActProgressText->SetText(FText::FromString(TEXT("DIST: 0000m / 1800m  (0%)")));
 	if (UVerticalBoxSlot* TextSlot = ActBox->AddChildToVerticalBox(ActProgressText))
 	{
-		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+		TextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
 		TextSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 
@@ -156,7 +156,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		ActSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		ActSlot->SetAlignment(FVector2D(0.5f, 0.0f));
 		ActSlot->SetPosition(FVector2D(0.0f, 85.0f));
-		ActSlot->SetSize(FVector2D(300.0f, 44.0f));
+		ActSlot->SetSize(FVector2D(360.0f, 58.0f));
 		ActSlot->SetAutoSize(false);
 		ActSlot->SetZOrder(12);
 	}
@@ -164,7 +164,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// Bottom-Center Film Meter & 120 BPM Beat Indicator
 	FilmMeterBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("FilmMeterBorder"));
 	FilmMeterBorder->SetBrushColor(FLinearColor(0.02f, 0.025f, 0.035f, 0.88f));
-	FilmMeterBorder->SetPadding(FMargin(18.0f, 7.0f));
+	FilmMeterBorder->SetPadding(FMargin(28.0f, 12.0f));
 
 	UVerticalBox* FilmBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("FilmBox"));
 
@@ -175,7 +175,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	BeatIndicatorText->SetText(FText::FromString(TEXT("♦ 120 BPM BEAT ♦")));
 	if (UVerticalBoxSlot* BeatSlot = FilmBox->AddChildToVerticalBox(BeatIndicatorText))
 	{
-		BeatSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+		BeatSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
 		BeatSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 
@@ -186,7 +186,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	FilmMeterText->SetText(FText::FromString(TEXT("[CTRL / C] DIRECTOR'S CUT READY! (FILM: 50%)")));
 	if (UVerticalBoxSlot* FMTextSlot = FilmBox->AddChildToVerticalBox(FilmMeterText))
 	{
-		FMTextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		FMTextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
 		FMTextSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 
@@ -203,8 +203,8 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		FMSlot->SetAnchors(FAnchors(0.5f, 1.0f, 0.5f, 1.0f));
 		FMSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-		FMSlot->SetPosition(FVector2D(0.0f, -20.0f));
-		FMSlot->SetSize(FVector2D(460.0f, 64.0f));
+		FMSlot->SetPosition(FVector2D(0.0f, -24.0f));
+		FMSlot->SetSize(FVector2D(540.0f, 82.0f));
 		FMSlot->SetAutoSize(false);
 		FMSlot->SetZOrder(14);
 	}
@@ -238,7 +238,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		ChainSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 0.0f));
 		ChainSlot->SetAlignment(FVector2D(1.0f, 0.0f));
-		ChainSlot->SetPosition(FVector2D(-30.0f, 54.0f));
+		ChainSlot->SetPosition(FVector2D(-30.0f, 64.0f));
 		ChainSlot->SetAutoSize(true);
 		ChainSlot->SetZOrder(10);
 	}
@@ -246,7 +246,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// Top-Center 2.5s Scene Slugline Clapperboard Banner
 	SceneSluglineBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SceneSluglineBorder"));
 	SceneSluglineBorder->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.02f, 0.88f));
-	SceneSluglineBorder->SetPadding(FMargin(22.0f, 8.0f));
+	SceneSluglineBorder->SetPadding(FMargin(32.0f, 14.0f));
 	SceneSluglineBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	SceneSluglineText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SceneSluglineText"));
@@ -259,7 +259,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		SlugSlot->SetAnchors(FAnchors(0.5f, 0.0f, 0.5f, 0.0f));
 		SlugSlot->SetAlignment(FVector2D(0.5f, 0.0f));
-		SlugSlot->SetPosition(FVector2D(0.0f, 130.0f));
+		SlugSlot->SetPosition(FVector2D(0.0f, 156.0f));
 		SlugSlot->SetAutoSize(true);
 		SlugSlot->SetZOrder(15);
 	}
@@ -267,7 +267,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// Center Clapperboard flash overlay (ACTION! / CUT!)
 	CenterBannerBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CenterBannerBorder"));
 	CenterBannerBorder->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.02f, 0.85f));
-	CenterBannerBorder->SetPadding(FMargin(28.0f, 14.0f));
+	CenterBannerBorder->SetPadding(FMargin(38.0f, 20.0f));
 	CenterBannerBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	CenterBannerText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CenterBannerText"));
@@ -288,7 +288,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// ---- Clapperboard Title Screen Card (RunState == TitleScreen) ----
 	TitleCardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TitleCardBorder"));
 	TitleCardBorder->SetBrushColor(FLinearColor(0.015f, 0.015f, 0.02f, 0.90f));
-	TitleCardBorder->SetPadding(FMargin(44.0f, 32.0f));
+	TitleCardBorder->SetPadding(FMargin(64.0f, 44.0f));
 	TitleCardBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	UVerticalBox* TitleBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TitleBox"));
@@ -308,12 +308,12 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		return Block;
 	};
 
-	AddTitleLine(TEXT("TitleStudio"), TEXT("FOUR SWORDS PICTURES PRESENTS"), 16, FLinearColor(0.75f, 0.78f, 0.85f, 1.0f), 6.0f);
-	AddTitleLine(TEXT("TitleMain"), TEXT("DIRECTOR'S CUT"), 44, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 18.0f);
-	AddTitleLine(TEXT("TitleControls1"), TEXT("[WASD / STICK / D-PAD] STEER & HOP   |   [SPACE / CROSS / BTN 1] HARD CUT / BEAT-SLASH / SMASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
-	AddTitleLine(TEXT("TitleControls2"), TEXT("[CTRL / SQUARE / BTN 2] DIRECTOR'S CUT (@ >=25% FILM)   |   [TAB / R] MONTAGE CYCLE   |   [V] CAMERA POV"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 16.0f);
-	AddTitleLine(TEXT("TitleObj"), TEXT("SCENES 01-05 (ACTION + WESTERN + NOIR + CHASE + MONTAGE) — 9,000m CAMPAIGN (PAR 03:45.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 14.0f);
-	TitleRecordText = AddTitleLine(TEXT("TitleRecord"), TEXT(""), 15, FLinearColor(1.0f, 0.85f, 0.20f, 1.0f), 16.0f);
+	AddTitleLine(TEXT("TitleStudio"), TEXT("FOUR SWORDS PICTURES PRESENTS"), 16, FLinearColor(0.75f, 0.78f, 0.85f, 1.0f), 14.0f);
+	AddTitleLine(TEXT("TitleMain"), TEXT("DIRECTOR'S CUT!"), 44, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 26.0f);
+	AddTitleLine(TEXT("TitleControls1"), TEXT("[WASD / STICK / D-PAD] STEER & HOP   |   [SPACE / CROSS / BTN 1] HARD CUT / BEAT-SLASH / SMASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 12.0f);
+	AddTitleLine(TEXT("TitleControls2"), TEXT("[CTRL / SQUARE / BTN 2] DIRECTOR'S CUT (@ >=25% FILM)   |   [TAB / R] MONTAGE CYCLE   |   [V] CAMERA POV"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 24.0f);
+	AddTitleLine(TEXT("TitleObj"), TEXT("SCENES 01-05 (ACTION + WESTERN + NOIR + CHASE + MONTAGE) — 9,000m CAMPAIGN (PAR 03:45.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 20.0f);
+	TitleRecordText = AddTitleLine(TEXT("TitleRecord"), TEXT(""), 15, FLinearColor(1.0f, 0.85f, 0.20f, 1.0f), 24.0f);
 	TitleRecordText->SetVisibility(ESlateVisibility::Collapsed);
 	TitlePromptText = AddTitleLine(TEXT("TitlePrompt"), TEXT("▶ PRESS [SPACE / CROSS / BTN 1] TO ROLL CAMERA"), 22, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
@@ -330,7 +330,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// ---- Final Cut Wrap-Up Scoreboard Card (RunState == Completed / bIsShowingScoreboard) ----
 	WrapCardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("WrapCardBorder"));
 	WrapCardBorder->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
-	WrapCardBorder->SetPadding(FMargin(54.0f, 36.0f));
+	WrapCardBorder->SetPadding(FMargin(68.0f, 44.0f));
 	WrapCardBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	UVerticalBox* WrapBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("WrapBox"));
@@ -350,19 +350,19 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		return Block;
 	};
 
-	AddWrapLine(TEXT("WrapHeader"), TEXT("DIRECTOR'S CUT: THE FINAL REVIEW"), 32, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 10.0f);
-	WrapNewRecordText = AddWrapLine(TEXT("WrapNewRecord"), TEXT("★ NEW STUDIO BOX-OFFICE RECORD! ★"), 20, FLinearColor(1.0f, 0.92f, 0.22f, 1.0f), 12.0f);
+	AddWrapLine(TEXT("WrapHeader"), TEXT("DIRECTOR'S CUT: THE FINAL REVIEW"), 32, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 14.0f);
+	WrapNewRecordText = AddWrapLine(TEXT("WrapNewRecord"), TEXT("★ NEW STUDIO BOX-OFFICE RECORD! ★"), 20, FLinearColor(1.0f, 0.92f, 0.22f, 1.0f), 16.0f);
 	WrapNewRecordText->SetVisibility(ESlateVisibility::Collapsed);
-	WrapLedgerRow0Text = AddWrapLine(TEXT("WrapLedgerRow0"), TEXT("SCENE 01 // ACTION    |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
-	WrapLedgerRow1Text = AddWrapLine(TEXT("WrapLedgerRow1"), TEXT("SCENE 02 // WESTERN   |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
-	WrapLedgerRow2Text = AddWrapLine(TEXT("WrapLedgerRow2"), TEXT("SCENE 03 // NOIR      |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
-	WrapLedgerRow3Text = AddWrapLine(TEXT("WrapLedgerRow3"), TEXT("SCENE 04 // CHASE     |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
-	WrapLedgerRow4Text = AddWrapLine(TEXT("WrapLedgerRow4"), TEXT("SCENE 05 // MONTAGE   |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 18.0f);
-	WrapGrossFooterText = AddWrapLine(TEXT("WrapGrossFooter"), TEXT("GLOBAL BOX-OFFICE GROSS: $10,000,000"), 26, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 12.0f);
-	WrapStatsText = AddWrapLine(TEXT("WrapStats"), TEXT("FINAL SCORE: 000000"), 14, FLinearColor(0.85f, 0.88f, 0.92f, 0.95f), 8.0f);
-	WrapStarsText = AddWrapLine(TEXT("WrapStars"), TEXT("CRITIC RATING: ★★★★★"), 20, FLinearColor(1.0f, 0.88f, 0.15f, 1.0f), 6.0f);
-	WrapQuoteText = AddWrapLine(TEXT("WrapQuote"), TEXT("\"A TOUR-DE-FORCE OF HIGH-SPEED EDITING!\""), 14, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 12.0f);
-	WrapTop3LeaderboardText = AddWrapLine(TEXT("WrapTop3"), TEXT("TOP 3 STUDIO TAKES: #1 $10.0M [C]"), 14, FLinearColor(1.0f, 0.85f, 0.25f, 0.95f), 16.0f);
+	WrapLedgerRow0Text = AddWrapLine(TEXT("WrapLedgerRow0"), TEXT("SCENE 01 // ACTION    |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 12.0f);
+	WrapLedgerRow1Text = AddWrapLine(TEXT("WrapLedgerRow1"), TEXT("SCENE 02 // WESTERN   |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 12.0f);
+	WrapLedgerRow2Text = AddWrapLine(TEXT("WrapLedgerRow2"), TEXT("SCENE 03 // NOIR      |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 12.0f);
+	WrapLedgerRow3Text = AddWrapLine(TEXT("WrapLedgerRow3"), TEXT("SCENE 04 // CHASE     |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 12.0f);
+	WrapLedgerRow4Text = AddWrapLine(TEXT("WrapLedgerRow4"), TEXT("SCENE 05 // MONTAGE   |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 22.0f);
+	WrapGrossFooterText = AddWrapLine(TEXT("WrapGrossFooter"), TEXT("GLOBAL BOX-OFFICE GROSS: $10,000,000"), 26, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 16.0f);
+	WrapStatsText = AddWrapLine(TEXT("WrapStats"), TEXT("FINAL SCORE: 000000"), 14, FLinearColor(0.85f, 0.88f, 0.92f, 0.95f), 12.0f);
+	WrapStarsText = AddWrapLine(TEXT("WrapStars"), TEXT("CRITIC RATING: ★★★★★"), 20, FLinearColor(1.0f, 0.88f, 0.15f, 1.0f), 10.0f);
+	WrapQuoteText = AddWrapLine(TEXT("WrapQuote"), TEXT("\"A TOUR-DE-FORCE OF HIGH-SPEED EDITING!\""), 14, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 16.0f);
+	WrapTop3LeaderboardText = AddWrapLine(TEXT("WrapTop3"), TEXT("TOP 3 STUDIO TAKES: #1 $10.0M [C]"), 14, FLinearColor(1.0f, 0.85f, 0.25f, 0.95f), 20.0f);
 	WrapPromptText = AddWrapLine(TEXT("WrapPrompt"), TEXT("▶ PRESS [SPACE] FOR NEW PRODUCTION"), 18, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
 	WrapCardBorder->SetContent(WrapBox);
@@ -378,7 +378,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// ---- Cinema Slate Pause Menu Card (IsPaused() == true) ----
 	PauseCardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("PauseCardBorder"));
 	PauseCardBorder->SetBrushColor(FLinearColor(0.012f, 0.012f, 0.018f, 0.94f));
-	PauseCardBorder->SetPadding(FMargin(52.0f, 36.0f));
+	PauseCardBorder->SetPadding(FMargin(64.0f, 44.0f));
 	PauseCardBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	UVerticalBox* PauseBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PauseBox"));
@@ -398,10 +398,10 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		return Block;
 	};
 
-	AddPauseLine(TEXT("PauseHeader"), TEXT("PRODUCTION PAUSED // CUT"), 30, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 22.0f);
-	PauseOption0Text = AddPauseLine(TEXT("PauseOpt0"), TEXT("▶ RESUME SHOOTING"), 20, FLinearColor(0.2f, 0.95f, 1.0f, 1.0f), 12.0f);
-	PauseOption1Text = AddPauseLine(TEXT("PauseOpt1"), TEXT("   RETAKE CURRENT ACT"), 20, FLinearColor(0.75f, 0.78f, 0.82f, 1.0f), 12.0f);
-	PauseOption2Text = AddPauseLine(TEXT("PauseOpt2"), TEXT("   WRAP TO TITLE SLATE"), 20, FLinearColor(0.75f, 0.78f, 0.82f, 1.0f), 20.0f);
+	AddPauseLine(TEXT("PauseHeader"), TEXT("PRODUCTION PAUSED // CUT"), 30, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 26.0f);
+	PauseOption0Text = AddPauseLine(TEXT("PauseOpt0"), TEXT("▶ RESUME SHOOTING"), 20, FLinearColor(0.2f, 0.95f, 1.0f, 1.0f), 16.0f);
+	PauseOption1Text = AddPauseLine(TEXT("PauseOpt1"), TEXT("   RETAKE CURRENT ACT"), 20, FLinearColor(0.75f, 0.78f, 0.82f, 1.0f), 16.0f);
+	PauseOption2Text = AddPauseLine(TEXT("PauseOpt2"), TEXT("   WRAP TO TITLE SLATE"), 20, FLinearColor(0.75f, 0.78f, 0.82f, 1.0f), 24.0f);
 	AddPauseLine(TEXT("PauseHint"), TEXT("[W / S] SELECT   |   [SPACE / ENTER] CONFIRM   |   [ESC / P] RESUME"), 13, FLinearColor(0.65f, 0.68f, 0.72f, 1.0f), 0.0f);
 
 	PauseCardBorder->SetContent(PauseBox);
@@ -484,7 +484,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	// ---- Interactive 'Rehearsal' Tutorial Prompt & Hold-to-Skip Overlay (-3000m to 0m) ----
 	TutorialPromptBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TutorialPromptBorder"));
 	TutorialPromptBorder->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.03f, 0.92f));
-	TutorialPromptBorder->SetPadding(FMargin(28.0f, 14.0f));
+	TutorialPromptBorder->SetPadding(FMargin(36.0f, 18.0f));
 	TutorialPromptBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	TutorialPromptText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TutorialPromptText"));
@@ -504,7 +504,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 
 	TutorialSkipBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TutorialSkipBorder"));
 	TutorialSkipBorder->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.03f, 0.86f));
-	TutorialSkipBorder->SetPadding(FMargin(18.0f, 6.0f));
+	TutorialSkipBorder->SetPadding(FMargin(26.0f, 10.0f));
 	TutorialSkipBorder->SetVisibility(ESlateVisibility::Collapsed);
 
 	TutorialSkipText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TutorialSkipText"));
@@ -517,7 +517,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	{
 		TutSkipSlot->SetAnchors(FAnchors(0.5f, 1.0f, 0.5f, 1.0f));
 		TutSkipSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-		TutSkipSlot->SetPosition(FVector2D(0.0f, -94.0f));
+		TutSkipSlot->SetPosition(FVector2D(0.0f, -116.0f));
 		TutSkipSlot->SetAutoSize(true);
 		TutSkipSlot->SetZOrder(25);
 	}

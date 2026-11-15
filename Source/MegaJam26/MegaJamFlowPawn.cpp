@@ -31,6 +31,7 @@
 #include "Misc/PackageName.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundWave.h"
+#include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
@@ -161,8 +162,9 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	CollisionSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
 	CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CollisionSphere->SetSimulatePhysics(false);
-	CollisionSphere->SetRelativeScale3D(FVector::OneVector);
+	CollisionSphere->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
 	RootComponent = CollisionSphere;
+	RootComponent->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
 
 	GrazeSphere = CreateDefaultSubobject<USphereComponent>(TEXT("GrazeSphere"));
 	GrazeSphere->SetupAttachment(CollisionSphere);
@@ -243,6 +245,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	// Chase camera. The pawn never rotates, so the boom simply trails behind along -X and looks down slightly over the hood.
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(CollisionSphere);
+	SpringArm->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
 	SpringArm->TargetArmLength = 450.0f;
 	SpringArm->TargetOffset = FVector(0.0f, 0.0f, 120.0f);
 	SpringArm->SocketOffset = FVector(0.0f, 0.0f, 15.0f);
@@ -255,7 +258,10 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+	Camera->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
 	Camera->bUsePawnControlRotation = false;
+	Camera->bConstrainAspectRatio = false;
+	Camera->AspectRatio = 1.777778f;
 	Camera->SetFieldOfView(90.0f);
 
 	ScoreAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("ScoreAudioComponent"));
@@ -562,8 +568,13 @@ void AMegaJamFlowPawn::BeginPlay()
 	SpawnTransform.SetScale3D(FVector::OneVector);
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 
+	if (RootComponent)
+	{
+		RootComponent->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
+	}
 	if (SpringArm)
 	{
+		SpringArm->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
 		SpringArm->TargetOffset = FVector(0.0f, 0.0f, 120.0f);
 		SpringArm->TargetArmLength = 450.0f;
 		SpringArm->bDoCollisionTest = false;
@@ -572,9 +583,31 @@ void AMegaJamFlowPawn::BeginPlay()
 
 	if (Camera)
 	{
+		Camera->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
 		Camera->SetFieldOfView(90.0f);
 		Camera->SetRelativeLocation(FVector::ZeroVector);
 		Camera->SetRelativeRotation(FRotator::ZeroRotator);
+		Camera->AspectRatio = 1.777778f;
+		Camera->bConstrainAspectRatio = false;
+	}
+
+	// Defer initial camera aspect-ratio constraint by 1 tick so the viewport fully initializes its dimensions before forcing the crop
+	if (UWorld* World = GetWorld())
+	{
+		TWeakObjectPtr<AMegaJamFlowPawn> WeakThis(this);
+		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([WeakThis]()
+		{
+			if (AMegaJamFlowPawn* Self = WeakThis.Get())
+			{
+				if (Self->Camera)
+				{
+					Self->Camera->SetRelativeScale3D(FVector(1.0f, 1.0f, 1.0f));
+					Self->Camera->AspectRatio = 1.777778f;
+					Self->Camera->bConstrainAspectRatio = true;
+				}
+				Self->SetAspectMode(Self->CurrentAspect);
+			}
+		}));
 	}
 
 	GrazeSphere->SetSphereRadius(GrazeRadius);
