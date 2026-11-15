@@ -730,8 +730,8 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		UE_LOG(LogMegaJamPawn, Warning, TEXT("BrakeAction is not assigned on %s."), *GetClass()->GetName());
 	}
 
-	// Direct bindings for SpaceBar / Gamepad_FaceButton_Right to ExecuteEditorSplice()
-	for (const FKey& SpliceKey : { EKeys::SpaceBar, EKeys::Gamepad_FaceButton_Right })
+	// Direct bindings for SpaceBar / Gamepad Cross / USB Button 1 to ExecuteEditorSplice()
+	for (const FKey& SpliceKey : { EKeys::SpaceBar, EKeys::Gamepad_FaceButton_Bottom, EKeys::Gamepad_FaceButton_Right, FKey(TEXT("GenericUSBController_Button1")) })
 	{
 		FInputKeyBinding SpliceBinding(FInputChord(SpliceKey), IE_Pressed);
 		SpliceBinding.bConsumeInput = false;
@@ -739,8 +739,20 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		PlayerInputComponent->KeyBindings.Add(SpliceBinding);
 	}
 
-	// Direct bindings for Tab / R to CycleMontagePowerOnDemand() in Scene 05 Montage
-	for (const FKey& CycleKey : { EKeys::Tab, EKeys::R })
+	// Direct bindings for Gamepad Square / USB Button 2 to ToggleAspect() (Director's Cut)
+	for (const FKey& AspectKey : { EKeys::Gamepad_FaceButton_Left, FKey(TEXT("GenericUSBController_Button2")) })
+	{
+		FInputKeyBinding AspectBinding(FInputChord(AspectKey), IE_Pressed);
+		AspectBinding.bConsumeInput = false;
+		AspectBinding.KeyDelegate.GetDelegateForManualSet().BindLambda([this]()
+		{
+			Input_Brake(FInputActionValue(true));
+		});
+		PlayerInputComponent->KeyBindings.Add(AspectBinding);
+	}
+
+	// Direct bindings for Tab / R / Gamepad_RightShoulder to CycleMontagePowerOnDemand() in Scene 05 Montage
+	for (const FKey& CycleKey : { EKeys::Tab, EKeys::R, EKeys::Gamepad_RightShoulder })
 	{
 		FInputKeyBinding CycleBinding(FInputChord(CycleKey), IE_Pressed);
 		CycleBinding.bConsumeInput = false;
@@ -1511,6 +1523,66 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	const bool bUltraPanavision = (CurrentAspect == EMegaJamAspectMode::UltraPanavision_276_1);
 	const bool bWide = (CurrentAspect == EMegaJamAspectMode::Wide_21_9 || bUltraPanavision);
 
+	// Poll Gamepad D-Pad, Left Stick, and DirectInput GenericUSBController axes so controllers/joysticks work seamlessly even if IMC_Flow.uasset lacks those keys
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		float PolledX = 0.0f;
+		float PolledY = 0.0f;
+
+		if (PC->IsInputKeyDown(EKeys::Gamepad_DPad_Right)) { PolledX += 1.0f; }
+		if (PC->IsInputKeyDown(EKeys::Gamepad_DPad_Left))  { PolledX -= 1.0f; }
+		if (PC->IsInputKeyDown(EKeys::Gamepad_DPad_Up))    { PolledY += 1.0f; }
+		if (PC->IsInputKeyDown(EKeys::Gamepad_DPad_Down))  { PolledY -= 1.0f; }
+
+		const float LeftStickX = PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftX);
+		const float LeftStickY = PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftY);
+		const float UsbAxisX = PC->GetInputAnalogKeyState(FKey(TEXT("GenericUSBController_Axis1")));
+		const float UsbAxisY = PC->GetInputAnalogKeyState(FKey(TEXT("GenericUSBController_Axis2")));
+
+		if (FMath::Abs(LeftStickX) > 0.20f && FMath::Abs(LeftStickX) > FMath::Abs(PolledX)) { PolledX = LeftStickX; }
+		if (FMath::Abs(LeftStickY) > 0.20f && FMath::Abs(LeftStickY) > FMath::Abs(PolledY)) { PolledY = LeftStickY; }
+		if (FMath::Abs(UsbAxisX) > 0.20f && FMath::Abs(UsbAxisX) > FMath::Abs(PolledX))     { PolledX = UsbAxisX; }
+		if (FMath::Abs(UsbAxisY) > 0.20f && FMath::Abs(UsbAxisY) > FMath::Abs(PolledY))     { PolledY = UsbAxisY; }
+
+		if (FMath::Abs(PolledX) > FMath::Abs(static_cast<float>(SteerInput.X)))
+		{
+			SteerInput.X = PolledX;
+		}
+		if (FMath::Abs(PolledY) > FMath::Abs(static_cast<float>(SteerInput.Y)))
+		{
+			SteerInput.Y = PolledY;
+		}
+
+		if (CurrentAspect == EMegaJamAspectMode::Wide_21_9)
+		{
+			const float AxisValue = static_cast<float>(SteerInput.X);
+			if (AxisValue > 0.5f && !bHasProcessedLaneInput)
+			{
+				const int32 NewLane = FMath::Min(4, CurrentLane + 1);
+				bHasProcessedLaneInput = true;
+				if (NewLane != CurrentLane)
+				{
+					CurrentLane = NewLane;
+					TriggerAudioEvent(TEXT("OnGraze"));
+				}
+			}
+			else if (AxisValue < -0.5f && !bHasProcessedLaneInput)
+			{
+				const int32 NewLane = FMath::Max(0, CurrentLane - 1);
+				bHasProcessedLaneInput = true;
+				if (NewLane != CurrentLane)
+				{
+					CurrentLane = NewLane;
+					TriggerAudioEvent(TEXT("OnGraze"));
+				}
+			}
+			else if (FMath::Abs(AxisValue) < 0.2f)
+			{
+				bHasProcessedLaneInput = false;
+			}
+		}
+	}
+
 	// Strafe. IA_Steer.X is always lateral (+Y / -Y).
 	// Wide_21_9: 5-lane magnetic rail system (Y = -700, -350, 0, 350, 700) on horizontal cinema rail (Z = 140).
 	// UltraPanavision_276_1: Center-lane standoff lock (CurrentLane = 2 -> Y = 0) with +30% speed surge.
@@ -1676,9 +1748,13 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 
 		if (TutorialState == ETutorialState::SteerCheck && CurrentX >= -2000.0f)
 		{
+			const FKey UsbAxis1Key(TEXT("GenericUSBController_Axis1"));
 			const bool bSteered = FMath::Abs(SteerInput.X) > 0.2f ||
 				(PC && (PC->IsInputKeyDown(EKeys::A) || PC->IsInputKeyDown(EKeys::D) ||
-				        PC->IsInputKeyDown(EKeys::Left) || PC->IsInputKeyDown(EKeys::Right)));
+				        PC->IsInputKeyDown(EKeys::Left) || PC->IsInputKeyDown(EKeys::Right) ||
+				        PC->IsInputKeyDown(EKeys::Gamepad_DPad_Left) || PC->IsInputKeyDown(EKeys::Gamepad_DPad_Right) ||
+				        PC->IsInputKeyDown(EKeys::Gamepad_LeftX) || FMath::Abs(PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftX)) > 0.2f ||
+				        PC->IsInputKeyDown(UsbAxis1Key) || FMath::Abs(PC->GetInputAnalogKeyState(UsbAxis1Key)) > 0.2f));
 			if (bSteered)
 			{
 				TutorialState = ETutorialState::JumpCheck;
@@ -1693,8 +1769,12 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		}
 		else if (TutorialState == ETutorialState::JumpCheck && CurrentX >= -1000.0f)
 		{
+			const FKey UsbAxis2Key(TEXT("GenericUSBController_Axis2"));
 			const bool bJumped = SteerInput.Y > 0.35f || !bIsGrounded || Velocity.Z > 50.0f ||
-				(PC && (PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up) || PC->IsInputKeyDown(EKeys::Gamepad_DPad_Up)));
+				(PC && (PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up) ||
+				        PC->IsInputKeyDown(EKeys::Gamepad_DPad_Up) ||
+				        PC->IsInputKeyDown(EKeys::Gamepad_LeftY) || PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftY) > 0.35f ||
+				        PC->IsInputKeyDown(UsbAxis2Key) || FMath::Abs(PC->GetInputAnalogKeyState(UsbAxis2Key)) > 0.35f));
 			if (bJumped)
 			{
 				if (bIsGrounded && Velocity.Z <= 0.0f)
@@ -1715,11 +1795,13 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		}
 		else if (TutorialState == ETutorialState::CutCheck && CurrentX >= -100.0f)
 		{
+			const FKey UsbButton1Key(TEXT("GenericUSBController_Button1"));
 			const bool bCutPressed = PC && (
 				PC->IsInputKeyDown(EKeys::SpaceBar) ||
 				PC->IsInputKeyDown(EKeys::LeftShift) ||
 				PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Right) ||
-				PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Bottom));
+				PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Bottom) ||
+				PC->IsInputKeyDown(UsbButton1Key));
 			if (bCutPressed)
 			{
 				CurrentTake = (CurrentTake == EMegaJamTakeState::StudioTake) ? EMegaJamTakeState::DirectorsTake : EMegaJamTakeState::StudioTake;
