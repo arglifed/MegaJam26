@@ -103,7 +103,7 @@ The hand-offs were smooth and easy, mostly because we were both using AI. Each o
 - The Rehearsal tutorial gained a Director's Cut step: you have to use the overdrive before the tutorial lets you go on (#133). A follow-up fix makes sure only the Director's Cut button passes that step (#134).
 - Per-genre "bad take" title cards on a crash: THE END, HERO DOWN, CASE CLOSED, WHITEOUT, BURIED, TO BE CONTINUED... (#135).
 - A last pass on the Rehearsal tutorial: its steps run in the right order, the HUD shows the right prompt first, and the Director's Cut step completes cleanly when you press it (#136).
-<!-- TODO: at the freeze, add anything merged after #135/#136 (gh pr list --state merged) -->
+- The final packaged build: a cook rule fix so the Unreal cook finishes with zero errors, and a separate archive folder so packaging no longer clashes with the staged build (#137).
 
 ## Case studies
 
@@ -192,13 +192,13 @@ The player character is the orb: the star of the film, riding whatever vehicle t
 ## By the numbers
 
 <!-- STATS:BEGIN -->
-_Generated 2026-11-15 16:10 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
+_Generated 2026-11-15 18:24 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
 
 ### AI usage
 
 | Person | Tool | Sessions | Prompts | Model turns | Tool calls | Input tok | Output tok | Cache write | Cache read | Models |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Hendrixsan | Claude Code (PowerShell) | 16 | 168 | 1,068 | 1,329 | 2,358 | 902,084 | 5,257,211 | 199,121,990 | claude-opus-5-5 (849), claude-fable-5-2 (219) |
+| Hendrixsan | Claude Code (PowerShell) | 16 | 169 | 1,073 | 1,333 | 2,370 | 904,572 | 5,421,216 | 199,927,592 | claude-opus-5-5 (854), claude-fable-5-2 (219) |
 | Hendrixsan | Claude Code (UE Terminal) | 4 | 26 | 106 | 94 | 248 | 57,679 | 195,222 | 8,593,309 | claude-opus-5-5 (106) |
 | Hendrixsan | Claude Desktop chat (art and process planning, Meshy prompts, issue drafts; Unreal setup help) | 3 | ~17–22 | - | - | ~90–160k (est.) | ~45–80k (est.) | - | - | not shown in chat history |
 | arglifed | Antigravity IDE (C++ architecture, track/skyline generation, camera systems, PR merges) | ~18 | ~65 | - | - | n/a | n/a | - | - | Gemini 4 Argon |
@@ -215,7 +215,7 @@ _Cache read is the context re-sent to the model on each turn and billed at a dis
 | Thu Nov 12 | 4 | 30 | 113 | 70,911 |
 | Fri Nov 13 | 7 | 52 | 388 | 308,371 |
 | Sat Nov 14 | 5 | 70 | 393 | 368,372 |
-| Sun Nov 15 | 7 | 42 | 280 | 212,109 |
+| Sun Nov 15 | 7 | 43 | 285 | 214,597 |
 
 ### Meshy (3D generation)
 
@@ -225,9 +225,9 @@ _Cache read is the context re-sent to the model on each turn and billed at a dis
 
 ### Repository
 
-- **170 commits** on main (Nov 12: 28, Nov 13: 49, Nov 14: 67, Nov 15: 26)
+- **172 commits** on main (Nov 12: 28, Nov 13: 49, Nov 14: 67, Nov 15: 28)
 - **26** commits carry a Claude co-author line
-- **65 pull requests** (64 merged): arglifed 54, ninjacom 11
+- **66 pull requests** (65 merged): arglifed 55, ninjacom 11
 - **71 issues** (70 closed): arglifed 53, ninjacom 18
 - **13,447 lines of C++** in 15 files under `Source/`
 - **219 assets** (`.uasset`) and 1 map under `Content/MegaJam26/`
