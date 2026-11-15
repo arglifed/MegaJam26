@@ -111,9 +111,9 @@ void AMegaJamPlayerController::SetupInputComponent()
 		InputComponent->KeyBindings.Add(DownBinding);
 	}
 
-	// Bind SpaceBar, Enter, and Gamepad_FaceButton_Bottom (non-consuming so gameplay IA_Boost still fires, and executing when paused)
+	// Bind SpaceBar, Enter, Gamepad Cross, and USB Button 1 (non-consuming so gameplay IA_Boost still fires, and executing when paused)
 	// to confirm Pause Menu selection, start from TitleScreen, or restart from Completed Wrap-Up screen.
-	for (const FKey& StartKey : { EKeys::SpaceBar, EKeys::Enter, EKeys::Gamepad_FaceButton_Bottom })
+	for (const FKey& StartKey : { EKeys::SpaceBar, EKeys::Enter, EKeys::Gamepad_FaceButton_Bottom, FKey(TEXT("GenericUSBController_Button1")) })
 	{
 		FInputKeyBinding KeyBinding(FInputChord(StartKey), IE_Pressed);
 		KeyBinding.bConsumeInput = false;
@@ -221,11 +221,6 @@ void AMegaJamPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
-	if (DefaultMappingContext)
-	{
-		return;
-	}
-
 	AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(InPawn);
 	if (!FlowPawn)
 	{
@@ -244,7 +239,8 @@ void AMegaJamPlayerController::OnPossess(APawn* InPawn)
 		InputSubsystem->RemoveMappingContext(FallbackMappingContext);
 	}
 
-	UE_LOG(LogMegaJamPC, Log, TEXT("DefaultMappingContext not assigned. Building fallback WASD / gamepad mapping."));
+	// Always build and register our C++ supplemental/fallback mapping context so PS5 DualSense and DirectInput USB joystick
+	// keys work seamlessly without modifying IMC_Flow.uasset.
 	FallbackMappingContext = BuildFallbackMappingContext(FlowPawn);
 	InputSubsystem->AddMappingContext(FallbackMappingContext, MappingContextPriority);
 }
@@ -257,19 +253,22 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 	UInputMappingContext* Context = NewObject<UInputMappingContext>(this, TEXT("IMC_Flow_Fallback"), RF_Transient);
 
 	// ---- Steer (Axis2D): X = right, Y = up ----
-	// D / Right : +X (no modifiers)
+	// D / Right / Gamepad_DPad_Right / GenericUSBController_Axis1 : +X (no modifiers)
 	Context->MapKey(FlowPawn->SteerAction, EKeys::D);
 	Context->MapKey(FlowPawn->SteerAction, EKeys::Right);
+	Context->MapKey(FlowPawn->SteerAction, EKeys::Gamepad_DPad_Right);
+	Context->MapKey(FlowPawn->SteerAction, EKeys::Gamepad_LeftX);
+	Context->MapKey(FlowPawn->SteerAction, FKey(TEXT("GenericUSBController_Axis1")));
 
-	// A / Left : -X (Negate)
-	for (const FKey& Key : { EKeys::A, EKeys::Left })
+	// A / Left / Gamepad_DPad_Left : -X (Negate)
+	for (const FKey& Key : { EKeys::A, EKeys::Left, EKeys::Gamepad_DPad_Left })
 	{
 		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, Key);
 		Mapping.Modifiers.Add(NewObject<UInputModifierNegate>(Context));
 	}
 
-	// W / Up : +Y (Swizzle YXZ moves the key's X value onto Y)
-	for (const FKey& Key : { EKeys::W, EKeys::Up })
+	// W / Up / Gamepad_DPad_Up / Gamepad_LeftY / GenericUSBController_Axis2 : +Y (Swizzle YXZ moves the key's X value onto Y)
+	for (const FKey& Key : { EKeys::W, EKeys::Up, EKeys::Gamepad_DPad_Up, EKeys::Gamepad_LeftY, FKey(TEXT("GenericUSBController_Axis2")) })
 	{
 		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, Key);
 		UInputModifierSwizzleAxis* Swizzle = NewObject<UInputModifierSwizzleAxis>(Context);
@@ -277,8 +276,8 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 		Mapping.Modifiers.Add(Swizzle);
 	}
 
-	// S / Down : -Y (Swizzle YXZ first, then Negate)
-	for (const FKey& Key : { EKeys::S, EKeys::Down })
+	// S / Down / Gamepad_DPad_Down : -Y (Swizzle YXZ first, then Negate)
+	for (const FKey& Key : { EKeys::S, EKeys::Down, EKeys::Gamepad_DPad_Down })
 	{
 		FEnhancedActionKeyMapping& Mapping = Context->MapKey(FlowPawn->SteerAction, Key);
 		UInputModifierSwizzleAxis* Swizzle = NewObject<UInputModifierSwizzleAxis>(Context);
@@ -295,11 +294,14 @@ UInputMappingContext* AMegaJamPlayerController::BuildFallbackMappingContext(AMeg
 	Context->MapKey(FlowPawn->BoostAction, EKeys::LeftShift);
 	Context->MapKey(FlowPawn->BoostAction, EKeys::Gamepad_FaceButton_Bottom);
 	Context->MapKey(FlowPawn->BoostAction, EKeys::Gamepad_FaceButton_Right);
+	Context->MapKey(FlowPawn->BoostAction, FKey(TEXT("GenericUSBController_Button1")));
 
-	// ---- Brake (Aspect Toggle, Bool) ----
+	// ---- Brake (Aspect Toggle / Director's Cut, Bool) ----
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::LeftControl);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::RightControl);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::C);
+	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_FaceButton_Left);
+	Context->MapKey(FlowPawn->BrakeAction, FKey(TEXT("GenericUSBController_Button2")));
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_LeftShoulder);
 	Context->MapKey(FlowPawn->BrakeAction, EKeys::Gamepad_RightShoulder);
 

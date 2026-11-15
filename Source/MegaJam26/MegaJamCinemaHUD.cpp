@@ -310,12 +310,12 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 
 	AddTitleLine(TEXT("TitleStudio"), TEXT("FOUR SWORDS PICTURES PRESENTS"), 16, FLinearColor(0.75f, 0.78f, 0.85f, 1.0f), 6.0f);
 	AddTitleLine(TEXT("TitleMain"), TEXT("DIRECTOR'S CUT"), 44, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 18.0f);
-	AddTitleLine(TEXT("TitleControls1"), TEXT("[W / A / S / D] 4:3 STUNT STEER   |   [SPACE / SHIFT] HARD CUT / BEAT-SLASH / SMASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
-	AddTitleLine(TEXT("TitleControls2"), TEXT("[LEFT CTRL / C] DIRECTOR'S CUT (@ >=25% FILM)   |   [TAB / R] MONTAGE POWER CYCLE   |   [V] CAMERA POV"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 16.0f);
+	AddTitleLine(TEXT("TitleControls1"), TEXT("[WASD / STICK / D-PAD] STEER & HOP   |   [SPACE / CROSS / BTN 1] HARD CUT / BEAT-SLASH / SMASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
+	AddTitleLine(TEXT("TitleControls2"), TEXT("[CTRL / SQUARE / BTN 2] DIRECTOR'S CUT (@ >=25% FILM)   |   [TAB / R] MONTAGE CYCLE   |   [V] CAMERA POV"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 16.0f);
 	AddTitleLine(TEXT("TitleObj"), TEXT("SCENES 01-05 (ACTION + WESTERN + NOIR + CHASE + MONTAGE) — 9,000m CAMPAIGN (PAR 03:45.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 14.0f);
 	TitleRecordText = AddTitleLine(TEXT("TitleRecord"), TEXT(""), 15, FLinearColor(1.0f, 0.85f, 0.20f, 1.0f), 16.0f);
 	TitleRecordText->SetVisibility(ESlateVisibility::Collapsed);
-	TitlePromptText = AddTitleLine(TEXT("TitlePrompt"), TEXT("▶ PRESS [SPACE] TO ROLL CAMERA"), 22, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
+	TitlePromptText = AddTitleLine(TEXT("TitlePrompt"), TEXT("▶ PRESS [SPACE / CROSS / BTN 1] TO ROLL CAMERA"), 22, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
 	TitleCardBorder->SetContent(TitleBox);
 	if (UCanvasPanelSlot* TitleSlot = RootCanvas->AddChildToCanvas(TitleCardBorder))
@@ -491,7 +491,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	TutorialPromptText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 24));
 	TutorialPromptText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.88f, 0.25f, 1.0f)));
 	TutorialPromptText->SetJustification(ETextJustify::Center);
-	TutorialPromptText->SetText(FText::FromString(TEXT("► REHEARSAL: PRESS [A] OR [D] TO STEER ◄")));
+	TutorialPromptText->SetText(FText::FromString(TEXT("► REHEARSAL: PRESS [A]/[D] OR [D-PAD] TO STEER ◄")));
 	TutorialPromptBorder->SetContent(TutorialPromptText);
 	if (UCanvasPanelSlot* TutPromptSlot = RootCanvas->AddChildToCanvas(TutorialPromptBorder))
 	{
@@ -511,7 +511,7 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	TutorialSkipText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14));
 	TutorialSkipText->SetColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.90f, 0.95f, 0.95f)));
 	TutorialSkipText->SetJustification(ETextJustify::Center);
-	TutorialSkipText->SetText(FText::FromString(TEXT("HOLD [TAB] TO SKIP REHEARSAL")));
+	TutorialSkipText->SetText(FText::FromString(TEXT("HOLD [TAB] OR [OPTIONS] TO SKIP")));
 	TutorialSkipBorder->SetContent(TutorialSkipText);
 	if (UCanvasPanelSlot* TutSkipSlot = RootCanvas->AddChildToCanvas(TutorialSkipBorder))
 	{
@@ -1597,14 +1597,14 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		if (bInRehearsal)
 		{
 			TutorialPromptBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
-			const TCHAR* TutPromptStr = TEXT("► REHEARSAL: PRESS [A] OR [D] TO STEER ◄");
+			const TCHAR* TutPromptStr = TEXT("► REHEARSAL: PRESS [A]/[D] OR [D-PAD] TO STEER ◄");
 			if (FlowPawn->TutorialState == ETutorialState::JumpCheck)
 			{
-				TutPromptStr = TEXT("► REHEARSAL: PRESS [W] TO STUNT-HOP ◄");
+				TutPromptStr = TEXT("► REHEARSAL: PRESS [W] OR [D-PAD UP] TO STUNT-HOP ◄");
 			}
 			else if (FlowPawn->TutorialState == ETutorialState::CutCheck)
 			{
-				TutPromptStr = TEXT("► REHEARSAL: PRESS [SPACE] TO SPLICE CUT & ROLL SCENE 01! ◄");
+				TutPromptStr = TEXT("► REHEARSAL: PRESS [SPACE] OR [CROSS / BTN 1] TO SPLICE CUT! ◄");
 			}
 			TutorialPromptText->SetText(FText::FromString(TutPromptStr));
 			TutorialPromptText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.90f, 0.25f, PulseAlpha)));
@@ -1613,13 +1613,13 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			if (FlowPawn->SkipHoldTimer > 0.05f)
 			{
 				TutorialSkipText->SetText(FText::FromString(FString::Printf(
-					TEXT("HOLD [TAB] TO SKIP REHEARSAL (%.1fs / 1.5s)"),
+					TEXT("HOLD [TAB] OR [OPTIONS] TO SKIP (%.1fs / 1.5s)"),
 					FMath::Clamp(FlowPawn->SkipHoldTimer, 0.0f, 1.5f))));
 				TutorialSkipText->SetColorAndOpacity(FSlateColor(FLinearColor(0.25f, 0.95f, 1.0f, 1.0f)));
 			}
 			else
 			{
-				TutorialSkipText->SetText(FText::FromString(TEXT("HOLD [TAB] TO SKIP REHEARSAL")));
+				TutorialSkipText->SetText(FText::FromString(TEXT("HOLD [TAB] OR [OPTIONS] TO SKIP")));
 				TutorialSkipText->SetColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.90f, 0.95f, 0.92f)));
 			}
 		}
