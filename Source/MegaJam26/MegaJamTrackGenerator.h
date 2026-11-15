@@ -395,6 +395,7 @@ private:
 	void ApplyTakeCollision(EMegaJamTakeState Take);
 	void BindToPawn();
 	void CreatePools();
+	void SpawnStudioEnvironment();
 	void PopulateChunk(int32 ChunkIndex);
 	void GenerateTrackChunk(float StartX, float EndX);
 	void PopulateSetPiecesForChunk(int32 Slot, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene, FRandomStream& Stream);
@@ -452,6 +453,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ASkyLight> BoundSkyLight;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> SkylineISM;
 
 	UPROPERTY(Transient)
 	TArray<FMegaJamSetPieceSlot> SetPieceSlots;

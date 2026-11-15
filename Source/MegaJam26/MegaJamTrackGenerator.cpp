@@ -10,6 +10,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/VolumetricCloudComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/Level.h"
@@ -604,7 +605,103 @@ void AMegaJamTrackGenerator::BeginPlay()
 	}
 
 	BindToPawn();
+	SpawnStudioEnvironment();
 	RebuildTrack();
+}
+
+void AMegaJamTrackGenerator::SpawnStudioEnvironment()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 1. Find the existing Floor AStaticMeshActor in the world and set its 3D scale to X=1.0f, Y=1000.0f, Z=1.0f
+	for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+	{
+		AStaticMeshActor* StaticMeshActor = *It;
+		if (IsValid(StaticMeshActor) && StaticMeshActor->GetName().Contains(TEXT("Floor")))
+		{
+			StaticMeshActor->SetActorHiddenInGame(false);
+			StaticMeshActor->SetActorScale3D(FVector(1.0f, 1000.0f, 1.0f));
+			if (UStaticMeshComponent* MeshComp = StaticMeshActor->GetStaticMeshComponent())
+			{
+				MeshComp->SetVisibility(true);
+				MeshComp->SetRelativeScale3D(FVector(1.0f, 1000.0f, 1.0f));
+			}
+			break;
+		}
+	}
+
+	// 2. Find the existing AExponentialHeightFog in the world, set its FogDensity to 0.2f, and FogInscatteringColor to FLinearColor::Black
+	for (TActorIterator<AExponentialHeightFog> FogIt(World); FogIt; ++FogIt)
+	{
+		AExponentialHeightFog* FogActor = *FogIt;
+		if (IsValid(FogActor))
+		{
+			BoundHeightFog = FogActor;
+			FogActor->SetActorHiddenInGame(false);
+			if (UExponentialHeightFogComponent* FogComp = FogActor->GetComponent())
+			{
+				FogComp->SetVisibility(true);
+				FogComp->SetFogDensity(0.2f);
+				FogComp->SetFogInscatteringColor(FLinearColor::Black);
+			}
+			CurrentFogDensity = 0.2f;
+			CurrentFogColor = FLinearColor::Black;
+			break;
+		}
+	}
+
+	// 3. Spawn an AVolumetricCloud actor at the world origin
+	FActorSpawnParameters CloudSpawnParams;
+	CloudSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	World->SpawnActor<AVolumetricCloud>(AVolumetricCloud::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, CloudSpawnParams);
+
+	// 4. Create a new UInstancedStaticMeshComponent (ISMC) for the skyline using /Engine/BasicShapes/Cube.Cube with collision disabled
+	UStaticMesh* CubeMesh = BlockMesh ? BlockMesh.Get() : LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!SkylineISM)
+	{
+		SkylineISM = NewObject<UInstancedStaticMeshComponent>(this, TEXT("SkylineISM"));
+		if (SkylineISM)
+		{
+			SkylineISM->SetupAttachment(RootComponent);
+			SkylineISM->SetMobility(EComponentMobility::Movable);
+			SkylineISM->SetStaticMesh(CubeMesh);
+			SkylineISM->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+			SkylineISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			SkylineISM->SetGenerateOverlapEvents(false);
+			SkylineISM->SetCanEverAffectNavigation(false);
+			SkylineISM->RegisterComponent();
+		}
+	}
+
+	if (SkylineISM)
+	{
+		SkylineISM->ClearInstances();
+
+		// 5. Loop along X from -4000.0f to 12000.0f (step 400.0f); with 70% chance add cubes at Y = -7000.0f and Y = 7000.0f
+		for (float X = -4000.0f; X <= 12000.0f; X += 400.0f)
+		{
+			if (FMath::FRand() <= 0.70f)
+			{
+				const FVector LeftScale(
+					FMath::FRandRange(5.0f, 20.0f),
+					FMath::FRandRange(5.0f, 20.0f),
+					FMath::FRandRange(20.0f, 100.0f));
+				SafeAddInstance(SkylineISM, FTransform(FRotator::ZeroRotator, FVector(X, -7000.0f, 0.0f), LeftScale), true);
+
+				const FVector RightScale(
+					FMath::FRandRange(5.0f, 20.0f),
+					FMath::FRandRange(5.0f, 20.0f),
+					FMath::FRandRange(20.0f, 100.0f));
+				SafeAddInstance(SkylineISM, FTransform(FRotator::ZeroRotator, FVector(X, 7000.0f, 0.0f), RightScale), true);
+			}
+		}
+
+		SkylineISM->MarkRenderStateDirty();
+	}
 }
 
 void AMegaJamTrackGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -964,9 +1061,8 @@ void AMegaJamTrackGenerator::UpdateSceneMaterials(float DeltaSeconds)
 	{
 		if (UExponentialHeightFogComponent* FogComp = BoundHeightFog->GetComponent())
 		{
-			FogComp->SetFogDensity(CurrentFogDensity);
-			FogComp->SetFogInscatteringColor(CurrentFogColor);
-			FogComp->SetDirectionalInscatteringColor(CurrentFogColor * 1.35f);
+			FogComp->SetFogDensity(0.2f);
+			FogComp->SetFogInscatteringColor(FLinearColor::Black);
 		}
 	}
 	if (BoundSkyLight && BoundSkyLight->GetLightComponent())
