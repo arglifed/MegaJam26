@@ -31,6 +31,7 @@ class MEGAJAM26_API UMegaJamFlowSubsystem : public UTickableWorldSubsystem
 
 public:
 	// ---- Subsystem / tickable overrides ----
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
@@ -144,6 +145,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
 	void FinalizeScenePerformance(EMegaJamSceneGenre OutgoingGenre, float CurrentTimeSeconds);
+
+	/** Loads Top 3 Box-Office high score records from Saved/DirectorCutRecords.json. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void LoadBoxOfficeRecords();
+
+	/** Saves Top 3 Box-Office high score records to Saved/DirectorCutRecords.json. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	void SaveBoxOfficeRecords() const;
+
+	/** Records a completed 9,000m campaign run, updates Top 3 Studio Takes, saves to disk, and returns true if a new #1 Box-Office Gross record was set. */
+	UFUNCTION(BlueprintCallable, Category="MegaJam|Score")
+	bool RecordCompletedCampaignRun(int32 Gross, int32 FinalScore, float CompletionTimeSeconds);
 
 	/** Returns true when the continuous dynamic BPM beat clock is within +/- WindowSeconds of a beat boundary. */
 	UFUNCTION(BlueprintPure, Category="MegaJam|Flow")
@@ -275,6 +288,30 @@ public:
 	/** Run time (seconds) when the current scene started. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
 	float CurrentSceneStartTime = 0.0f;
+
+	/** All-time highest local Box-Office Gross ($). */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	int32 BestBoxOfficeGross = 0;
+
+	/** Overall critic grade achieved on the #1 Box-Office run. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	FString BestOverallGrade = TEXT("C");
+
+	/** All-time highest local campaign score. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	int32 BestScore = 0;
+
+	/** Best completion time (seconds) among recorded studio runs. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	float BestCompletionTimeSeconds = 0.0f;
+
+	/** True when the most recently completed run beat the #1 Box-Office Gross record. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	bool bIsNewStudioRecord = false;
+
+	/** Persistent Top 3 local Box-Office runs sorted descending by BoxOfficeGross. */
+	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Score")
+	TArray<FBoxOfficeRecordEntry> TopBoxOfficeRuns;
 
 	UPROPERTY(BlueprintAssignable, Category="MegaJam|Flow")
 	FOnFlowStateUpdated OnFlowStateUpdated;

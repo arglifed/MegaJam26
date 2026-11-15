@@ -312,7 +312,9 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	AddTitleLine(TEXT("TitleMain"), TEXT("DIRECTOR'S CUT"), 44, FLinearColor(1.0f, 0.85f, 0.22f, 1.0f), 18.0f);
 	AddTitleLine(TEXT("TitleControls1"), TEXT("[W / A / S / D] 4:3 STUNT STEER   |   [SPACE / SHIFT] HARD CUT / BEAT-SLASH / SMASH"), 16, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 6.0f);
 	AddTitleLine(TEXT("TitleControls2"), TEXT("[LEFT CTRL / C] DIRECTOR'S CUT (@ >=25% FILM)   |   [TAB / R] MONTAGE POWER CYCLE   |   [V] CAMERA POV"), 16, FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), 16.0f);
-	AddTitleLine(TEXT("TitleObj"), TEXT("SCENES 01-05 (ACTION + WESTERN + NOIR + CHASE + MONTAGE) — 9,000m CAMPAIGN (PAR 03:45.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 24.0f);
+	AddTitleLine(TEXT("TitleObj"), TEXT("SCENES 01-05 (ACTION + WESTERN + NOIR + CHASE + MONTAGE) — 9,000m CAMPAIGN (PAR 03:45.00)!"), 15, FLinearColor(0.92f, 0.92f, 0.92f, 0.95f), 14.0f);
+	TitleRecordText = AddTitleLine(TEXT("TitleRecord"), TEXT(""), 15, FLinearColor(1.0f, 0.85f, 0.20f, 1.0f), 16.0f);
+	TitleRecordText->SetVisibility(ESlateVisibility::Collapsed);
 	TitlePromptText = AddTitleLine(TEXT("TitlePrompt"), TEXT("▶ PRESS [SPACE] TO ROLL CAMERA"), 22, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
 	TitleCardBorder->SetContent(TitleBox);
@@ -348,7 +350,9 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 		return Block;
 	};
 
-	AddWrapLine(TEXT("WrapHeader"), TEXT("DIRECTOR'S CUT: THE FINAL REVIEW"), 32, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 18.0f);
+	AddWrapLine(TEXT("WrapHeader"), TEXT("DIRECTOR'S CUT: THE FINAL REVIEW"), 32, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 10.0f);
+	WrapNewRecordText = AddWrapLine(TEXT("WrapNewRecord"), TEXT("★ NEW STUDIO BOX-OFFICE RECORD! ★"), 20, FLinearColor(1.0f, 0.92f, 0.22f, 1.0f), 12.0f);
+	WrapNewRecordText->SetVisibility(ESlateVisibility::Collapsed);
 	WrapLedgerRow0Text = AddWrapLine(TEXT("WrapLedgerRow0"), TEXT("SCENE 01 // ACTION    |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
 	WrapLedgerRow1Text = AddWrapLine(TEXT("WrapLedgerRow1"), TEXT("SCENE 02 // WESTERN   |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
 	WrapLedgerRow2Text = AddWrapLine(TEXT("WrapLedgerRow2"), TEXT("SCENE 03 // NOIR      |  TIME: 45.0s  |  MOVES: 0  |  FRAMES: 00  |  RATING: [ C ]"), 16, FLinearColor(1.0f, 1.0f, 0.2f, 1.0f), 8.0f);
@@ -357,7 +361,8 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	WrapGrossFooterText = AddWrapLine(TEXT("WrapGrossFooter"), TEXT("GLOBAL BOX-OFFICE GROSS: $10,000,000"), 26, FLinearColor(1.0f, 0.8f, 0.1f, 1.0f), 12.0f);
 	WrapStatsText = AddWrapLine(TEXT("WrapStats"), TEXT("FINAL SCORE: 000000"), 14, FLinearColor(0.85f, 0.88f, 0.92f, 0.95f), 8.0f);
 	WrapStarsText = AddWrapLine(TEXT("WrapStars"), TEXT("CRITIC RATING: ★★★★★"), 20, FLinearColor(1.0f, 0.88f, 0.15f, 1.0f), 6.0f);
-	WrapQuoteText = AddWrapLine(TEXT("WrapQuote"), TEXT("\"A TOUR-DE-FORCE OF HIGH-SPEED EDITING!\""), 14, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 18.0f);
+	WrapQuoteText = AddWrapLine(TEXT("WrapQuote"), TEXT("\"A TOUR-DE-FORCE OF HIGH-SPEED EDITING!\""), 14, FLinearColor(0.25f, 0.92f, 1.0f, 1.0f), 12.0f);
+	WrapTop3LeaderboardText = AddWrapLine(TEXT("WrapTop3"), TEXT("TOP 3 STUDIO TAKES: #1 $10.0M [C]"), 14, FLinearColor(1.0f, 0.85f, 0.25f, 0.95f), 16.0f);
 	WrapPromptText = AddWrapLine(TEXT("WrapPrompt"), TEXT("▶ PRESS [SPACE] FOR NEW PRODUCTION"), 18, FLinearColor(1.0f, 0.9f, 0.3f, 1.0f), 0.0f);
 
 	WrapCardBorder->SetContent(WrapBox);
@@ -711,6 +716,40 @@ void UMegaJamCinemaHUD::DrawHUD()
 			TEXT("GLOBAL BOX-OFFICE GROSS: $%s"),
 			*FormatDollarsWithCommas(CachedTotalBoxOfficeGross))));
 		WrapGrossFooterText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.8f, 0.1f, 1.0f)));
+	}
+
+	const UMegaJamFlowSubsystem* FlowSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
+	if (WrapNewRecordText)
+	{
+		const bool bNewRecord = FlowSubsystem && FlowSubsystem->bIsNewStudioRecord;
+		WrapNewRecordText->SetVisibility(bNewRecord ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (WrapTop3LeaderboardText && FlowSubsystem)
+	{
+		if (FlowSubsystem->TopBoxOfficeRuns.Num() > 0)
+		{
+			FString Top3Line = TEXT("TOP 3 STUDIO TAKES:   ");
+			for (int32 Idx = 0; Idx < FlowSubsystem->TopBoxOfficeRuns.Num(); ++Idx)
+			{
+				const FBoxOfficeRecordEntry& Entry = FlowSubsystem->TopBoxOfficeRuns[Idx];
+				if (Idx > 0)
+				{
+					Top3Line += TEXT("   |   ");
+				}
+				Top3Line += FString::Printf(
+					TEXT("#%d $%.1fM [%s] (%06d)"),
+					Idx + 1,
+					static_cast<float>(Entry.BoxOfficeGross) / 1000000.0f,
+					*Entry.OverallGrade,
+					Entry.FinalScore);
+			}
+			WrapTop3LeaderboardText->SetText(FText::FromString(Top3Line));
+			WrapTop3LeaderboardText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		else
+		{
+			WrapTop3LeaderboardText->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 }
 
@@ -1095,6 +1134,22 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		if (RunState == EMegaJamRunState::TitleScreen)
 		{
 			TitleCardBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			if (TitleRecordText)
+			{
+				if (FlowSubsystem && FlowSubsystem->BestBoxOfficeGross > 0)
+				{
+					TitleRecordText->SetText(FText::FromString(FString::Printf(
+						TEXT("★ STUDIO RECORD: $%.1fM BOX-OFFICE [%s]  //  BEST SCORE: %06d ★"),
+						static_cast<float>(FlowSubsystem->BestBoxOfficeGross) / 1000000.0f,
+						*FlowSubsystem->BestOverallGrade,
+						FlowSubsystem->BestScore)));
+					TitleRecordText->SetVisibility(ESlateVisibility::HitTestInvisible);
+				}
+				else
+				{
+					TitleRecordText->SetVisibility(ESlateVisibility::Collapsed);
+				}
+			}
 			if (TitlePromptText)
 			{
 				TitlePromptText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.9f, 0.25f, PulseAlpha)));

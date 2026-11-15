@@ -8,7 +8,9 @@
 #include "MegaJamTypes.h"
 #include "MegaJamTrackGenerator.generated.h"
 
+class AExponentialHeightFog;
 class AMegaJamFlowPawn;
+class ASkyLight;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
@@ -159,6 +161,10 @@ public:
 	/** Non-colliding outer-corridor studio soundstage dressing (lighting trusses, cranes) outside Y = +/-1200. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")
 	TObjectPtr<UInstancedStaticMeshComponent> StudioDressingISM;
+
+	/** Non-colliding beat-pulsing distant neon sky pillars (Y = +/-3000, Z = -500 to +2500) framing the outer soundstage horizon. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UInstancedStaticMeshComponent> DistantSkyPillarsISM;
 
 	// ---- Modular Art Mesh Slots (fall back to Cube / Cylinder when null) ----
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
@@ -376,6 +382,7 @@ private:
 	static constexpr int32 LaneRailsPerChunk = 5;
 	static constexpr int32 BurstPickupPoolSize = 30;
 	static constexpr int32 BoostStripsPerChunk = 2;
+	static constexpr int32 SkyPillarsPerChunk = 4;
 	static constexpr int32 WrapArchParts = 5;
 
 	int32 PoolSize() const { return FMath::Max(1, ChunksAhead + ChunksBehind); }
@@ -438,6 +445,15 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> PickupMatB;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SkyPillarMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AExponentialHeightFog> BoundHeightFog;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ASkyLight> BoundSkyLight;
+
+	UPROPERTY(Transient)
 	TArray<FMegaJamSetPieceSlot> SetPieceSlots;
 
 	UPROPERTY(Transient)
@@ -488,4 +504,6 @@ private:
 	EMegaJamFilmScene CurrentScene = EMegaJamFilmScene::Soundstage;
 	int32 LastBroadcastScene = -1;
 	FLinearColor CurrentSceneColor = FLinearColor(1.0f, 0.72f, 0.35f, 1.0f);
+	FLinearColor CurrentFogColor = FLinearColor(0.02f, 0.18f, 0.35f, 1.0f);
+	float CurrentFogDensity = 0.018f;
 };

@@ -136,4 +136,24 @@ struct FScenePropList
 	TArray<FScenePropConfig> Props;
 };
 
+/** Persistent local Box-Office high score entry saved to Saved/DirectorCutRecords.json (Issue #106). */
+USTRUCT(BlueprintType)
+struct FBoxOfficeRecordEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	int32 BoxOfficeGross = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	int32 FinalScore = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	float CompletionTimeSeconds = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Score")
+	FString OverallGrade = TEXT("C");
+};
+
+
 
