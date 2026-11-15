@@ -212,9 +212,14 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, 24.0f, 0.08f));
 	ProceduralSlashArcMesh->SetVisibility(false);
 
-	// Default visual: engine basic sphere (100 cm diameter, matches the 50 cm collision radius).
+	// Default visual: SM_MovieMagicOrb (100 cm diameter, centered pivot -> 55 cm at 0.55 scale), fallback to /Engine/BasicShapes/Sphere.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> MovieOrbFinder(TEXT("/Game/MegaJam26/Art/SM_MovieMagicOrb.SM_MovieMagicOrb"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	if (SphereMeshFinder.Succeeded())
+	if (MovieOrbFinder.Succeeded())
+	{
+		VisualMesh->SetStaticMesh(MovieOrbFinder.Object);
+	}
+	else if (SphereMeshFinder.Succeeded())
 	{
 		VisualMesh->SetStaticMesh(SphereMeshFinder.Object);
 	}
@@ -333,6 +338,14 @@ void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
 		GrazeSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		GrazeSphere->SetGenerateOverlapEvents(false);
 	}
+	if (VisualMesh && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Art/SM_MovieMagicOrb")))
+	{
+		if (UStaticMesh* OrbMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/MegaJam26/Art/SM_MovieMagicOrb.SM_MovieMagicOrb")))
+		{
+			VisualMesh->SetStaticMesh(OrbMesh);
+			VisualMesh->EmptyOverrideMaterials();
+		}
+	}
 }
 
 void AMegaJamFlowPawn::PreRegisterAllComponents()
@@ -427,7 +440,24 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 	}
 	CurrentTrackBPM = 120.0f;
 
-	// Issues #40 & #41: Auto-wire fallback vehicle meshes and seat offsets if left null in Blueprint
+	// Issue #108: Auto-wire SM_MovieMagicOrb and M_MovieMagicOrb onto VisualMesh (overrides placeholder /Engine/BasicShapes/Sphere)
+	if (VisualMesh && FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/Art/SM_MovieMagicOrb")))
+	{
+		if (UStaticMesh* OrbMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/MegaJam26/Art/SM_MovieMagicOrb.SM_MovieMagicOrb")))
+		{
+			VisualMesh->SetStaticMesh(OrbMesh);
+			VisualMesh->EmptyOverrideMaterials();
+			if (FPackageName::DoesPackageExist(TEXT("/Game/MegaJam26/VFX/M_MovieMagicOrb")))
+			{
+				if (UMaterialInterface* OrbMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/MegaJam26/VFX/M_MovieMagicOrb.M_MovieMagicOrb")))
+				{
+					VisualMesh->SetMaterial(0, OrbMat);
+				}
+			}
+		}
+	}
+
+	// Issues #40, #41 & #108: Auto-wire vehicle meshes and fitted seat offsets for the 55 cm Movie Magic Orb
 	struct FVehicleFallbackSpec
 	{
 		EMegaJamSceneGenre Genre;
@@ -436,11 +466,11 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 		FVector SeatOffset;
 	};
 	static const FVehicleFallbackSpec VehicleFallbacks[] = {
-		{ EMegaJamSceneGenre::Action,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Motorcycle"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_Motorcycle.SM_Vehicle_Motorcycle"), FVector(0.0f, 0.0f, 85.0f) },
-		{ EMegaJamSceneGenre::Western, TEXT("/Game/MegaJam26/Art/SM_Vehicle_Horse"),      TEXT("/Game/MegaJam26/Art/SM_Vehicle_Horse.SM_Vehicle_Horse"),           FVector(0.0f, 0.0f, 165.0f) },
-		{ EMegaJamSceneGenre::Noir,    TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar"),     TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar.SM_Vehicle_SpyCar"),         FVector(-20.0f, 0.0f, 85.0f) },
-		{ EMegaJamSceneGenre::Chase,   TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
-		{ EMegaJamSceneGenre::Alpine,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
+		{ EMegaJamSceneGenre::Action,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Motorcycle"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_Motorcycle.SM_Vehicle_Motorcycle"), FVector(-42.0f, 0.0f, 72.0f) },
+		{ EMegaJamSceneGenre::Western, TEXT("/Game/MegaJam26/Art/SM_Vehicle_Horse"),      TEXT("/Game/MegaJam26/Art/SM_Vehicle_Horse.SM_Vehicle_Horse"),           FVector(-15.0f, 0.0f, 181.0f) },
+		{ EMegaJamSceneGenre::Noir,    TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar"),     TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar.SM_Vehicle_SpyCar"),         FVector(-25.0f, 0.0f, 66.0f) },
+		{ EMegaJamSceneGenre::Chase,   TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 28.0f) },
+		{ EMegaJamSceneGenre::Alpine,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 28.0f) },
 		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, 50.0f) },
 	};
 	for (const FVehicleFallbackSpec& Spec : VehicleFallbacks)
@@ -453,13 +483,8 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 				SceneVehicleMeshes.Add(Spec.Genre, LoadedMesh);
 			}
 		}
-		if (!SceneSeatOffsets.Contains(Spec.Genre))
-		{
-			SceneSeatOffsets.Add(Spec.Genre, Spec.SeatOffset);
-		}
+		SceneSeatOffsets.FindOrAdd(Spec.Genre) = Spec.SeatOffset;
 	}
-	// Issue #108 / #112: Override Scene 05 Hang Glider seat offset to Z=50 so the orb sits inside the new 3D delta wing A-frame
-	SceneSeatOffsets.FindOrAdd(EMegaJamSceneGenre::Montage) = FVector(0.0f, 0.0f, 50.0f);
 }
 
 void AMegaJamFlowPawn::BeginPlay()
