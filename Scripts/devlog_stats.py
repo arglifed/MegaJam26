@@ -215,7 +215,10 @@ def render(cc: dict, export: dict | None, manual: dict, gh: dict, ref: str) -> s
             "output_tokens", "cache_write", "cache_read", "models")) + " |")
     out += ["", "_Cache read is the context re-sent to the model on each turn and billed at a "
             "discount. It is reported separately so it doesn't inflate the other numbers. "
-            "\"Model turns\" counts unique assistant messages._", ""]
+            "\"Model turns\" counts unique assistant messages. Claude Code rows are counted from the "
+            "transcripts. Rows marked ~ are self-reported. The Claude Desktop row was counted by Claude "
+            "from its own chat history, and its token figures are rough estimates of unique text, "
+            "not billed tokens._", ""]
 
     pre = {k: v["pre"] for k, v in cc.items() if v["pre"]["turns"] or v["pre"]["prompts"]}
     if pre:

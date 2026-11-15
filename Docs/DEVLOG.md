@@ -192,20 +192,21 @@ The player character is the orb: the star of the film, riding whatever vehicle t
 ## By the numbers
 
 <!-- STATS:BEGIN -->
-_Generated 2026-11-15 16:05 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
+_Generated 2026-11-15 16:10 Eastern Standard Time by `Scripts/devlog_stats.py` from `origin/main`. Jam window starts 2026-11-12; earlier activity is listed as pre-jam._
 
 ### AI usage
 
 | Person | Tool | Sessions | Prompts | Model turns | Tool calls | Input tok | Output tok | Cache write | Cache read | Models |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Hendrixsan | Claude Code (PowerShell) | 16 | 165 | 1,058 | 1,322 | 2,334 | 896,328 | 5,249,818 | 197,249,984 | claude-opus-5-5 (839), claude-fable-5-2 (219) |
+| Hendrixsan | Claude Code (PowerShell) | 16 | 168 | 1,068 | 1,329 | 2,358 | 902,084 | 5,257,211 | 199,121,990 | claude-opus-5-5 (849), claude-fable-5-2 (219) |
 | Hendrixsan | Claude Code (UE Terminal) | 4 | 26 | 106 | 94 | 248 | 57,679 | 195,222 | 8,593,309 | claude-opus-5-5 (106) |
+| Hendrixsan | Claude Desktop chat (art and process planning, Meshy prompts, issue drafts; Unreal setup help) | 3 | ~17–22 | - | - | ~90–160k (est.) | ~45–80k (est.) | - | - | not shown in chat history |
 | arglifed | Antigravity IDE (C++ architecture, track/skyline generation, camera systems, PR merges) | ~18 | ~65 | - | - | n/a | n/a | - | - | Gemini 4 Argon |
 | arglifed | Antigravity IDE (targeted bug fixes, HUD/tutorial patches, GitHub CLI and scripts) | ~12 | ~40 | - | - | n/a | n/a | - | - | Gemini 4 Flash |
 | arglifed | Gemini web chat (system planning, prompt engineering, play-test checklists, submission copy) | ~15 | ~95 | - | - | n/a | n/a | - | - | Gemini |
 | arglifed | Ollama, local on an RTX 5080 (offline C++ error parsing, script checks) | ~8 | ~30 | - | - | n/a | n/a | - | - | Qwen2.5-coder 7B |
 
-_Cache read is the context re-sent to the model on each turn and billed at a discount. It is reported separately so it doesn't inflate the other numbers. "Model turns" counts unique assistant messages._
+_Cache read is the context re-sent to the model on each turn and billed at a discount. It is reported separately so it doesn't inflate the other numbers. "Model turns" counts unique assistant messages. Claude Code rows are counted from the transcripts. Rows marked ~ are self-reported. The Claude Desktop row was counted by Claude from its own chat history, and its token figures are rough estimates of unique text, not billed tokens._
 
 #### Claude Code per day
 
@@ -214,7 +215,7 @@ _Cache read is the context re-sent to the model on each turn and billed at a dis
 | Thu Nov 12 | 4 | 30 | 113 | 70,911 |
 | Fri Nov 13 | 7 | 52 | 388 | 308,371 |
 | Sat Nov 14 | 5 | 70 | 393 | 368,372 |
-| Sun Nov 15 | 7 | 39 | 270 | 206,353 |
+| Sun Nov 15 | 7 | 42 | 280 | 212,109 |
 
 ### Meshy (3D generation)
 

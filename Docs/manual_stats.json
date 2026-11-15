@@ -1,6 +1,19 @@
 {
-  "_comment": "Hand-entered numbers for Scripts/devlog_stats.py. ai_tools rows are added to the AI usage table as-is (use \"-\" for unknown). arglifed's rows are self-reported approximations (issue #121 comment, 2026-11-15).",
+  "_comment": "Hand-entered numbers for Scripts/devlog_stats.py. ai_tools rows are added to the AI usage table as-is (use \"-\" for unknown). arglifed's rows are self-reported approximations (issue #121 comment, 2026-11-15). The Claude Desktop row was self-counted by Claude Desktop from its own chat history on 2026-11-15 (the data export never arrived); its token figures are low-confidence estimates of unique text, not billed tokens.",
   "ai_tools": [
+    {
+      "person": "Hendrixsan",
+      "tool": "Claude Desktop chat (art and process planning, Meshy prompts, issue drafts; Unreal setup help)",
+      "sessions": "3",
+      "prompts": "~17–22",
+      "turns": "-",
+      "tool_calls": "-",
+      "input_tokens": "~90–160k (est.)",
+      "output_tokens": "~45–80k (est.)",
+      "cache_write": "-",
+      "cache_read": "-",
+      "models": "not shown in chat history"
+    },
     {
       "person": "arglifed",
       "tool": "Antigravity IDE (C++ architecture, track/skyline generation, camera systems, PR merges)",
