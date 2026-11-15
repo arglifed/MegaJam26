@@ -1139,10 +1139,9 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 				if (FlowSubsystem && FlowSubsystem->BestBoxOfficeGross > 0)
 				{
 					TitleRecordText->SetText(FText::FromString(FString::Printf(
-						TEXT("★ STUDIO RECORD: $%.1fM BOX-OFFICE [%s]  //  BEST SCORE: %06d ★"),
+						TEXT("STUDIO RECORD: $%.1fM BOX-OFFICE [%s]"),
 						static_cast<float>(FlowSubsystem->BestBoxOfficeGross) / 1000000.0f,
-						*FlowSubsystem->BestOverallGrade,
-						FlowSubsystem->BestScore)));
+						*FlowSubsystem->BestOverallGrade)));
 					TitleRecordText->SetVisibility(ESlateVisibility::HitTestInvisible);
 				}
 				else

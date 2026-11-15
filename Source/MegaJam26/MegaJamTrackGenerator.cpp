@@ -1901,45 +1901,58 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 					}
 				}
 			}
+		}
 
-			// Issue #106: Colossal Distant Vista Silhouettes (Y in [+-3400, +-7200], Scale 10x-22x >= 1.0f on all axes)
-			if (PropList->Props.Num() > 0)
+		// Issue #106 / #115: Colossal Distant Vista Silhouettes across all 5 scenes (Y in [+-3400, +-7200], Scale 8.0f-22.0f >= 1.0f on all axes)
+		{
+			const FScenePropList* VistaPropList = SceneScatterProps.Find(CurrentGenre);
+			for (int32 Side = 0; Side < 2; ++Side)
 			{
-				for (int32 Side = 0; Side < 2; ++Side)
+				UStaticMesh* VistaMesh = nullptr;
+				if (VistaPropList && VistaPropList->Props.Num() > 0)
 				{
-					const FScenePropConfig& VistaCfg = PropList->Props[Stream.RandHelper(PropList->Props.Num())];
-					UStaticMesh* VistaMesh = VistaCfg.PropMesh ? VistaCfg.PropMesh : (SkyscraperMesh ? SkyscraperMesh.Get() : SoundstageTrussMesh.Get());
-					if (!VistaMesh)
-					{
-						continue;
-					}
-					UInstancedStaticMeshComponent* VistaISM = nullptr;
-					if (UInstancedStaticMeshComponent** FoundVistaISM = ActiveScatterISMCs.Find(VistaMesh))
-					{
-						VistaISM = *FoundVistaISM;
-					}
-					if (!VistaISM)
-					{
-						VistaISM = CreateVisualISM(VistaMesh);
-						if (VistaISM)
-						{
-							VistaISM->CastShadow = false;
-							ActiveScatterISMCs.Add(VistaMesh, VistaISM);
-						}
-					}
+					const FScenePropConfig& VistaCfg = VistaPropList->Props[Stream.RandHelper(VistaPropList->Props.Num())];
+					VistaMesh = VistaCfg.PropMesh;
+				}
+				if (!VistaMesh && StudioDressingMeshes.Num() > 0)
+				{
+					VistaMesh = StudioDressingMeshes[Stream.RandHelper(StudioDressingMeshes.Num())].Get();
+				}
+				if (!VistaMesh)
+				{
+					VistaMesh = SkyscraperMesh ? SkyscraperMesh.Get() : SoundstageTrussMesh.Get();
+				}
+				if (!VistaMesh)
+				{
+					continue;
+				}
+
+				UInstancedStaticMeshComponent* VistaISM = nullptr;
+				if (UInstancedStaticMeshComponent** FoundVistaISM = ActiveScatterISMCs.Find(VistaMesh))
+				{
+					VistaISM = *FoundVistaISM;
+				}
+				if (!VistaISM)
+				{
+					VistaISM = CreateVisualISM(VistaMesh);
 					if (VistaISM)
 					{
-						const float VistaX = Stream.FRandRange(ChunkStartX + 300.0f, ChunkStartX + ChunkLength - 300.0f);
-						const float AbsVistaY = Stream.FRandRange(3500.0f, 6800.0f);
-						const float VistaY = (Side == 0) ? -AbsVistaY : AbsVistaY;
-						const float VistaScale = FMath::Max(1.0f, Stream.FRandRange(10.0f, 22.0f));
-						const float VistaYaw = Stream.FRandRange(0.0f, 360.0f);
-						const FTransform VistaTransform(
-							FRotator(0.0f, VistaYaw, 0.0f),
-							FVector(VistaX, VistaY, -120.0f),
-							FVector(VistaScale, VistaScale, VistaScale * 1.25f));
-						SafeAddInstance(VistaISM, VistaTransform, true);
+						VistaISM->CastShadow = false;
+						ActiveScatterISMCs.Add(VistaMesh, VistaISM);
 					}
+				}
+				if (VistaISM)
+				{
+					const float VistaX = Stream.FRandRange(ChunkStartX + 300.0f, ChunkStartX + ChunkLength - 300.0f);
+					const float AbsVistaY = Stream.FRandRange(3400.0f, 7200.0f);
+					const float VistaY = (Side == 0) ? -AbsVistaY : AbsVistaY;
+					const float VistaScale = FMath::Max(1.0f, Stream.FRandRange(8.0f, 22.0f));
+					const float VistaYaw = Stream.FRandRange(0.0f, 360.0f);
+					const FTransform VistaTransform(
+						FRotator(0.0f, VistaYaw, 0.0f),
+						FVector(VistaX, VistaY, -120.0f),
+						FVector(VistaScale, VistaScale, VistaScale * 1.25f));
+					SafeAddInstance(VistaISM, VistaTransform, true);
 				}
 			}
 		}
