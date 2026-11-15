@@ -25,8 +25,12 @@ locally by the art lane).
   are committed to this repo, which is private. **Do not make the repo public with them in it** without removing them or
   asking WeLoveIndies first.
 - No composer or artist names are listed for these tracks on WeLoveIndies, so the credit goes to the library.
-- The Free & Demo tier also asks releases to include the
-  [WeLoveIndies intro](https://www.weloveindies.com/Trailer/WLI_Intro.mp4). The jam page doesn't mention this.
+- The jam's itch.io page lists WeLoveIndies as a partner perk ("sound and music for non-commercial use") and asks that
+  assets you didn't make be listed in the submission. The same list goes on the itch.io page.
+- The T&C's Free & Demo tier asks releases to include the
+  [WeLoveIndies intro](https://www.weloveindies.com/Trailer/WLI_Intro.mp4). The jam's MegaJam licence page doesn't
+  mention it. The team decided (2026-11-15) to credit WeLoveIndies in text here and on the submission page instead of
+  showing the intro video.
 
 | Asset in `Content/MegaJam26/Audio/` | Original WeLoveIndies filename | Used for |
 |---|---|---|
