@@ -1606,6 +1606,10 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 			{
 				TutPromptStr = TEXT("► REHEARSAL: PRESS [SPACE] OR [CROSS / BTN 1] TO SPLICE CUT! ◄");
 			}
+			else if (FlowPawn->TutorialState == ETutorialState::DirectorCutCheck || !FlowPawn->bPassedDirectorCutCheck)
+			{
+				TutPromptStr = TEXT("► REHEARSAL: PRESS [CTRL] OR [SQUARE / BTN 2] FOR DIRECTOR'S CUT ◄");
+			}
 			TutorialPromptText->SetText(FText::FromString(TutPromptStr));
 			TutorialPromptText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.90f, 0.25f, PulseAlpha)));
 

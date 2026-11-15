@@ -1826,7 +1826,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 				Velocity.X = 0.0f;
 			}
 		}
-		else if (TutorialState == ETutorialState::CutCheck && CurrentX >= -100.0f)
+		else if (TutorialState == ETutorialState::CutCheck && CurrentX >= -400.0f)
 		{
 			const FKey UsbButton1Key(TEXT("GenericUSBController_Button1"));
 			const bool bCutPressed = PC && (
@@ -1841,6 +1841,34 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 				PushTakeAndAspectToSubsystem();
 				OnTakeCut.Broadcast(CurrentTake);
 				OnTakeCutEvent(CurrentTake);
+				TutorialState = ETutorialState::DirectorCutCheck;
+				bPassedDirectorCutCheck = false;
+				Velocity.X = 1200.0f;
+				PlayCue(TEXT("OnFilmFrame"), FilmFramePickupSound, 0.95f, 1.35f);
+			}
+			else
+			{
+				SetActorLocation(FVector(-400.0, RehearsalLoc.Y, RehearsalLoc.Z), false);
+				Velocity.X = 0.0f;
+			}
+		}
+		else if ((TutorialState == ETutorialState::DirectorCutCheck || !bPassedDirectorCutCheck) && CurrentX >= -100.0f)
+		{
+			const FKey UsbButton2Key(TEXT("GenericUSBController_Button2"));
+			const bool bDirectorCutPressed = IsInBulletTimeOverdrive() || (PC && (
+				PC->IsInputKeyDown(EKeys::LeftControl) ||
+				PC->IsInputKeyDown(EKeys::RightControl) ||
+				PC->IsInputKeyDown(EKeys::C) ||
+				PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Left) ||
+				PC->IsInputKeyDown(UsbButton2Key)));
+			if (bDirectorCutPressed)
+			{
+				bPassedDirectorCutCheck = true;
+				if (!IsInBulletTimeOverdrive())
+				{
+					FilmMeter = FMath::Max(FilmMeter, 50.0f);
+					ToggleAspect();
+				}
 				CompleteRehearsalAndStartScene01();
 			}
 			else
@@ -1849,7 +1877,7 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 				Velocity.X = 0.0f;
 			}
 		}
-		else if (CurrentX >= 0.0f)
+		else if (bPassedDirectorCutCheck && CurrentX >= 0.0f)
 		{
 			CompleteRehearsalAndStartScene01();
 		}
@@ -2972,6 +3000,7 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 void AMegaJamFlowPawn::CompleteRehearsalAndStartScene01()
 {
 	bIsRehearsalMode = false;
+	bPassedDirectorCutCheck = true;
 	TutorialState = ETutorialState::Completed;
 	SkipHoldTimer = 0.0f;
 	CurrentShotDuration = 0.0f;
@@ -3008,6 +3037,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	bHasProcessedJumpInput = false;
 	CustomTimeDilation = 1.0f;
 	SkipHoldTimer = 0.0f;
+	bPassedDirectorCutCheck = !bIsRehearsalMode;
 	TutorialState = bIsRehearsalMode ? ETutorialState::SteerCheck : ETutorialState::Completed;
 	Velocity = FVector(bIsRehearsalMode ? 1200.0f : FMath::Max(1200.0f, CruiseSpeed), 0.0f, 0.0f);
 	FlowRatio = 0.5f;
