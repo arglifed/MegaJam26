@@ -193,7 +193,8 @@ def wire_pawn():
         G.NOIR: ("SM_Vehicle_SpyCar", unreal.Vector(-25, 0, 66)),
         G.CHASE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 28)),
         G.ALPINE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 28)),
-        G.MONTAGE: ("SM_Vehicle_HangGlider", unreal.Vector(0, 0, 42)),  # inside the A-frame, under the wing
+        # Montage: C++ (#112, PostInitializeComponents) forces (0, 0, 50) whatever the Blueprint says; kept equal here.
+        G.MONTAGE: ("SM_Vehicle_HangGlider", unreal.Vector(0, 0, 50)),  # inside the A-frame, under the wing
     }
     bp = eal.load_asset(BPS + "/BP_FlowPawn")
     cdo = cdo_of(bp)
