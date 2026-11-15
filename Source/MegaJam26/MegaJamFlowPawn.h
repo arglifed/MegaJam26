@@ -237,9 +237,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Physics Tuning")
 	float StuntGravityZ = -2800.0f;
 
-	/** Vertical jump velocity (cm/s) applied on a grounded W/Up stunt hop in 4:3 mode during Scenes 01-04. */
+	/** Vertical jump velocity (cm/s) applied on a grounded W/Up stunt hop in Scenes 01-04 (peaks at ~430 Z with StuntGravityZ = -2800). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Physics Tuning")
-	float StuntJumpVelocityZ = 1150.0f;
+	float StuntJumpVelocityZ = 1550.0f;
 
 	/** Vertical launch impulse (cm/s) applied at the 5,400m Scene 04 Snowboard mountain drop-in transition. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Physics Tuning")

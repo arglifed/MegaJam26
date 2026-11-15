@@ -284,6 +284,119 @@ void AMegaJamTrackGenerator::PostInitializeComponents()
 		TrackRoot->SetRelativeScale3D(FVector::OneVector);
 	}
 	SanitizeActorAndWorldComponents(this, false);
+
+	// Issues #40, #41, #47, #58, #90: Auto-wire imported art assets if left null in Blueprint
+	auto LoadArtMeshIfValid = [](const TCHAR* AssetName) -> UStaticMesh*
+	{
+		const FString PackagePath = FString::Printf(TEXT("/Game/MegaJam26/Art/%s"), AssetName);
+		if (!FPackageName::DoesPackageExist(PackagePath))
+		{
+			return nullptr;
+		}
+		const FString ObjectPath = FString::Printf(TEXT("%s.%s"), *PackagePath, AssetName);
+		return LoadObject<UStaticMesh>(nullptr, *ObjectPath);
+	};
+
+	if (!FloorTileMesh)        { FloorTileMesh = LoadArtMeshIfValid(TEXT("SM_FloorTile")); }
+	if (!WallSegmentMesh)      { WallSegmentMesh = LoadArtMeshIfValid(TEXT("SM_WallSegment")); }
+	if (!SoundstageTrussMesh)  { SoundstageTrussMesh = LoadArtMeshIfValid(TEXT("SM_Dressing_LightingTruss")); }
+	if (!SkyscraperMesh)       { SkyscraperMesh = LoadArtMeshIfValid(TEXT("SM_Dressing_Noir_Skyscraper")); }
+	if (!FilmReelMesh)         { FilmReelMesh = LoadArtMeshIfValid(TEXT("SM_SetPiece_FilmReel")); }
+	if (!ApertureRingMesh)     { ApertureRingMesh = LoadArtMeshIfValid(TEXT("SM_SetPiece_ApertureRing")); }
+	if (!FilmFramePickupMesh)  { FilmFramePickupMesh = LoadArtMeshIfValid(TEXT("SM_Pickup_FilmFrame")); }
+	if (!WrapArchMesh)         { WrapArchMesh = LoadArtMeshIfValid(TEXT("SM_SetPiece_WrapArch")); }
+
+	if (SceneObstacleMeshesTakeA.Num() == 0)
+	{
+		const TCHAR* TakeANames[5] = {
+			TEXT("SM_Obstacle_Action_CyberBarrier"),
+			TEXT("SM_Obstacle_Western_TimberBarricade"),
+			TEXT("SM_Obstacle_Noir_Roadblock"),
+			TEXT("SM_Obstacle_Chase_Snowdrift"),
+			TEXT("SM_Obstacle_Final_Monolith")
+		};
+		for (const TCHAR* Name : TakeANames)
+		{
+			SceneObstacleMeshesTakeA.Add(LoadArtMeshIfValid(Name));
+		}
+	}
+
+	if (SceneObstacleMeshesTakeB.Num() == 0)
+	{
+		const TCHAR* TakeBNames[5] = {
+			TEXT("SM_Obstacle_Action_CyberBarrier"),
+			TEXT("SM_Obstacle_Western_TimberBarricade"),
+			TEXT("SM_Obstacle_Noir_Roadblock"),
+			TEXT("SM_Obstacle_Chase_IceBoulders"),
+			TEXT("SM_Obstacle_Final_Monolith")
+		};
+		for (const TCHAR* Name : TakeBNames)
+		{
+			SceneObstacleMeshesTakeB.Add(LoadArtMeshIfValid(Name));
+		}
+	}
+
+	if (StudioDressingMeshes.Num() == 0)
+	{
+		const TCHAR* DressingNames[] = {
+			TEXT("SM_Dressing_StudioSpotlight"),
+			TEXT("SM_Dressing_BoomMic"),
+			TEXT("SM_Prop_CameraCrane"),
+			TEXT("SM_Dressing_BackdropFlat"),
+			TEXT("SM_Dressing_LightingTruss")
+		};
+		for (const TCHAR* Name : DressingNames)
+		{
+			if (UStaticMesh* Mesh = LoadArtMeshIfValid(Name))
+			{
+				StudioDressingMeshes.Add(Mesh);
+			}
+		}
+	}
+
+	// Auto-populate per-scene margin scatter props (Issue #90 / #87) when not already configured in Blueprint
+	auto EnsureScatterProp = [&](EMegaJamSceneGenre Genre, const TCHAR* AssetName, float MinScale, float MaxScale, float Prob)
+	{
+		if (UStaticMesh* Mesh = LoadArtMeshIfValid(AssetName))
+		{
+			FScenePropList& List = SceneScatterProps.FindOrAdd(Genre);
+			for (const FScenePropConfig& Existing : List.Props)
+			{
+				if (Existing.PropMesh == Mesh)
+				{
+					return;
+				}
+			}
+			FScenePropConfig Cfg;
+			Cfg.PropMesh = Mesh;
+			Cfg.MinScale = MinScale;
+			Cfg.MaxScale = MaxScale;
+			Cfg.SpawnProbability = Prob;
+			List.Props.Add(Cfg);
+		}
+	};
+
+	if (SceneScatterProps.Num() == 0)
+	{
+		EnsureScatterProp(EMegaJamSceneGenre::Action,  TEXT("SM_Prop_CameraCrane"),             6.0f, 10.0f, 0.45f);
+		EnsureScatterProp(EMegaJamSceneGenre::Action,  TEXT("SM_Dressing_StudioSpotlight"),     5.0f,  9.0f, 0.55f);
+		EnsureScatterProp(EMegaJamSceneGenre::Action,  TEXT("SM_Dressing_BoomMic"),             5.0f,  8.5f, 0.45f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Dressing_Western_Cactus"),      5.0f,  9.5f, 0.65f);
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Dressing_Western_Tumbleweed"),  2.5f,  5.0f, 0.55f);
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Prop_Western_Tombstone"),       3.5f,  6.5f, 0.50f);
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Prop_Western_GraveCross"),      4.0f,  7.0f, 0.45f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Noir,    TEXT("SM_Dressing_Noir_StreetLamp"),     6.0f, 10.0f, 0.65f);
+		EnsureScatterProp(EMegaJamSceneGenre::Noir,    TEXT("SM_Prop_Noir_BlackSedan"),         4.5f,  6.5f, 0.50f);
+		EnsureScatterProp(EMegaJamSceneGenre::Noir,    TEXT("SM_Dressing_Noir_Skyscraper"),    10.0f, 16.0f, 0.45f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Chase,   TEXT("SM_Dressing_Chase_PineTree"),      7.0f, 12.0f, 0.70f);
+		EnsureScatterProp(EMegaJamSceneGenre::Chase,   TEXT("SM_Dressing_Chase_SnowRock"),      5.0f,  9.5f, 0.60f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Montage, TEXT("SM_Dressing_Final_FloatingCrystal"), 6.0f, 11.0f, 0.65f);
+		EnsureScatterProp(EMegaJamSceneGenre::Montage, TEXT("SM_Obstacle_Final_LaserGate"),     6.0f, 10.0f, 0.40f);
+	}
 }
 
 void AMegaJamTrackGenerator::BeginPlay()
@@ -1264,11 +1377,35 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 			}
 			Owners[Index] = static_cast<int8>(SceneIdx);
 
+			FTransform DesiredSkinTransform = BaseTransform;
+			if (SceneIdx < 4 && DesiredSkinTransform.GetLocation().Z > -1000.0f)
+			{
+				if (UStaticMesh* SkinMesh = Skins[SceneIdx]->GetStaticMesh())
+				{
+					const FBoxSphereBounds Bounds = SkinMesh->GetBounds();
+					const float TopLocalZ = static_cast<float>(Bounds.Origin.Z + Bounds.BoxExtent.Z);
+					const float BotLocalZ = static_cast<float>(Bounds.Origin.Z - Bounds.BoxExtent.Z);
+					const float MeshHeight = FMath::Max(1.0f, TopLocalZ - BotLocalZ);
+					FVector Scale3D = DesiredSkinTransform.GetScale3D();
+					FVector Loc3D = DesiredSkinTransform.GetLocation();
+					const float CurrentTopWorldZ = Loc3D.Z + TopLocalZ * Scale3D.Z;
+					if (CurrentTopWorldZ > 130.0f)
+					{
+						// Cap visual height of grounded fences/barricades in Scenes 01-04 to <= 130.0f above roadbed
+						const float TargetHeight = 120.0f;
+						Scale3D.Z = FMath::Max(0.05f, TargetHeight / MeshHeight);
+						Loc3D.Z = -BotLocalZ * Scale3D.Z;
+						DesiredSkinTransform.SetScale3D(Scale3D);
+						DesiredSkinTransform.SetLocation(Loc3D);
+					}
+				}
+			}
+
 			FTransform SkinTransform;
 			Skins[SceneIdx]->GetInstanceTransform(Index, SkinTransform, true);
-			if (!SkinTransform.Equals(BaseTransform, 0.01f))
+			if (!SkinTransform.Equals(DesiredSkinTransform, 0.01f))
 			{
-				Skins[SceneIdx]->UpdateInstanceTransform(Index, BaseTransform, true, false, true);
+				Skins[SceneIdx]->UpdateInstanceTransform(Index, DesiredSkinTransform, true, false, true);
 				DirtyMask |= (1u << SceneIdx);
 			}
 		}
@@ -1531,7 +1668,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			const int32 BaseObstacleIndex = (Slot * Rows + Row) * ObstaclesPerRow;
 			const float RowCenterX = ChunkStartX + (Row + 0.5f) * RowLength;
 			const float SideY = (Row == 0) ? -640.0f : 640.0f;
-			const FTransform SideBlock(FRotator::ZeroRotator, FVector(RowCenterX, SideY, 120.0f), FVector(2.0f, 3.2f, 2.4f));
+			const FTransform SideBlock(FRotator::ZeroRotator, FVector(RowCenterX, SideY, 60.0f), FVector(2.0f, 3.2f, 1.2f));
 			UInstancedStaticMeshComponent* Target = (Row == 0) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
 			Target->UpdateInstanceTransform(BaseObstacleIndex, SideBlock, true, false, true);
 		}
@@ -1549,6 +1686,10 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	const int32 BaseObstacleIndex = (Slot * Rows + CenterRow) * ObstaclesPerRow;
 	const float HazardX = ChunkCenterX;
 	const float TakeRoll = Stream.FRand();
+	const bool bGroundedScene = (ChunkDistMeters < 7200.0f);
+	// Grounded Scenes 01-04 cap obstacle center Z = 60.0f and Scale.Z = 1.2f so top edge sits at Z = 120.0f (<= 130.0f) with 100% open airspace above!
+	constexpr float GroundedCenterZ = 60.0f;
+	constexpr float GroundedScaleZ = 1.2f;
 
 	// Determine effective obstacle genre for this chunk (in Scene 05 Montage 7,200m-8,940m, match the 400m sub-genre cycle!)
 	const bool bIsChaseChunk = (ChunkDistMeters >= 5400.0f && ChunkDistMeters < 7200.0f) || (ChunkDistMeters >= 8400.0f);
@@ -1560,20 +1701,16 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	{
 		if (HazardArchetype % 2 == 0)
 		{
-			// Snowdrift / Ice-Boulder Cluster across 3 lanes + low ridge (Comet-Smashable!)
+			// Snowdrift / Ice-Boulder Cluster across 3 lanes + low ridge (Comet-Smashable & cleanly jumpable in Scene 04!)
 			const float CenterBoulderY = (ChunkIndex % 4 == 0) ? -350.0f : ((ChunkIndex % 4 == 2) ? 350.0f : 0.0f);
 			const FTransform IceBoulderCluster(
-				FRotator(0.0f, 15.0f, 8.0f),
-				FVector(HazardX, CenterBoulderY, 150.0f),
-				FVector(ObstacleSize / 100.0f, 7.2f, 2.8f));
+				FRotator(0.0f, 15.0f, 0.0f),
+				FVector(HazardX, CenterBoulderY, bGroundedScene ? GroundedCenterZ : 150.0f),
+				FVector(ObstacleSize / 100.0f, 7.2f, bGroundedScene ? GroundedScaleZ : 2.8f));
 			const FTransform LowAvalancheRidge(
 				FRotator::ZeroRotator,
-				FVector(HazardX, 0.0f, 115.0f),
-				FVector(ObstacleSize / 100.0f, 15.5f, 1.85f));
-			const FTransform OuterSlalomPillar(
-				FRotator(0.0f, -12.0f, 0.0f),
-				FVector(HazardX, -CenterBoulderY, 320.0f),
-				FVector(ObstacleSize / 100.0f, 3.4f, 6.4f));
+				FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 115.0f),
+				FVector(ObstacleSize / 100.0f, 15.5f, bGroundedScene ? GroundedScaleZ : 1.85f));
 
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, IceBoulderCluster, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, IceBoulderCluster, true, false, true);
@@ -1581,24 +1718,31 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
 
-			UInstancedStaticMeshComponent* SlalomTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			SlalomTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, OuterSlalomPillar, true, false, true);
+			if (!bGroundedScene)
+			{
+				const FTransform OuterSlalomPillar(
+					FRotator(0.0f, -12.0f, 0.0f),
+					FVector(HazardX, -CenterBoulderY, 320.0f),
+					FVector(ObstacleSize / 100.0f, 3.4f, 6.4f));
+				UInstancedStaticMeshComponent* SlalomTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+				SlalomTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, OuterSlalomPillar, true, false, true);
+			}
 		}
 		else
 		{
 			// Downhill Slalom Gates across Lanes 1, 2, 3 (-350, 0, +350) with outer Dolly Boost rails at +/-700
 			const FTransform CenterIceMonolith(
 				FRotator(0.0f, 22.0f, 0.0f),
-				FVector(HazardX, 0.0f, 210.0f),
-				FVector(ObstacleSize / 100.0f, 3.6f, 4.2f));
+				FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 210.0f),
+				FVector(ObstacleSize / 100.0f, 3.6f, bGroundedScene ? GroundedScaleZ : 4.2f));
 			const FTransform LeftSlalomGate(
 				FRotator::ZeroRotator,
-				FVector(HazardX, -350.0f, 165.0f),
-				FVector(ObstacleSize / 100.0f, 3.5f, 3.1f));
+				FVector(HazardX, -350.0f, bGroundedScene ? GroundedCenterZ : 165.0f),
+				FVector(ObstacleSize / 100.0f, 3.5f, bGroundedScene ? GroundedScaleZ : 3.1f));
 			const FTransform RightSlalomGate(
 				FRotator::ZeroRotator,
-				FVector(HazardX, 350.0f, 165.0f),
-				FVector(ObstacleSize / 100.0f, 3.5f, 3.1f));
+				FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 165.0f),
+				FVector(ObstacleSize / 100.0f, 3.5f, bGroundedScene ? GroundedScaleZ : 3.1f));
 
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterIceMonolith, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterIceMonolith, true, false, true);
@@ -1619,16 +1763,16 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			const float SedanCenterY = (ChunkIndex % 4 == 0) ? -350.0f : ((ChunkIndex % 4 == 2) ? 350.0f : 0.0f);
 			const FTransform LeadEnemySedan(
 				FRotator(0.0f, 12.0f, 0.0f),
-				FVector(HazardX, SedanCenterY, 135.0f),
-				FVector(ObstacleSize / 100.0f, 4.4f, 2.5f));
+				FVector(HazardX, SedanCenterY, bGroundedScene ? GroundedCenterZ : 135.0f),
+				FVector(ObstacleSize / 100.0f, 4.4f, bGroundedScene ? GroundedScaleZ : 2.5f));
 			const FTransform FlankingRoadblockLeft(
 				FRotator(0.0f, -8.0f, 0.0f),
-				FVector(HazardX, -700.0f, 145.0f),
-				FVector(ObstacleSize / 100.0f, 3.4f, 2.8f));
+				FVector(HazardX, -700.0f, bGroundedScene ? GroundedCenterZ : 145.0f),
+				FVector(ObstacleSize / 100.0f, 3.4f, bGroundedScene ? GroundedScaleZ : 2.8f));
 			const FTransform FlankingRoadblockRight(
 				FRotator(0.0f, 8.0f, 0.0f),
-				FVector(HazardX, 700.0f, 145.0f),
-				FVector(ObstacleSize / 100.0f, 3.4f, 2.8f));
+				FVector(HazardX, 700.0f, bGroundedScene ? GroundedCenterZ : 145.0f),
+				FVector(ObstacleSize / 100.0f, 3.4f, bGroundedScene ? GroundedScaleZ : 2.8f));
 
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeadEnemySedan, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeadEnemySedan, true, false, true);
@@ -1639,19 +1783,19 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		}
 		else
 		{
-			// Noir Split Roadblock & Searchlight Arch across Lanes 1, 2, 3 (-350, 0, +350)
+			// Noir Split Roadblock across Lanes 1, 2, 3 (-350, 0, +350)
 			const FTransform CenterRoadblock(
 				FRotator::ZeroRotator,
-				FVector(HazardX, 0.0f, 160.0f),
-				FVector(ObstacleSize / 100.0f, 3.4f, 3.2f));
+				FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 160.0f),
+				FVector(ObstacleSize / 100.0f, 3.4f, bGroundedScene ? GroundedScaleZ : 3.2f));
 			const FTransform LeftSedanBlock(
 				FRotator(0.0f, 14.0f, 0.0f),
-				FVector(HazardX, -350.0f, 140.0f),
-				FVector(ObstacleSize / 100.0f, 3.3f, 2.6f));
+				FVector(HazardX, -350.0f, bGroundedScene ? GroundedCenterZ : 140.0f),
+				FVector(ObstacleSize / 100.0f, 3.3f, bGroundedScene ? GroundedScaleZ : 2.6f));
 			const FTransform RightSedanBlock(
 				FRotator(0.0f, -14.0f, 0.0f),
-				FVector(HazardX, 350.0f, 140.0f),
-				FVector(ObstacleSize / 100.0f, 3.3f, 2.6f));
+				FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 140.0f),
+				FVector(ObstacleSize / 100.0f, 3.3f, bGroundedScene ? GroundedScaleZ : 2.6f));
 
 			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterRoadblock, true, false, true);
 			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterRoadblock, true, false, true);
@@ -1663,37 +1807,41 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		return;
 	}
 
-	// Scene 02 Western (1,800m-3,600m) & Montage Western Segment (7,600m-8,000m): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space!
+	// Scene 02 Western (1,800m-3,600m) & Montage Western Segment (7,600m-8,000m): Generate full-width Western Standoff Barricades designed to be cleaved with 2.76:1 + Space or jumped over in 4:3!
 	if (bIsWesternChunk)
 	{
 		const float BarricadeScaleY = (MEGAJAM_CORRIDOR_HALF_WIDTH * 2.0f) / 100.0f;
 		const FTransform MainTimberBarricade(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 180.0f),
-			FVector(ObstacleSize / 100.0f, BarricadeScaleY, 3.6f));
-		const FTransform UpperRailCrossbeam(
-			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 430.0f),
-			FVector(ObstacleSize / 100.0f, BarricadeScaleY, 2.2f));
-		const FTransform FlankingPostLeft(
-			FRotator::ZeroRotator,
-			FVector(HazardX, -700.0f, 360.0f),
-			FVector(ObstacleSize / 100.0f, 2.8f, 7.2f));
-		const FTransform FlankingPostRight(
-			FRotator::ZeroRotator,
-			FVector(HazardX, 700.0f, 360.0f),
-			FVector(ObstacleSize / 100.0f, 2.8f, 7.2f));
+			FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 180.0f),
+			FVector(ObstacleSize / 100.0f, BarricadeScaleY, bGroundedScene ? GroundedScaleZ : 3.6f));
 
-		// Place the primary standoff barricade across both Take A and Take B so the center standoff lane must be cleaved with Quick-Draw Beat-Slash
+		// Place the primary standoff barricade across both Take A and Take B (with zero upper crossbeam or tall posts in grounded Scene 02 so airspace above is 100% open!)
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, MainTimberBarricade, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, MainTimberBarricade, true, false, true);
 
-		const bool bUpperIsTakeA = (TakeRoll < 0.5f);
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? UpperRailCrossbeam : FlankingPostLeft, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? FlankingPostLeft : UpperRailCrossbeam, true, false, true);
+		if (!bGroundedScene)
+		{
+			const FTransform UpperRailCrossbeam(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 0.0f, 430.0f),
+				FVector(ObstacleSize / 100.0f, BarricadeScaleY, 2.2f));
+			const FTransform FlankingPostLeft(
+				FRotator::ZeroRotator,
+				FVector(HazardX, -700.0f, 360.0f),
+				FVector(ObstacleSize / 100.0f, 2.8f, 7.2f));
+			const FTransform FlankingPostRight(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 700.0f, 360.0f),
+				FVector(ObstacleSize / 100.0f, 2.8f, 7.2f));
 
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
+			const bool bUpperIsTakeA = (TakeRoll < 0.5f);
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? UpperRailCrossbeam : FlankingPostLeft, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? FlankingPostLeft : UpperRailCrossbeam, true, false, true);
+
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
+		}
 		return;
 	}
 
@@ -1706,12 +1854,12 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		const bool bLeftIsTakeA = (TakeRoll < 0.5f);
 		const FTransform LeftGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, -350.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 7.0f, 5.2f));
+			FVector(HazardX, -350.0f, bGroundedScene ? GroundedCenterZ : 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.0f, bGroundedScene ? GroundedScaleZ : 5.2f));
 		const FTransform RightGateBlock(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 350.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 7.0f, 5.2f));
+			FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 260.0f),
+			FVector(ObstacleSize / 100.0f, 7.0f, bGroundedScene ? GroundedScaleZ : 5.2f));
 
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? LeftGateBlock : RightGateBlock, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? RightGateBlock : LeftGateBlock, true, false, true);
@@ -1721,24 +1869,24 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	case 1:
 	{
 		// Archetype 1 — Action Split Pillars:
-		// Central pillar on Lane 2 (Y = 0.0f) and flanking Take-specific pillars on Lanes 1 & 3 (Y = -350.0f, +350.0f),
+		// Central fence/pillar on Lane 2 (Y = 0.0f) and flanking Take-specific fences on Lanes 1 & 3 (Y = -350.0f, +350.0f),
 		// with outer Lanes 0 & 4 (Y = -700.0f, +700.0f) lined with cyan Dolly Boost Strips.
 		const FTransform CentralPillar(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 430.0f),
-			FVector(ObstacleSize / 100.0f, 3.2f, 8.6f));
+			FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 430.0f),
+			FVector(ObstacleSize / 100.0f, 3.2f, bGroundedScene ? GroundedScaleZ : 8.6f));
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
 
 		const bool bMidLeftIsTakeA = (TakeRoll < 0.5f);
 		const FTransform MidLeftPillar(
 			FRotator::ZeroRotator,
-			FVector(HazardX, -350.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 3.2f, 5.2f));
+			FVector(HazardX, -350.0f, bGroundedScene ? GroundedCenterZ : 260.0f),
+			FVector(ObstacleSize / 100.0f, 3.2f, bGroundedScene ? GroundedScaleZ : 5.2f));
 		const FTransform MidRightPillar(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 350.0f, 260.0f),
-			FVector(ObstacleSize / 100.0f, 3.2f, 5.2f));
+			FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 260.0f),
+			FVector(ObstacleSize / 100.0f, 3.2f, bGroundedScene ? GroundedScaleZ : 5.2f));
 		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidLeftPillar : MidRightPillar, true, false, true);
 		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidRightPillar : MidLeftPillar, true, false, true);
 		break;
@@ -1746,20 +1894,21 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	case 2:
 	{
-		// Archetype 2 — Overhead Laser Curtain:
-		// Upper barrier (Z: [310, 930]) leaving the entire Z = 140 Overdrive rail wide open underneath,
-		// with a Take-specific floor laser bar that can be phased through via Hard Cut!
-		const FTransform CeilingGateTransform(
-			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 620.0f),
-			FVector(ObstacleSize / 100.0f, 18.0f, 6.2f));
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
+		// Archetype 2 — Low Laser Fence (with zero overhead ceiling gate in grounded Scenes 01-04):
+		if (!bGroundedScene)
+		{
+			const FTransform CeilingGateTransform(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 0.0f, 620.0f),
+				FVector(ObstacleSize / 100.0f, 18.0f, 6.2f));
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
+		}
 
 		const FTransform FloorLaserBar(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 90.0f),
-			FVector(ObstacleSize / 100.0f, 16.0f, 1.8f));
+			FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 90.0f),
+			FVector(ObstacleSize / 100.0f, 16.0f, bGroundedScene ? GroundedScaleZ : 1.8f));
 		UInstancedStaticMeshComponent* LaserTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
 		LaserTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, FloorLaserBar, true, false, true);
 		break;
@@ -1768,20 +1917,27 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 	case 3:
 	default:
 	{
-		// Archetype 3 — Alternating Take Cross-Beams:
-		// Low beam on one Take (Z = 110, flush with Z = 0 floor) and High beam on the opposite Take (Z = 520)
+		// Archetype 3 — Alternating Take Low Fences (with zero overhead HighBeam in grounded Scenes 01-04):
 		const bool bLowIsTakeA = (TakeRoll < 0.5f);
 		const FTransform LowBeam(
 			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 110.0f),
-			FVector(ObstacleSize / 100.0f, 16.5f, 2.2f));
-		const FTransform HighBeam(
-			FRotator::ZeroRotator,
-			FVector(HazardX, 0.0f, 520.0f),
-			FVector(ObstacleSize / 100.0f, 16.5f, 3.6f));
+			FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 110.0f),
+			FVector(ObstacleSize / 100.0f, 16.5f, bGroundedScene ? GroundedScaleZ : 2.2f));
 
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? LowBeam : HighBeam, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? HighBeam : LowBeam, true, false, true);
+		if (bGroundedScene)
+		{
+			UInstancedStaticMeshComponent* LowTarget = bLowIsTakeA ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
+			LowTarget->UpdateInstanceTransform(BaseObstacleIndex, LowBeam, true, false, true);
+		}
+		else
+		{
+			const FTransform HighBeam(
+				FRotator::ZeroRotator,
+				FVector(HazardX, 0.0f, 520.0f),
+				FVector(ObstacleSize / 100.0f, 16.5f, 3.6f));
+			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? LowBeam : HighBeam, true, false, true);
+			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? HighBeam : LowBeam, true, false, true);
+		}
 		break;
 	}
 	}
@@ -2405,9 +2561,29 @@ bool AMegaJamTrackGenerator::CheckObstacleCollisionAndGraze(
 		}
 
 		const FVector HalfExtent = Scale.GetAbs() * 50.0f;
+		const bool bGroundedObstacle = (Loc.X < 720000.0f);
+		const float RawTopZ = static_cast<float>(Loc.Z + HalfExtent.Z);
+		const float ObstacleTopZ = bGroundedObstacle ? FMath::Min(RawTopZ, 130.0f) : RawTopZ;
+
 		const float ClosestX = FMath::Clamp(static_cast<float>(PawnLocation.X), static_cast<float>(Loc.X - HalfExtent.X), static_cast<float>(Loc.X + HalfExtent.X));
 		const float ClosestY = FMath::Clamp(static_cast<float>(PawnLocation.Y), static_cast<float>(Loc.Y - HalfExtent.Y), static_cast<float>(Loc.Y + HalfExtent.Y));
-		const float ClosestZ = FMath::Clamp(static_cast<float>(PawnLocation.Z), static_cast<float>(Loc.Z - HalfExtent.Z), static_cast<float>(Loc.Z + HalfExtent.Z));
+
+		// When PawnLocation.Z > ObstacleTopZ, the Pawn is cleanly jumping OVER the obstacle:
+		// never trigger a collision hit, and award an aerial Graze / Flow boost if passing over it within lateral bounds!
+		if (PawnLocation.Z > ObstacleTopZ)
+		{
+			if (!bOutGrazed &&
+				FMath::Abs(static_cast<float>(PawnLocation.X - ClosestX)) <= SafeHurtboxRadius + 60.0f &&
+				FMath::Abs(static_cast<float>(PawnLocation.Y) - ClosestY) <= SafeGrazeRadius &&
+				PawnLocation.Z <= ObstacleTopZ + SafeGrazeRadius * 2.5f)
+			{
+				bOutGrazed = true;
+				OutGrazedInstanceIndex = InstanceIdx;
+			}
+			continue;
+		}
+
+		const float ClosestZ = FMath::Clamp(static_cast<float>(PawnLocation.Z), static_cast<float>(Loc.Z - HalfExtent.Z), ObstacleTopZ);
 
 		const float DistSq = FVector::DistSquared(PawnLocation, FVector(ClosestX, ClosestY, ClosestZ));
 		if (DistSq <= HurtboxRadiusSq)
