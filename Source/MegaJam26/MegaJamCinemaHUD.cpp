@@ -274,7 +274,25 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	CenterBannerText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 28));
 	CenterBannerText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	CenterBannerText->SetJustification(ETextJustify::Center);
-	CenterBannerBorder->SetContent(CenterBannerText);
+
+	// Per-genre crash title card (#59): a big line above the CUT! rewind text, shown only while Crashed.
+	CenterCrashCardText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CenterCrashCardText"));
+	CenterCrashCardText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 42));
+	CenterCrashCardText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.2f, 0.2f, 1.0f)));
+	CenterCrashCardText->SetJustification(ETextJustify::Center);
+	CenterCrashCardText->SetVisibility(ESlateVisibility::Collapsed);
+
+	UVerticalBox* CenterBannerBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CenterBannerBox"));
+	if (UVerticalBoxSlot* CardSlot = CenterBannerBox->AddChildToVerticalBox(CenterCrashCardText))
+	{
+		CardSlot->SetHorizontalAlignment(HAlign_Center);
+		CardSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+	}
+	if (UVerticalBoxSlot* BannerTextSlot = CenterBannerBox->AddChildToVerticalBox(CenterBannerText))
+	{
+		BannerTextSlot->SetHorizontalAlignment(HAlign_Center);
+	}
+	CenterBannerBorder->SetContent(CenterBannerBox);
 
 	if (UCanvasPanelSlot* CenterSlot = RootCanvas->AddChildToCanvas(CenterBannerBorder))
 	{
@@ -1633,9 +1651,31 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	// 7. Center Clapperboard flash overlay (Crashed / Action! / 21:9 Overdrive / 2.76:1 Standoff)
 	if (CenterBannerBorder && CenterBannerText)
 	{
+		if (CenterCrashCardText)
+		{
+			CenterCrashCardText->SetVisibility(RunState == EMegaJamRunState::Crashed
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+		}
+
 		if (RunState == EMegaJamRunState::Crashed)
 		{
 			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
+			// Per-genre crash title card (#59). Same genre order as the rewind label below, so the card
+			// and the CUT! line always name the same scene. Montage follows the scene, not the sub-genre.
+			const TCHAR* CrashCardLabel = bIsMontage
+				? TEXT("TO BE CONTINUED...")
+				: (bIsChase
+					? TEXT("BURIED")
+					: (bIsNoir
+						? TEXT("CASE CLOSED")
+						: (bIsAlpine
+							? TEXT("WHITEOUT")
+							: (bIsWestern ? TEXT("HERO DOWN") : TEXT("THE END")))));
+			if (CenterCrashCardText)
+			{
+				CenterCrashCardText->SetText(FText::FromString(CrashCardLabel));
+			}
 			const TCHAR* RewindLabel = bIsMontage
 				? TEXT("CUT! // REWINDING SCENE 05 TO 7,200m...")
 				: (bIsChase
