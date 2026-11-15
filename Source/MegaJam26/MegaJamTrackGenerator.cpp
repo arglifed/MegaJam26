@@ -1307,6 +1307,7 @@ void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
 
 	if (bAnySkin && ObstacleSkinISMsA.Num() == 0)
 	{
+		ObstacleSkinStride = (ObstacleArtNativeSize.Num() > 0) ? MaxObstacleSkinTiles : 1;
 		auto BuildSkins = [this, ObstacleSlots, NumSkinScenes](
 			const TArray<TObjectPtr<UStaticMesh>>& Meshes, UInstancedStaticMeshComponent* BaseISM, float TakeIndex, const FLinearColor& TakeColor,
 			TArray<TObjectPtr<UInstancedStaticMeshComponent>>& OutSkins, TArray<int8>& OutOwners)
@@ -1328,7 +1329,7 @@ void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
 					// No art for this scene: same look as before (the shared take MID on the fallback mesh).
 					Skin->SetMaterial(0, BaseMaterial);
 				}
-				for (int32 Index = 0; Index < ObstacleSlots; ++Index)
+				for (int32 Index = 0; Index < ObstacleSlots * ObstacleSkinStride; ++Index)
 				{
 					Skin->AddInstance(MakeHiddenInstanceTransform(), true);
 				}
@@ -1406,11 +1407,47 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 		return;
 	}
 
-	auto SyncTake = [](UInstancedStaticMeshComponent* BaseISM, TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Skins, TArray<int8>& Owners)
+	const int32 TileStride = FMath::Max(1, ObstacleSkinStride);
+
+	// Issue #87: splits one stretched obstacle box into an nX x nY grid of copies, each close to the art's native
+	// proportions (ObstacleArtNativeSize), so detailed models do not smear. Without an entry: one copy, as before.
+	auto MakeTiles = [this, TileStride](UStaticMesh* SkinMesh, const FTransform& Box, TArray<FTransform, TInlineAllocator<MaxObstacleSkinTiles>>& OutTiles)
+	{
+		OutTiles.Reset();
+		const FVector* Native = SkinMesh ? ObstacleArtNativeSize.Find(SkinMesh) : nullptr;
+		const FVector Scale = Box.GetScale3D();
+		if (!Native || TileStride <= 1 || Box.GetLocation().Z < -10000.0f || Scale.Z <= KINDA_SMALL_NUMBER || Native->Z <= KINDA_SMALL_NUMBER)
+		{
+			OutTiles.Add(Box);
+			return;
+		}
+		// How many native-shaped copies fit along X (depth) and Y (width) at the box's height.
+		const double WantX = (Scale.X / Scale.Z) / FMath::Max(0.05, Native->X / Native->Z);
+		const double WantY = (Scale.Y / Scale.Z) / FMath::Max(0.05, Native->Y / Native->Z);
+		int32 NumX = FMath::Max(1, FMath::RoundToInt(WantX));
+		int32 NumY = FMath::Max(1, FMath::RoundToInt(WantY));
+		while (NumX * NumY > TileStride)
+		{
+			(NumX > NumY ? NumX : NumY) -= 1;
+		}
+		const FVector TileScale(Scale.X / NumX, Scale.Y / NumY, Scale.Z);
+		for (int32 IX = 0; IX < NumX; ++IX)
+		{
+			for (int32 IY = 0; IY < NumY; ++IY)
+			{
+				// Tile centre in the box's unscaled local space (the obstacle art is a centred 100 cm cube).
+				const FVector LocalCentre(((IX + 0.5) / NumX - 0.5) * 100.0, ((IY + 0.5) / NumY - 0.5) * 100.0, 0.0);
+				OutTiles.Add(FTransform(Box.GetRotation(), Box.TransformPosition(LocalCentre), TileScale));
+			}
+		}
+	};
+
+	auto SyncTake = [&MakeTiles, TileStride](UInstancedStaticMeshComponent* BaseISM, TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Skins, TArray<int8>& Owners)
 	{
 		const int32 Count = FMath::Min(BaseISM->GetInstanceCount(), Owners.Num());
 		const int32 Stride = BaseISM->NumCustomDataFloats;
 		uint32 DirtyMask = 0;
+		TArray<FTransform, TInlineAllocator<MaxObstacleSkinTiles>> Tiles;
 		for (int32 Index = 0; Index < Count; ++Index)
 		{
 			FTransform BaseTransform;
@@ -1425,7 +1462,10 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 			const int32 PrevIdx = Owners[Index];
 			if (PrevIdx >= 0 && PrevIdx != SceneIdx)
 			{
-				Skins[PrevIdx]->UpdateInstanceTransform(Index, MakeHiddenInstanceTransform(), true, false, true);
+				for (int32 Tile = 0; Tile < TileStride; ++Tile)
+				{
+					Skins[PrevIdx]->UpdateInstanceTransform(Index * TileStride + Tile, MakeHiddenInstanceTransform(), true, false, true);
+				}
 				DirtyMask |= (1u << PrevIdx);
 			}
 			Owners[Index] = static_cast<int8>(SceneIdx);
@@ -1454,12 +1494,17 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 				}
 			}
 
-			FTransform SkinTransform;
-			Skins[SceneIdx]->GetInstanceTransform(Index, SkinTransform, true);
-			if (!SkinTransform.Equals(DesiredSkinTransform, 0.01f))
+			MakeTiles(Skins[SceneIdx]->GetStaticMesh(), DesiredSkinTransform, Tiles);
+			for (int32 Tile = 0; Tile < TileStride; ++Tile)
 			{
-				Skins[SceneIdx]->UpdateInstanceTransform(Index, DesiredSkinTransform, true, false, true);
-				DirtyMask |= (1u << SceneIdx);
+				const FTransform Wanted = Tiles.IsValidIndex(Tile) ? Tiles[Tile] : MakeHiddenInstanceTransform();
+				FTransform SkinTransform;
+				Skins[SceneIdx]->GetInstanceTransform(Index * TileStride + Tile, SkinTransform, true);
+				if (!SkinTransform.Equals(Wanted, 0.01f))
+				{
+					Skins[SceneIdx]->UpdateInstanceTransform(Index * TileStride + Tile, Wanted, true, false, true);
+					DirtyMask |= (1u << SceneIdx);
+				}
 			}
 		}
 		for (int32 SkinIdx = 0; SkinIdx < Skins.Num(); ++SkinIdx)

@@ -75,13 +75,27 @@ def wire_track_generator():
         cdo.set_editor_property(prop, mesh(name))
 
     # Scene order: 0 Action, 1 Western, 2 Noir, 3 Chase, 4 Final Cut.
-    # The laser gate is left out: it is an open frame, but obstacle collision is a solid box.
+    # The laser gate is not an obstacle skin: it is an open frame, but obstacle collision is a solid box (it is used as
+    # Final Cut scatter dressing below).
     take_a = ["SM_Obstacle_Action_CyberBarrier", "SM_Obstacle_Western_TimberBarricade", "SM_Obstacle_Noir_Roadblock",
               "SM_Obstacle_Chase_Snowdrift", "SM_Obstacle_Final_Monolith"]
     take_b = ["SM_Obstacle_Action_CyberBarrier", "SM_Obstacle_Western_TimberBarricade", "SM_Obstacle_Noir_Roadblock",
               "SM_Obstacle_Chase_IceBoulders", "SM_Obstacle_Final_Monolith"]
     cdo.set_editor_property("scene_obstacle_meshes_take_a", [mesh(n) for n in take_a])
     cdo.set_editor_property("scene_obstacle_meshes_take_b", [mesh(n) for n in take_b])
+
+    # Issue #87: real proportions of the obstacle art (import squashed each into a 100 cm cube), as X = depth along the
+    # track, Y = width, Z = height, from RawAssets/Art/MANIFEST.md (Meshy reports width x height x depth). C++ draws a
+    # stretched obstacle box as a small grid of copies near these proportions instead of one smeared copy.
+    native = {
+        "SM_Obstacle_Action_CyberBarrier": (0.84, 0.90, 0.95),
+        "SM_Obstacle_Western_TimberBarricade": (0.74, 0.96, 0.74),  # really a 0.22-deep panel: deepened, so it is not stacked in rows
+        "SM_Obstacle_Noir_Roadblock": (0.47, 0.96, 0.58),
+        "SM_Obstacle_Chase_Snowdrift": (0.95, 0.95, 0.44),
+        "SM_Obstacle_Chase_IceBoulders": (0.48, 0.96, 0.57),
+        "SM_Obstacle_Final_Monolith": (0.28, 0.30, 0.95),
+    }
+    cdo.set_editor_property("obstacle_art_native_size", {mesh(n): unreal.Vector(*v) for n, v in native.items()})
 
     dressing = ["SM_Dressing_StudioSpotlight", "SM_Dressing_BoomMic", "SM_Prop_CameraCrane", "SM_Dressing_BackdropFlat",
                 "SM_Dressing_LightingTruss"]
@@ -98,7 +112,8 @@ def wire_track_generator():
                     ("SM_Dressing_Western_Cactus", 7.0, 11.0, 0.8), ("SM_Dressing_Western_Tumbleweed", 2.5, 4.0, 0.5)],
         G.NOIR: [("SM_Prop_Noir_BlackSedan", 6.0, 7.0, 0.5), ("SM_Dressing_Noir_StreetLamp", 9.0, 12.0, 0.9)],
         G.CHASE: [("SM_Dressing_Chase_PineTree", 10.0, 18.0, 0.9), ("SM_Dressing_Chase_SnowRock", 4.0, 9.0, 0.7)],
-        G.MONTAGE: [("SM_Dressing_Final_FloatingCrystal", 5.0, 10.0, 0.8)],
+        # The laser gate is an open frame, so it cannot skin a solid obstacle box; it dresses the roadside instead.
+        G.MONTAGE: [("SM_Dressing_Final_FloatingCrystal", 5.0, 10.0, 0.8), ("SM_Obstacle_Final_LaserGate", 6.0, 9.0, 0.4)],
     }
     scatter_map = {}
     for genre, props in scatter.items():

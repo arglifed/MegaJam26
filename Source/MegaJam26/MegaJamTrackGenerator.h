@@ -202,6 +202,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
 	TArray<TObjectPtr<UStaticMesh>> SceneObstacleMeshesTakeB;
 
+	/**
+	 * Issue #87: the real proportions of each obstacle art mesh before import squashed it into a 100 cm cube, as
+	 * X = depth along the track, Y = width, Z = height (any unit; only the ratios matter). When a mesh has an entry, a
+	 * stretched obstacle box is drawn as a small grid of copies (up to MaxObstacleSkinTiles) that each stay close to
+	 * these proportions, instead of one smeared copy. Visual only: collision is still the one box.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TMap<TObjectPtr<UStaticMesh>, FVector> ObstacleArtNativeSize;
+
 	/** Optional one-piece finish arch. Placed once, uniformly scaled to span the corridor, instead of the 5 stretched ApertureRingMesh parts. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
 	TObjectPtr<UStaticMesh> WrapArchMesh;
@@ -361,6 +370,8 @@ protected:
 private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
+	/** Most copies one obstacle skin is split into (see ObstacleArtNativeSize). */
+	static constexpr int32 MaxObstacleSkinTiles = 8;
 	static constexpr int32 PickupsPerChunk = 10;
 	static constexpr int32 LaneRailsPerChunk = 5;
 	static constexpr int32 BurstPickupPoolSize = 30;
@@ -462,6 +473,9 @@ private:
 
 	/** Which skin component currently shows each obstacle instance (-1 = none yet). */
 	TArray<int8> ObstacleSkinOwnerA;
+
+	/** Skin instances per obstacle slot: MaxObstacleSkinTiles when ObstacleArtNativeSize has entries, else 1. */
+	int32 ObstacleSkinStride = 1;
 	TArray<int8> ObstacleSkinOwnerB;
 
 	bool bPoolsCreated = false;
