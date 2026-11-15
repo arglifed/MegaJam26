@@ -370,6 +370,11 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 	{
 		StuntGravityZ = -2800.0f;
 	}
+	SnowboardDropInVelocityZ = 1800.0f;
+	if (!FMath::IsFinite(SnowboardDownhillPitch) || SnowboardDownhillPitch > -12.0f || SnowboardDownhillPitch < -15.0f)
+	{
+		SnowboardDownhillPitch = -13.5f;
+	}
 
 	SetActorRotation(FRotator::ZeroRotator);
 	SetActorScale3D(FVector::OneVector);
@@ -492,6 +497,11 @@ void AMegaJamFlowPawn::BeginPlay()
 	if (!FMath::IsFinite(StuntGravityZ) || StuntGravityZ >= -100.0f)
 	{
 		StuntGravityZ = -2800.0f;
+	}
+	SnowboardDropInVelocityZ = 1800.0f;
+	if (!FMath::IsFinite(SnowboardDownhillPitch) || SnowboardDownhillPitch > -12.0f || SnowboardDownhillPitch < -15.0f)
+	{
+		SnowboardDownhillPitch = -13.5f;
 	}
 	bIsGrounded = true;
 	bHasProcessedJumpInput = false;
@@ -963,16 +973,26 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		{
 			if (DroppedBoardTimer > 0.0f)
 			{
-				DroppedBoardVelocity.Z -= 3200.0f * DeltaSeconds;
-				DroppedBoardWorldLocation += DroppedBoardVelocity * DeltaSeconds;
-				DroppedBoardWorldRotation.Pitch += 340.0f * DeltaSeconds;
-				DroppedBoardWorldRotation.Roll += 260.0f * DeltaSeconds;
-				DroppedBoardWorldRotation.Yaw += 95.0f * DeltaSeconds;
-				DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+				if (!DroppedBoardMesh->IsSimulatingPhysics())
+				{
+					DroppedBoardVelocity.Z -= 3200.0f * DeltaSeconds;
+					DroppedBoardWorldLocation += DroppedBoardVelocity * DeltaSeconds;
+					DroppedBoardWorldRotation.Pitch += 340.0f * DeltaSeconds;
+					DroppedBoardWorldRotation.Roll += 260.0f * DeltaSeconds;
+					DroppedBoardWorldRotation.Yaw += 95.0f * DeltaSeconds;
+					DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+				}
 			}
 			else
 			{
+				DroppedBoardMesh->SetSimulatePhysics(false);
+				DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				if (CollisionSphere && DroppedBoardMesh->GetAttachParent() != CollisionSphere)
+				{
+					DroppedBoardMesh->AttachToComponent(CollisionSphere, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+				}
 				DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
+				DroppedBoardMesh->SetHiddenInGame(true);
 				DroppedBoardMesh->SetVisibility(false);
 			}
 		}
@@ -1141,7 +1161,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 		const bool bChaseSlope = (ActiveMusicGenre == EMegaJamSceneGenre::Chase || CamGenre == EMegaJamSceneGenre::Chase);
 		const bool bAlpineSlope = (CamGenre == EMegaJamSceneGenre::Alpine && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
-		const float SafeDownhillPitch = FMath::IsFinite(SnowboardDownhillPitch) ? SnowboardDownhillPitch : -12.5f;
+		const float SafeDownhillPitch = FMath::IsFinite(SnowboardDownhillPitch) ? FMath::Clamp(SnowboardDownhillPitch, -15.0f, -12.0f) : -13.5f;
 		const float DownhillPitchOffset = bChaseSlope ? SafeDownhillPitch : (bAlpineSlope ? -7.5f : 0.0f);
 
 		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + DownhillPitchOffset + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
@@ -2559,17 +2579,20 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 
 	if (NextGenre == EMegaJamSceneGenre::Montage)
 	{
-		// 7,200m Snowboard Kick-Off into Hang Glider: detach the Snowboard mesh and let it tumble downward for 2.0s
+		// 7,200m Snowboard Kick-Off into Hang Glider: detach the Snowboard mesh and drop it into the canyon abyss
 		if (DroppedBoardMesh)
 		{
 			UStaticMesh* BoardMesh = nullptr;
-			if (const TObjectPtr<UStaticMesh>* FoundChaseMesh = SceneVehicleMeshes.Find(EMegaJamSceneGenre::Chase))
-			{
-				BoardMesh = FoundChaseMesh->Get();
-			}
-			if (!BoardMesh && VehicleStaticMesh)
+			if (VehicleStaticMesh && VehicleStaticMesh->GetStaticMesh())
 			{
 				BoardMesh = VehicleStaticMesh->GetStaticMesh();
+			}
+			if (!BoardMesh)
+			{
+				if (const TObjectPtr<UStaticMesh>* FoundChaseMesh = SceneVehicleMeshes.Find(EMegaJamSceneGenre::Chase))
+				{
+					BoardMesh = FoundChaseMesh->Get();
+				}
 			}
 			if (BoardMesh)
 			{
@@ -2582,12 +2605,20 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 				DroppedBoardMesh->SetWorldScale3D(SanitizePawnScale3D(FVector(1.6f, 0.45f, 0.08f)));
 			}
 
-			DroppedBoardWorldLocation = GetActorLocation() + FVector(0.0f, 0.0f, -20.0f);
+			DroppedBoardMesh->SetSimulatePhysics(false);
+			DroppedBoardWorldLocation = VehicleStaticMesh ? VehicleStaticMesh->GetComponentLocation() : (GetActorLocation() + FVector(0.0f, 0.0f, -20.0f));
 			DroppedBoardWorldRotation = VehicleStaticMesh ? VehicleStaticMesh->GetComponentRotation() : GetActorRotation();
-			DroppedBoardVelocity = FVector(static_cast<float>(Velocity.X) * 0.45f, static_cast<float>(Velocity.Y) * 0.5f, -240.0f);
-			DroppedBoardTimer = 2.0f;
+			DroppedBoardVelocity = FVector(-800.0f, 0.0f, -500.0f);
+			DroppedBoardTimer = 3.5f;
 			DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+			DroppedBoardMesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+			DroppedBoardMesh->SetHiddenInGame(false);
 			DroppedBoardMesh->SetVisibility(true);
+			DroppedBoardMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+			DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+			DroppedBoardMesh->SetSimulatePhysics(true);
+			DroppedBoardMesh->AddImpulse(FVector(-800.0f, 0.0f, -500.0f), NAME_None, true);
+			DroppedBoardMesh->SetPhysicsAngularVelocityInDegrees(FVector(260.0f, 340.0f, 95.0f), false);
 		}
 
 		// Scene 05 The Final Cut: Launch off the cliff into the Hang Glider in smooth 4:3 flight without forcing aspect/altitude locks
@@ -2630,9 +2661,9 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	}
 
-	// Vertical launch impulse into the air + mid-air hang (SnowboardDropInVelocityZ for 5,400m Scene 04 Mountain Drop-In, 1900.0f for 7,200m Cliff Drop into Hang Glider)
+	// Vertical launch impulse into the air + mid-air hang (1800.0f for 5,400m Scene 04 Summit Entry Jump, 1900.0f for 7,200m Cliff Drop into Hang Glider)
 	Velocity.Z = (NextGenre == EMegaJamSceneGenre::Chase)
-		? SnowboardDropInVelocityZ
+		? 1800.0f
 		: ((NextGenre == EMegaJamSceneGenre::Montage) ? 1900.0f : 1800.0f);
 	bIsGrounded = false;
 	TriggerMicroHitstop(0.25f, 0.0f);
@@ -2682,7 +2713,14 @@ void AMegaJamFlowPawn::ResetForRun()
 	DroppedBoardTimer = 0.0f;
 	if (DroppedBoardMesh)
 	{
+		DroppedBoardMesh->SetSimulatePhysics(false);
+		DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (CollisionSphere && DroppedBoardMesh->GetAttachParent() != CollisionSphere)
+		{
+			DroppedBoardMesh->AttachToComponent(CollisionSphere, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		}
 		DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
+		DroppedBoardMesh->SetHiddenInGame(true);
 		DroppedBoardMesh->SetVisibility(false);
 	}
 	CometSmashTimer = 0.0f;
@@ -3420,7 +3458,14 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	DroppedBoardTimer = 0.0f;
 	if (DroppedBoardMesh)
 	{
+		DroppedBoardMesh->SetSimulatePhysics(false);
+		DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (CollisionSphere && DroppedBoardMesh->GetAttachParent() != CollisionSphere)
+		{
+			DroppedBoardMesh->AttachToComponent(CollisionSphere, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		}
 		DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
+		DroppedBoardMesh->SetHiddenInGame(true);
 		DroppedBoardMesh->SetVisibility(false);
 	}
 	CometSmashTimer = 0.0f;
