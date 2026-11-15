@@ -362,6 +362,14 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 	// Brutally override any Blueprint-saved defaults before Frame 1
 	WideZBounds = FVector2D(2.0, 2.0);
 	BoxZBounds.X = 2.0;
+	if (!FMath::IsFinite(StuntJumpVelocityZ) || StuntJumpVelocityZ <= 1200.0f)
+	{
+		StuntJumpVelocityZ = 1550.0f;
+	}
+	if (!FMath::IsFinite(StuntGravityZ) || StuntGravityZ >= -100.0f)
+	{
+		StuntGravityZ = -2800.0f;
+	}
 
 	SetActorRotation(FRotator::ZeroRotator);
 	SetActorScale3D(FVector::OneVector);
@@ -442,9 +450,17 @@ void AMegaJamFlowPawn::BeginPlay()
 	}
 	CurrentTrackBPM = 120.0f;
 
-	// Issue #80 / #96 / #98: Enforce grounded contact with 2.0f Z-clearance and safe +X forward orientation
+	// Issue #80 / #96 / #98 / #104: Enforce grounded contact with 2.0f Z-clearance, 1550.0f jump velocity, and safe +X forward orientation
 	WideZBounds = FVector2D(2.0, 2.0);
 	BoxZBounds.X = 2.0;
+	if (!FMath::IsFinite(StuntJumpVelocityZ) || StuntJumpVelocityZ <= 1200.0f)
+	{
+		StuntJumpVelocityZ = 1550.0f;
+	}
+	if (!FMath::IsFinite(StuntGravityZ) || StuntGravityZ >= -100.0f)
+	{
+		StuntGravityZ = -2800.0f;
+	}
 	bIsGrounded = true;
 	bHasProcessedJumpInput = false;
 
@@ -1403,7 +1419,18 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 		Velocity.Y = (DeltaSeconds > KINDA_SMALL_NUMBER) ? ((NextY - CurrentY) / DeltaSeconds) : 0.0f;
 
 		const float CurrentZ = static_cast<float>(GetActorLocation().Z);
-		if (CurrentZ > GroundZ + 1.0f || Velocity.Z > 1.0f)
+		if (SteerInput.Y <= 0.15f)
+		{
+			bHasProcessedJumpInput = false;
+		}
+
+		if (!bIsMontageScene && bIsGrounded && SteerInput.Y > 0.35f && !bHasProcessedJumpInput)
+		{
+			Velocity.Z = StuntJumpVelocityZ;
+			bIsGrounded = false;
+			bHasProcessedJumpInput = true;
+		}
+		else if (CurrentZ > GroundZ + 1.0f || Velocity.Z > 1.0f)
 		{
 			// Apply strict gravity (StuntGravityZ = -2800.0f) whenever airborne above FloorTopZ = 0.0f
 			bIsGrounded = false;
@@ -2346,9 +2373,34 @@ void AMegaJamFlowPawn::ToggleAspect()
 
 		if (GEngine)
 		{
-			const FString CutBanner = bIsWesternGenre
-				? TEXT("2.76:1 ULTRA-PANAVISION // QUICK-DRAW STANDOFF!")
-				: TEXT("21:9 DIRECTOR'S CUT // BULLET-TIME OVERDRIVE!");
+			const EMegaJamSceneGenre BaseGenre = FlowSubsystem ? FlowSubsystem->ActiveGenre : ActiveMusicGenre;
+			FString CutBanner = TEXT("SCENE 01 // ACTION — BEAT-SPLICE EMP!");
+			if (BaseGenre == EMegaJamSceneGenre::Montage)
+			{
+				CutBanner = (EffectiveGenre == EMegaJamSceneGenre::Western)
+					? TEXT("SCENE 05 // MONTAGE — [WESTERN: KATANA BEAT-SLASH]!")
+					: ((EffectiveGenre == EMegaJamSceneGenre::Noir)
+						? TEXT("SCENE 05 // MONTAGE — [NOIR: VERTIGO GRAZE CASH-IN]!")
+						: ((EffectiveGenre == EMegaJamSceneGenre::Chase)
+							? TEXT("SCENE 05 // MONTAGE — [CHASE: COMET SMASH OVERDRIVE]!")
+							: TEXT("SCENE 05 // MONTAGE — [ACTION: BEAT-SPLICE EMP]!")));
+			}
+			else if (BaseGenre == EMegaJamSceneGenre::Western)
+			{
+				CutBanner = TEXT("SCENE 02 // WESTERN — KATANA BEAT-SLASH!");
+			}
+			else if (BaseGenre == EMegaJamSceneGenre::Noir)
+			{
+				CutBanner = TEXT("SCENE 03 // NOIR — VERTIGO GRAZE CASH-IN!");
+			}
+			else if (BaseGenre == EMegaJamSceneGenre::Alpine)
+			{
+				CutBanner = TEXT("SCENE 03 // ALPINE — TRICK-OLLIE CRYO-SHATTER!");
+			}
+			else if (BaseGenre == EMegaJamSceneGenre::Chase)
+			{
+				CutBanner = TEXT("SCENE 04 // CHASE — COMET SMASH OVERDRIVE!");
+			}
 			GEngine->AddOnScreenDebugMessage(202601, 2.5f, bIsWesternGenre ? FColor::Yellow : FColor::Cyan,
 				CutBanner, true, FVector2D(1.5f, 1.5f));
 		}
