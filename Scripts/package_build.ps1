@@ -37,7 +37,7 @@ $StartTime = Get-Date
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $ProjectFile = Join-Path $RepoRoot "MegaJam26.uproject"
 $SavedDir = Join-Path $RepoRoot "Saved"
-$ArchiveDir = Join-Path $SavedDir "StagedBuilds"
+$ArchiveDir = Join-Path $SavedDir "ArchivedBuilds"
 $OutputWindowsDir = Join-Path $ArchiveDir "Windows"
 $OutputZipPath = Join-Path $SavedDir "SPD_DirectorsCut.zip"
 
