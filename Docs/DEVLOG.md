@@ -28,7 +28,7 @@ Two people built it in four days. One worked in C++ and one on art and audio, ea
 ## How we worked
 
 ### Two lanes, one repo
-We split the work on day one, and the reason was hardware. Hendrixsan's machine is a gaming laptop almost ten years old; Anthony's is a desktop tower with modern components. In Unreal, iteration speed is how fast you can compile, load the editor and play-test, and Anthony could do all three much faster. So he took the core gameplay, the work that needs the most build-and-play loops. Hendrixsan took art and sound and supported the build any other way he could: generating assets, writing specs and contracts, running automated play-test captures, and doing the submission paperwork.
+We split the work on day one, and the reason was hardware. Hendrixsan's machine is a gaming laptop almost ten years old; Anthony's is a desktop tower with modern components. In Unreal, iteration speed is how fast you can compile, load the editor and play-test, and Anthony could do all three much faster. So Anthony took the core gameplay, the work that needs the most build-and-play loops. Hendrixsan took art and sound and supported the build in every other way: generating assets, writing specs and contracts, running automated play-test captures, and doing the submission paperwork.
 
 - **Gameplay lane (Anthony):** all game logic in modular C++. That covers the flow pawn, game mode, the track generator, the HUD drawn in C++ (`UMegaJamCinemaHUD`) and the MetaSound bridge. Blueprints stay thin: tuning values and asset references only.
 - **Art and audio lane (Hendrixsan):** Meshy-generated meshes, materials and textures, plus music and SFX wired through MetaSounds. Kept in `Content/MegaJam26/Art` and `/Audio`.
@@ -42,11 +42,11 @@ We met in person on the first night to brainstorm the game. Ideas went on the ta
 The hand-offs were smooth and easy, mostly because we were both using AI. Each of us could write a precise issue for the other side and have our own agent read the other's issue as a spec. A few patterns kept repeating:
 - **Gameplay asks for art.** Anthony opened "Art Integration" issues listing which meshes, VFX and UI the C++ side expected and where it would look for them (#40, #41, #46, #47). Hendrixsan answered with a written **art pipeline contract** (#55): the genre table, seat offsets for each vehicle, obstacle skins and canonical dimensions. Both agents then built against that contract.
 - **Art finds engine bugs.** Hendrixsan's play-test captures turned up problems in the C++ side: corridor walls tall enough to hide the studio dressing (#88), the beat clock drifting away from the MetaSound score (#74), matrix ensures still firing in PIE (#123). These were filed as issues for Anthony, with screenshots and repro steps.
-- **Gameplay builds for art.** When some generated props had nowhere to go, Anthony built a prop scatter system for each scene to place them (#90 for #87). When the orb got its new glow (#108), he added a dynamic point light to match (#112) in parallel.
+- **Gameplay builds for art.** When some generated props had nowhere to go, Anthony built a prop scatter system for each scene to place them (#90 for #87). When the orb got its new glow (#108), Anthony added a dynamic point light to match (#112) in parallel.
 - **Holding a merge.** Big physics changes waited for the art merge (#80, "Held for Art Merge"). Neither lane ever had to resolve a conflict in a binary asset.
 
 ### The AI toolchain
-- **Anthony:** Gemini 4 Argon in his IDE for the C++ lane, run in plan mode first as `AGENTS.md` requires. <!-- TODO: Anthony to confirm his tools and models -->
+- **Anthony:** Gemini 4 Argon in the IDE for the C++ lane, run in plan mode first as `AGENTS.md` requires. <!-- TODO: Anthony to confirm tools and models -->
 - **Hendrixsan:** Claude Code in a PowerShell terminal and in Unreal's built-in terminal for the art and audio lane:
   - import scripts and material wiring
   - Meshy generation through its MCP server
