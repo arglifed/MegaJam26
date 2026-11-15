@@ -68,6 +68,10 @@ VEHICLE_BASIS = {
     "Pickup_FilmFrame": lambda x, y, z: (z, x, y),
 }
 POST_SCALE = {"Pickup_FilmFrame": (1.0, 1.0, 10.0)}
+# Issue #119: these three had NaN render bounds in this PC's derived-data cache (see the build call in import_mesh).
+# The cache key comes from the mesh content, so a re-import of identical geometry would just fetch the bad entry
+# again. A 0.1 mm offset on all three axes gives them a new key; it is far too small to see.
+DDC_REKEY_OFFSET_CM = {"Snowboard": 0.01, "Dressing_Chase_SnowRock": 0.01, "Dressing_StudioSpotlight": 0.01}
 # Per-instance scalar overrides. Pickups keep a strong take glow: the chain-colour pulse is how players read them.
 MI_SCALARS = {"Pickup_FilmFrame": {"TakeGlow": 0.3}}
 MAPS = {  # file suffix -> (asset suffix, material parameter)
@@ -516,9 +520,15 @@ def import_mesh(category, name):
         lo = [min(q[i] for _, q in verts) for i in range(3)]
         hi = [max(q[i] for _, q in verts) for i in range(3)]
         shift = (-(lo[0] + hi[0]) * 0.5, -(lo[1] + hi[1]) * 0.5, -lo[2])
+    nudge = DDC_REKEY_OFFSET_CM.get(name, 0.0)
+    shift = (shift[0] + nudge, shift[1] + nudge, shift[2] + nudge)
     for v, q in verts:
         desc.set_vertex_position(v, unreal.Vector(q[0] + shift[0], q[1] + shift[1], q[2] + shift[2]))
-    mesh.build_from_static_mesh_descriptions([desc], build_simple_collision=False)
+    # fast_build must be False (issue #119). The Python default is a fast build, and in UE 5.8 that path serialises the
+    # render data into the derived-data cache BEFORE its bounds are set, so the cached bounds are uninitialised
+    # memory. Later sessions and the cook read that entry back ("FStaticMeshRenderData::Serialize found NaN in Bounds"
+    # when the garbage happens to be NaN). The full build sets the bounds first.
+    mesh.build_from_static_mesh_descriptions([desc], build_simple_collision=False, fast_build=False)
 
     sme.remove_collisions(mesh)
     sme.add_simple_collisions(mesh, unreal.ScriptCollisionShapeType.BOX)
