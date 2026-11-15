@@ -1598,7 +1598,11 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		{
 			TutorialPromptBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
 			const TCHAR* TutPromptStr = TEXT("► REHEARSAL: PRESS [A]/[D] OR [D-PAD] TO STEER ◄");
-			if (FlowPawn->TutorialState == ETutorialState::JumpCheck)
+			if (FlowPawn->TutorialState == ETutorialState::None || FlowPawn->TutorialState == ETutorialState::SteerCheck)
+			{
+				TutPromptStr = TEXT("► REHEARSAL: PRESS [A]/[D] OR [D-PAD] TO STEER ◄");
+			}
+			else if (FlowPawn->TutorialState == ETutorialState::JumpCheck)
 			{
 				TutPromptStr = TEXT("► REHEARSAL: PRESS [W] OR [D-PAD UP] TO STUNT-HOP ◄");
 			}
