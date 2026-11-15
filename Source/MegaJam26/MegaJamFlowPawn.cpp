@@ -772,8 +772,8 @@ void AMegaJamFlowPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		PlayerInputComponent->KeyBindings.Add(SpliceBinding);
 	}
 
-	// Direct bindings for Gamepad Square / USB Button 2 to ToggleAspect() (Director's Cut)
-	for (const FKey& AspectKey : { EKeys::Gamepad_FaceButton_Left, FKey(TEXT("GenericUSBController_Button2")) })
+	// Direct bindings for CTRL / C / Gamepad Square / USB Button 2 to Input_Brake() (Director's Cut)
+	for (const FKey& AspectKey : { EKeys::LeftControl, EKeys::RightControl, EKeys::C, EKeys::Gamepad_FaceButton_Left, FKey(TEXT("GenericUSBController_Button2")) })
 	{
 		FInputKeyBinding AspectBinding(FInputChord(AspectKey), IE_Pressed);
 		AspectBinding.bConsumeInput = false;
@@ -897,6 +897,15 @@ void AMegaJamFlowPawn::CycleMontagePowerOnDemand()
 	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
 	if (GameMode && !GameMode->IsPlaying())
 	{
+		return;
+	}
+
+	if (bIsRehearsalMode)
+	{
+		if (TutorialState == ETutorialState::DirectorCutCheck)
+		{
+			bPassedDirectorCutCheck = true;
+		}
 		return;
 	}
 
@@ -1852,18 +1861,22 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 				Velocity.X = 0.0f;
 			}
 		}
-		else if ((TutorialState == ETutorialState::DirectorCutCheck || !bPassedDirectorCutCheck) && CurrentX >= -100.0f)
+		else if (TutorialState == ETutorialState::DirectorCutCheck && CurrentX >= -100.0f)
 		{
 			const FKey UsbButton2Key(TEXT("GenericUSBController_Button2"));
-			const bool bDirectorCutPressed = IsInBulletTimeOverdrive() || (PC && (
+			const bool bDirectorCutInputDown = PC && (
 				PC->IsInputKeyDown(EKeys::LeftControl) ||
 				PC->IsInputKeyDown(EKeys::RightControl) ||
 				PC->IsInputKeyDown(EKeys::C) ||
 				PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Left) ||
-				PC->IsInputKeyDown(UsbButton2Key)));
-			if (bDirectorCutPressed)
+				PC->IsInputKeyDown(UsbButton2Key));
+			if (bDirectorCutInputDown)
 			{
 				bPassedDirectorCutCheck = true;
+			}
+
+			if (bPassedDirectorCutCheck)
+			{
 				if (!IsInBulletTimeOverdrive())
 				{
 					FilmMeter = FMath::Max(FilmMeter, 50.0f);
@@ -2548,14 +2561,17 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		FlowSubsystem->SetTakeAActive(CurrentTake == EMegaJamTakeState::StudioTake);
 	}
 
-	if (bIsRehearsalMode && TutorialState == ETutorialState::CutCheck && GetActorLocation().X >= -250.0)
+	if (bIsRehearsalMode && TutorialState == ETutorialState::CutCheck && GetActorLocation().X >= -400.0)
 	{
 		PushTakeAndAspectToSubsystem();
 		PushAudioParameters();
 		TriggerAudioEvent(TEXT("OnHardCut"));
 		OnTakeCut.Broadcast(CurrentTake);
 		OnTakeCutEvent(CurrentTake);
-		CompleteRehearsalAndStartScene01();
+		TutorialState = ETutorialState::DirectorCutCheck;
+		bPassedDirectorCutCheck = false;
+		Velocity.X = 1200.0f;
+		PlayCue(TEXT("OnFilmFrame"), FilmFramePickupSound, 0.95f, 1.35f);
 		return true;
 	}
 
@@ -2656,6 +2672,15 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 
 void AMegaJamFlowPawn::ToggleAspect()
 {
+	if (bIsRehearsalMode)
+	{
+		if (TutorialState != ETutorialState::DirectorCutCheck)
+		{
+			return;
+		}
+		bPassedDirectorCutCheck = true;
+	}
+
 	UWorld* World = GetWorld();
 	UMegaJamFlowSubsystem* FlowSubsystem = World ? World->GetSubsystem<UMegaJamFlowSubsystem>() : nullptr;
 
@@ -3966,6 +3991,34 @@ void AMegaJamFlowPawn::Input_Brake(const FInputActionValue& Value)
 		{
 			return;
 		}
+	}
+
+	// Guard against shared IMC_Flow.uasset binding S/Down movement keys to IA_Brake:
+	// Only accept explicit Director's Cut / Montage Swap hardware inputs.
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		const FKey UsbButton2Key(TEXT("GenericUSBController_Button2"));
+		const bool bValidDirectorCutKey =
+			PC->IsInputKeyDown(EKeys::LeftControl) ||
+			PC->IsInputKeyDown(EKeys::RightControl) ||
+			PC->IsInputKeyDown(EKeys::C) ||
+			PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Left) ||
+			PC->IsInputKeyDown(EKeys::Gamepad_LeftShoulder) ||
+			PC->IsInputKeyDown(EKeys::Gamepad_RightShoulder) ||
+			PC->IsInputKeyDown(UsbButton2Key);
+		if (!bValidDirectorCutKey)
+		{
+			return;
+		}
+	}
+
+	if (bIsRehearsalMode)
+	{
+		if (TutorialState != ETutorialState::DirectorCutCheck)
+		{
+			return;
+		}
+		bPassedDirectorCutCheck = true;
 	}
 
 	ToggleAspect();
