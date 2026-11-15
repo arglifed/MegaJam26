@@ -10,6 +10,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -171,6 +172,13 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VisualMesh->SetupAttachment(CollisionSphere);
 	VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	VisualMesh->SetRelativeScale3D(FVector(0.55f));
+
+	OrbLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("OrbLight"));
+	OrbLight->SetupAttachment(VisualMesh);
+	OrbLight->SetIntensity(2500.0f);
+	OrbLight->SetAttenuationRadius(450.0f);
+	OrbLight->SetCastShadows(false);
+	OrbLight->SetLightColor(FLinearColor(0.35f, 0.95f, 1.0f, 1.0f));
 
 	VehicleStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VehicleStaticMesh"));
 	VehicleStaticMesh->SetupAttachment(CollisionSphere);
@@ -370,6 +378,11 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 	{
 		StuntGravityZ = -2800.0f;
 	}
+	SnowboardDropInVelocityZ = 1800.0f;
+	if (!FMath::IsFinite(SnowboardDownhillPitch) || SnowboardDownhillPitch > -12.0f || SnowboardDownhillPitch < -15.0f)
+	{
+		SnowboardDownhillPitch = -13.5f;
+	}
 
 	SetActorRotation(FRotator::ZeroRotator);
 	SetActorScale3D(FVector::OneVector);
@@ -428,7 +441,7 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 		{ EMegaJamSceneGenre::Noir,    TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar"),     TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar.SM_Vehicle_SpyCar"),         FVector(-20.0f, 0.0f, 85.0f) },
 		{ EMegaJamSceneGenre::Chase,   TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
 		{ EMegaJamSceneGenre::Alpine,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
-		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, -60.0f) },
+		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, 50.0f) },
 	};
 	for (const FVehicleFallbackSpec& Spec : VehicleFallbacks)
 	{
@@ -445,6 +458,8 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 			SceneSeatOffsets.Add(Spec.Genre, Spec.SeatOffset);
 		}
 	}
+	// Issue #108 / #112: Override Scene 05 Hang Glider seat offset to Z=50 so the orb sits inside the new 3D delta wing A-frame
+	SceneSeatOffsets.FindOrAdd(EMegaJamSceneGenre::Montage) = FVector(0.0f, 0.0f, 50.0f);
 }
 
 void AMegaJamFlowPawn::BeginPlay()
@@ -492,6 +507,11 @@ void AMegaJamFlowPawn::BeginPlay()
 	if (!FMath::IsFinite(StuntGravityZ) || StuntGravityZ >= -100.0f)
 	{
 		StuntGravityZ = -2800.0f;
+	}
+	SnowboardDropInVelocityZ = 1800.0f;
+	if (!FMath::IsFinite(SnowboardDownhillPitch) || SnowboardDownhillPitch > -12.0f || SnowboardDownhillPitch < -15.0f)
+	{
+		SnowboardDownhillPitch = -13.5f;
 	}
 	bIsGrounded = true;
 	bHasProcessedJumpInput = false;
@@ -963,16 +983,26 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 		{
 			if (DroppedBoardTimer > 0.0f)
 			{
-				DroppedBoardVelocity.Z -= 3200.0f * DeltaSeconds;
-				DroppedBoardWorldLocation += DroppedBoardVelocity * DeltaSeconds;
-				DroppedBoardWorldRotation.Pitch += 340.0f * DeltaSeconds;
-				DroppedBoardWorldRotation.Roll += 260.0f * DeltaSeconds;
-				DroppedBoardWorldRotation.Yaw += 95.0f * DeltaSeconds;
-				DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+				if (!DroppedBoardMesh->IsSimulatingPhysics())
+				{
+					DroppedBoardVelocity.Z -= 3200.0f * DeltaSeconds;
+					DroppedBoardWorldLocation += DroppedBoardVelocity * DeltaSeconds;
+					DroppedBoardWorldRotation.Pitch += 340.0f * DeltaSeconds;
+					DroppedBoardWorldRotation.Roll += 260.0f * DeltaSeconds;
+					DroppedBoardWorldRotation.Yaw += 95.0f * DeltaSeconds;
+					DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+				}
 			}
 			else
 			{
+				DroppedBoardMesh->SetSimulatePhysics(false);
+				DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				if (CollisionSphere && DroppedBoardMesh->GetAttachParent() != CollisionSphere)
+				{
+					DroppedBoardMesh->AttachToComponent(CollisionSphere, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+				}
 				DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
+				DroppedBoardMesh->SetHiddenInGame(true);
 				DroppedBoardMesh->SetVisibility(false);
 			}
 		}
@@ -1141,7 +1171,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 
 		const bool bChaseSlope = (ActiveMusicGenre == EMegaJamSceneGenre::Chase || CamGenre == EMegaJamSceneGenre::Chase);
 		const bool bAlpineSlope = (CamGenre == EMegaJamSceneGenre::Alpine && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
-		const float SafeDownhillPitch = FMath::IsFinite(SnowboardDownhillPitch) ? SnowboardDownhillPitch : -12.5f;
+		const float SafeDownhillPitch = FMath::IsFinite(SnowboardDownhillPitch) ? FMath::Clamp(SnowboardDownhillPitch, -15.0f, -12.0f) : -13.5f;
 		const float DownhillPitchOffset = bChaseSlope ? SafeDownhillPitch : (bAlpineSlope ? -7.5f : 0.0f);
 
 		Camera->SetRelativeRotation(FRotator(SlamPitchPunch + DownhillPitchOffset + ShakePitch, ShakeYaw, CurrentCameraRoll + ShakeRoll + ActiveSlashRoll));
@@ -2559,17 +2589,20 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 
 	if (NextGenre == EMegaJamSceneGenre::Montage)
 	{
-		// 7,200m Snowboard Kick-Off into Hang Glider: detach the Snowboard mesh and let it tumble downward for 2.0s
+		// 7,200m Snowboard Kick-Off into Hang Glider: detach the Snowboard mesh and drop it into the canyon abyss
 		if (DroppedBoardMesh)
 		{
 			UStaticMesh* BoardMesh = nullptr;
-			if (const TObjectPtr<UStaticMesh>* FoundChaseMesh = SceneVehicleMeshes.Find(EMegaJamSceneGenre::Chase))
-			{
-				BoardMesh = FoundChaseMesh->Get();
-			}
-			if (!BoardMesh && VehicleStaticMesh)
+			if (VehicleStaticMesh && VehicleStaticMesh->GetStaticMesh())
 			{
 				BoardMesh = VehicleStaticMesh->GetStaticMesh();
+			}
+			if (!BoardMesh)
+			{
+				if (const TObjectPtr<UStaticMesh>* FoundChaseMesh = SceneVehicleMeshes.Find(EMegaJamSceneGenre::Chase))
+				{
+					BoardMesh = FoundChaseMesh->Get();
+				}
 			}
 			if (BoardMesh)
 			{
@@ -2582,12 +2615,20 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 				DroppedBoardMesh->SetWorldScale3D(SanitizePawnScale3D(FVector(1.6f, 0.45f, 0.08f)));
 			}
 
-			DroppedBoardWorldLocation = GetActorLocation() + FVector(0.0f, 0.0f, -20.0f);
+			DroppedBoardMesh->SetSimulatePhysics(false);
+			DroppedBoardWorldLocation = VehicleStaticMesh ? VehicleStaticMesh->GetComponentLocation() : (GetActorLocation() + FVector(0.0f, 0.0f, -20.0f));
 			DroppedBoardWorldRotation = VehicleStaticMesh ? VehicleStaticMesh->GetComponentRotation() : GetActorRotation();
-			DroppedBoardVelocity = FVector(static_cast<float>(Velocity.X) * 0.45f, static_cast<float>(Velocity.Y) * 0.5f, -240.0f);
-			DroppedBoardTimer = 2.0f;
+			DroppedBoardVelocity = FVector(-800.0f, 0.0f, -500.0f);
+			DroppedBoardTimer = 3.5f;
 			DroppedBoardMesh->SetWorldLocationAndRotation(DroppedBoardWorldLocation, DroppedBoardWorldRotation);
+			DroppedBoardMesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+			DroppedBoardMesh->SetHiddenInGame(false);
 			DroppedBoardMesh->SetVisibility(true);
+			DroppedBoardMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+			DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+			DroppedBoardMesh->SetSimulatePhysics(true);
+			DroppedBoardMesh->AddImpulse(FVector(-800.0f, 0.0f, -500.0f), NAME_None, true);
+			DroppedBoardMesh->SetPhysicsAngularVelocityInDegrees(FVector(260.0f, 340.0f, 95.0f), false);
 		}
 
 		// Scene 05 The Final Cut: Launch off the cliff into the Hang Glider in smooth 4:3 flight without forcing aspect/altitude locks
@@ -2630,9 +2671,9 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 		SetAspectMode(EMegaJamAspectMode::Box_4_3);
 	}
 
-	// Vertical launch impulse into the air + mid-air hang (SnowboardDropInVelocityZ for 5,400m Scene 04 Mountain Drop-In, 1900.0f for 7,200m Cliff Drop into Hang Glider)
+	// Vertical launch impulse into the air + mid-air hang (1800.0f for 5,400m Scene 04 Summit Entry Jump, 1900.0f for 7,200m Cliff Drop into Hang Glider)
 	Velocity.Z = (NextGenre == EMegaJamSceneGenre::Chase)
-		? SnowboardDropInVelocityZ
+		? 1800.0f
 		: ((NextGenre == EMegaJamSceneGenre::Montage) ? 1900.0f : 1800.0f);
 	bIsGrounded = false;
 	TriggerMicroHitstop(0.25f, 0.0f);
@@ -2682,7 +2723,14 @@ void AMegaJamFlowPawn::ResetForRun()
 	DroppedBoardTimer = 0.0f;
 	if (DroppedBoardMesh)
 	{
+		DroppedBoardMesh->SetSimulatePhysics(false);
+		DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (CollisionSphere && DroppedBoardMesh->GetAttachParent() != CollisionSphere)
+		{
+			DroppedBoardMesh->AttachToComponent(CollisionSphere, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		}
 		DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
+		DroppedBoardMesh->SetHiddenInGame(true);
 		DroppedBoardMesh->SetVisibility(false);
 	}
 	CometSmashTimer = 0.0f;
@@ -3301,7 +3349,7 @@ void AMegaJamFlowPawn::TriggerMicroHitstop(float RealDurationSeconds, float Dila
 
 void AMegaJamFlowPawn::UpdatePawnDynamicMaterial(float DeltaSeconds)
 {
-	if (!PawnVisualMID)
+	if (!PawnVisualMID && !OrbLight)
 	{
 		return;
 	}
@@ -3339,10 +3387,20 @@ void AMegaJamFlowPawn::UpdatePawnDynamicMaterial(float DeltaSeconds)
 	const float EmissiveMultiplier = FMath::Lerp(1.2f + FlowRatio * 2.2f, 6.0f, BurstAlpha) * BeatPulse;
 	const FLinearColor EmissiveVec = FinalTint * EmissiveMultiplier;
 
-	PawnVisualMID->SetVectorParameterValue(TEXT("Color"), FinalTint);
-	PawnVisualMID->SetVectorParameterValue(TEXT("BaseColor"), FinalTint);
-	PawnVisualMID->SetVectorParameterValue(TEXT("TakeColor"), EmissiveVec);
-	PawnVisualMID->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveVec);
+	if (PawnVisualMID)
+	{
+		PawnVisualMID->SetVectorParameterValue(TEXT("Color"), FinalTint);
+		PawnVisualMID->SetVectorParameterValue(TEXT("BaseColor"), FinalTint);
+		PawnVisualMID->SetVectorParameterValue(TEXT("TakeColor"), EmissiveVec);
+		PawnVisualMID->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveVec);
+	}
+
+	if (OrbLight)
+	{
+		const FLinearColor LightTint = FMath::Lerp(FLinearColor(0.85f, 0.96f, 1.0f, 1.0f), FinalTint, 0.75f);
+		OrbLight->SetLightColor(LightTint);
+		OrbLight->SetIntensity(FMath::Lerp(2500.0f, 3800.0f, BurstAlpha) * BeatPulse);
+	}
 }
 
 void AMegaJamFlowPawn::PushAudioParameters() const
@@ -3420,7 +3478,14 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	DroppedBoardTimer = 0.0f;
 	if (DroppedBoardMesh)
 	{
+		DroppedBoardMesh->SetSimulatePhysics(false);
+		DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		if (CollisionSphere && DroppedBoardMesh->GetAttachParent() != CollisionSphere)
+		{
+			DroppedBoardMesh->AttachToComponent(CollisionSphere, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		}
 		DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
+		DroppedBoardMesh->SetHiddenInGame(true);
 		DroppedBoardMesh->SetVisibility(false);
 	}
 	CometSmashTimer = 0.0f;
