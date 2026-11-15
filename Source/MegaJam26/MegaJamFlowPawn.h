@@ -12,6 +12,7 @@ class UAudioComponent;
 class UCameraComponent;
 class UInputAction;
 class UMaterialInstanceDynamic;
+class UPointLightComponent;
 class USoundBase;
 class USpringArmComponent;
 class USphereComponent;
@@ -70,6 +71,10 @@ public:
 	/** Visual. No collision. Defaults to /Engine/BasicShapes/Sphere. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
+
+	/** Dynamic point light attached to VisualMesh to illuminate the active vehicle mesh and keep the orb bright in shadows. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UPointLightComponent> OrbLight;
 
 	/** Optional thematic static mesh component swapped dynamically per scene genre via SceneVehicleMeshes. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")
@@ -243,11 +248,11 @@ public:
 
 	/** Vertical launch impulse (cm/s) applied at the 5,400m Scene 04 Snowboard mountain drop-in transition. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Physics Tuning")
-	float SnowboardDropInVelocityZ = 2100.0f;
+	float SnowboardDropInVelocityZ = 1800.0f;
 
 	/** Downhill camera pitch tilt (degrees) applied during Scene 04 Chase (Snowboard). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Physics Tuning")
-	float SnowboardDownhillPitch = -12.5f;
+	float SnowboardDownhillPitch = -13.5f;
 
 	/** True when the pawn is resting on the ground surface (FloorTopZ = 0.0f) in Scenes 01-04. */
 	UPROPERTY(BlueprintReadOnly, Category="MegaJam|Physics")
