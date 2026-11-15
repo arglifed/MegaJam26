@@ -284,6 +284,119 @@ void AMegaJamTrackGenerator::PostInitializeComponents()
 		TrackRoot->SetRelativeScale3D(FVector::OneVector);
 	}
 	SanitizeActorAndWorldComponents(this, false);
+
+	// Issues #40, #41, #47, #58, #90: Auto-wire imported art assets if left null in Blueprint
+	auto LoadArtMeshIfValid = [](const TCHAR* AssetName) -> UStaticMesh*
+	{
+		const FString PackagePath = FString::Printf(TEXT("/Game/MegaJam26/Art/%s"), AssetName);
+		if (!FPackageName::DoesPackageExist(PackagePath))
+		{
+			return nullptr;
+		}
+		const FString ObjectPath = FString::Printf(TEXT("%s.%s"), *PackagePath, AssetName);
+		return LoadObject<UStaticMesh>(nullptr, *ObjectPath);
+	};
+
+	if (!FloorTileMesh)        { FloorTileMesh = LoadArtMeshIfValid(TEXT("SM_FloorTile")); }
+	if (!WallSegmentMesh)      { WallSegmentMesh = LoadArtMeshIfValid(TEXT("SM_WallSegment")); }
+	if (!SoundstageTrussMesh)  { SoundstageTrussMesh = LoadArtMeshIfValid(TEXT("SM_Dressing_LightingTruss")); }
+	if (!SkyscraperMesh)       { SkyscraperMesh = LoadArtMeshIfValid(TEXT("SM_Dressing_Noir_Skyscraper")); }
+	if (!FilmReelMesh)         { FilmReelMesh = LoadArtMeshIfValid(TEXT("SM_SetPiece_FilmReel")); }
+	if (!ApertureRingMesh)     { ApertureRingMesh = LoadArtMeshIfValid(TEXT("SM_SetPiece_ApertureRing")); }
+	if (!FilmFramePickupMesh)  { FilmFramePickupMesh = LoadArtMeshIfValid(TEXT("SM_Pickup_FilmFrame")); }
+	if (!WrapArchMesh)         { WrapArchMesh = LoadArtMeshIfValid(TEXT("SM_SetPiece_WrapArch")); }
+
+	if (SceneObstacleMeshesTakeA.Num() == 0)
+	{
+		const TCHAR* TakeANames[5] = {
+			TEXT("SM_Obstacle_Action_CyberBarrier"),
+			TEXT("SM_Obstacle_Western_TimberBarricade"),
+			TEXT("SM_Obstacle_Noir_Roadblock"),
+			TEXT("SM_Obstacle_Chase_Snowdrift"),
+			TEXT("SM_Obstacle_Final_Monolith")
+		};
+		for (const TCHAR* Name : TakeANames)
+		{
+			SceneObstacleMeshesTakeA.Add(LoadArtMeshIfValid(Name));
+		}
+	}
+
+	if (SceneObstacleMeshesTakeB.Num() == 0)
+	{
+		const TCHAR* TakeBNames[5] = {
+			TEXT("SM_Obstacle_Action_CyberBarrier"),
+			TEXT("SM_Obstacle_Western_TimberBarricade"),
+			TEXT("SM_Obstacle_Noir_Roadblock"),
+			TEXT("SM_Obstacle_Chase_IceBoulders"),
+			TEXT("SM_Obstacle_Final_Monolith")
+		};
+		for (const TCHAR* Name : TakeBNames)
+		{
+			SceneObstacleMeshesTakeB.Add(LoadArtMeshIfValid(Name));
+		}
+	}
+
+	if (StudioDressingMeshes.Num() == 0)
+	{
+		const TCHAR* DressingNames[] = {
+			TEXT("SM_Dressing_StudioSpotlight"),
+			TEXT("SM_Dressing_BoomMic"),
+			TEXT("SM_Prop_CameraCrane"),
+			TEXT("SM_Dressing_BackdropFlat"),
+			TEXT("SM_Dressing_LightingTruss")
+		};
+		for (const TCHAR* Name : DressingNames)
+		{
+			if (UStaticMesh* Mesh = LoadArtMeshIfValid(Name))
+			{
+				StudioDressingMeshes.Add(Mesh);
+			}
+		}
+	}
+
+	// Auto-populate per-scene margin scatter props (Issue #90 / #87) when not already configured in Blueprint
+	auto EnsureScatterProp = [&](EMegaJamSceneGenre Genre, const TCHAR* AssetName, float MinScale, float MaxScale, float Prob)
+	{
+		if (UStaticMesh* Mesh = LoadArtMeshIfValid(AssetName))
+		{
+			FScenePropList& List = SceneScatterProps.FindOrAdd(Genre);
+			for (const FScenePropConfig& Existing : List.Props)
+			{
+				if (Existing.PropMesh == Mesh)
+				{
+					return;
+				}
+			}
+			FScenePropConfig Cfg;
+			Cfg.PropMesh = Mesh;
+			Cfg.MinScale = MinScale;
+			Cfg.MaxScale = MaxScale;
+			Cfg.SpawnProbability = Prob;
+			List.Props.Add(Cfg);
+		}
+	};
+
+	if (SceneScatterProps.Num() == 0)
+	{
+		EnsureScatterProp(EMegaJamSceneGenre::Action,  TEXT("SM_Prop_CameraCrane"),             6.0f, 10.0f, 0.45f);
+		EnsureScatterProp(EMegaJamSceneGenre::Action,  TEXT("SM_Dressing_StudioSpotlight"),     5.0f,  9.0f, 0.55f);
+		EnsureScatterProp(EMegaJamSceneGenre::Action,  TEXT("SM_Dressing_BoomMic"),             5.0f,  8.5f, 0.45f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Dressing_Western_Cactus"),      5.0f,  9.5f, 0.65f);
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Dressing_Western_Tumbleweed"),  2.5f,  5.0f, 0.55f);
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Prop_Western_Tombstone"),       3.5f,  6.5f, 0.50f);
+		EnsureScatterProp(EMegaJamSceneGenre::Western, TEXT("SM_Prop_Western_GraveCross"),      4.0f,  7.0f, 0.45f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Noir,    TEXT("SM_Dressing_Noir_StreetLamp"),     6.0f, 10.0f, 0.65f);
+		EnsureScatterProp(EMegaJamSceneGenre::Noir,    TEXT("SM_Prop_Noir_BlackSedan"),         4.5f,  6.5f, 0.50f);
+		EnsureScatterProp(EMegaJamSceneGenre::Noir,    TEXT("SM_Dressing_Noir_Skyscraper"),    10.0f, 16.0f, 0.45f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Chase,   TEXT("SM_Dressing_Chase_PineTree"),      7.0f, 12.0f, 0.70f);
+		EnsureScatterProp(EMegaJamSceneGenre::Chase,   TEXT("SM_Dressing_Chase_SnowRock"),      5.0f,  9.5f, 0.60f);
+
+		EnsureScatterProp(EMegaJamSceneGenre::Montage, TEXT("SM_Dressing_Final_FloatingCrystal"), 6.0f, 11.0f, 0.65f);
+		EnsureScatterProp(EMegaJamSceneGenre::Montage, TEXT("SM_Obstacle_Final_LaserGate"),     6.0f, 10.0f, 0.40f);
+	}
 }
 
 void AMegaJamTrackGenerator::BeginPlay()

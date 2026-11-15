@@ -413,6 +413,38 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 		}
 	}
 	CurrentTrackBPM = 120.0f;
+
+	// Issues #40 & #41: Auto-wire fallback vehicle meshes and seat offsets if left null in Blueprint
+	struct FVehicleFallbackSpec
+	{
+		EMegaJamSceneGenre Genre;
+		const TCHAR* PackagePath;
+		const TCHAR* ObjectPath;
+		FVector SeatOffset;
+	};
+	static const FVehicleFallbackSpec VehicleFallbacks[] = {
+		{ EMegaJamSceneGenre::Action,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Motorcycle"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_Motorcycle.SM_Vehicle_Motorcycle"), FVector(0.0f, 0.0f, 85.0f) },
+		{ EMegaJamSceneGenre::Western, TEXT("/Game/MegaJam26/Art/SM_Vehicle_Horse"),      TEXT("/Game/MegaJam26/Art/SM_Vehicle_Horse.SM_Vehicle_Horse"),           FVector(0.0f, 0.0f, 165.0f) },
+		{ EMegaJamSceneGenre::Noir,    TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar"),     TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar.SM_Vehicle_SpyCar"),         FVector(-20.0f, 0.0f, 85.0f) },
+		{ EMegaJamSceneGenre::Chase,   TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
+		{ EMegaJamSceneGenre::Alpine,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
+		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, -60.0f) },
+	};
+	for (const FVehicleFallbackSpec& Spec : VehicleFallbacks)
+	{
+		const TObjectPtr<UStaticMesh>* ExistingMesh = SceneVehicleMeshes.Find(Spec.Genre);
+		if ((!ExistingMesh || !(*ExistingMesh)) && FPackageName::DoesPackageExist(Spec.PackagePath))
+		{
+			if (UStaticMesh* LoadedMesh = LoadObject<UStaticMesh>(nullptr, Spec.ObjectPath))
+			{
+				SceneVehicleMeshes.Add(Spec.Genre, LoadedMesh);
+			}
+		}
+		if (!SceneSeatOffsets.Contains(Spec.Genre))
+		{
+			SceneSeatOffsets.Add(Spec.Genre, Spec.SeatOffset);
+		}
+	}
 }
 
 void AMegaJamFlowPawn::BeginPlay()

@@ -417,12 +417,42 @@ TSharedRef<SWidget> UMegaJamCinemaHUD::RebuildWidget()
 	ClapperboardBlackoutOverlay->SetVerticalAlignment(VAlign_Center);
 	ClapperboardBlackoutOverlay->SetVisibility(ESlateVisibility::Collapsed);
 
+	UVerticalBox* ClapperBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ClapperBox"));
+
+	UTextBlock* ClapperTopStripes = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ClapperTopStripes"));
+	ClapperTopStripes->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 24));
+	ClapperTopStripes->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.95f, 0.95f, 0.92f)));
+	ClapperTopStripes->SetJustification(ETextJustify::Center);
+	ClapperTopStripes->SetText(FText::FromString(TEXT("▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰")));
+	if (UVerticalBoxSlot* TopStripeSlot = ClapperBox->AddChildToVerticalBox(ClapperTopStripes))
+	{
+		TopStripeSlot->SetHorizontalAlignment(HAlign_Center);
+		TopStripeSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 14.0f));
+	}
+
 	ClapperboardBlackoutText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ClapperboardBlackoutText"));
 	ClapperboardBlackoutText->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 42));
 	ClapperboardBlackoutText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	ClapperboardBlackoutText->SetJustification(ETextJustify::Center);
 	ClapperboardBlackoutText->SetText(FText::FromString(TEXT("SCENE 02 // ACTION!")));
-	ClapperboardBlackoutOverlay->SetContent(ClapperboardBlackoutText);
+	if (UVerticalBoxSlot* MidTextSlot = ClapperBox->AddChildToVerticalBox(ClapperboardBlackoutText))
+	{
+		MidTextSlot->SetHorizontalAlignment(HAlign_Center);
+		MidTextSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 8.0f));
+	}
+
+	UTextBlock* ClapperBottomStripes = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ClapperBottomStripes"));
+	ClapperBottomStripes->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 24));
+	ClapperBottomStripes->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.95f, 0.95f, 0.92f)));
+	ClapperBottomStripes->SetJustification(ETextJustify::Center);
+	ClapperBottomStripes->SetText(FText::FromString(TEXT("▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱ ▰ ▱")));
+	if (UVerticalBoxSlot* BotStripeSlot = ClapperBox->AddChildToVerticalBox(ClapperBottomStripes))
+	{
+		BotStripeSlot->SetHorizontalAlignment(HAlign_Center);
+		BotStripeSlot->SetPadding(FMargin(0.0f, 14.0f, 0.0f, 0.0f));
+	}
+
+	ClapperboardBlackoutOverlay->SetContent(ClapperBox);
 
 	if (UCanvasPanelSlot* BlackoutSlot = RootCanvas->AddChildToCanvas(ClapperboardBlackoutOverlay))
 	{
