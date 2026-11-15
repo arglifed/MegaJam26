@@ -535,13 +535,24 @@ void UMegaJamCinemaHUD::HandleClapperboardSnapped()
 	}
 	if (SceneSluglineText)
 	{
+		const EMegaJamSceneGenre EffectivePower = BoundPawn ? BoundPawn->GetEffectivePowerGenre() : ActiveGenre;
 		const TCHAR* SluglineMsg = bIsMontage
-			? TEXT("SCENE 05 // THE FINAL CUT — HANG GLIDER MONTAGE")
+			? ((EffectivePower == EMegaJamSceneGenre::Western)
+				? TEXT("SCENE 05 // MONTAGE — KATANA BEAT-SLASH")
+				: ((EffectivePower == EMegaJamSceneGenre::Noir)
+					? TEXT("SCENE 05 // MONTAGE — VERTIGO GRAZE CASH-IN")
+					: ((EffectivePower == EMegaJamSceneGenre::Chase)
+						? TEXT("SCENE 05 // MONTAGE — COMET SMASH OVERDRIVE")
+						: TEXT("SCENE 05 // MONTAGE — BEAT-SPLICE EMP"))))
 			: (bIsChase
-				? TEXT("SCENE 04 // CHASE — SNOWBOARD COMET SMASH")
+				? TEXT("SCENE 04 // CHASE — COMET SMASH OVERDRIVE")
 				: (bIsNoir
-					? TEXT("SCENE 03 // NOIR — SPY CAR VERTIGO DOLLY-ZOOM")
-					: (bIsAlpine ? TEXT("SCENE 03 // ALPINE — SNOWBOARD RAIL-GRIND") : TEXT("SCENE 02 // WESTERN — HIGH-NOON STANDOFF"))));
+					? TEXT("SCENE 03 // NOIR — VERTIGO GRAZE CASH-IN")
+					: (bIsAlpine
+						? TEXT("SCENE 03 // ALPINE — TRICK-OLLIE CRYO-SHATTER")
+						: ((ActiveGenre == EMegaJamSceneGenre::Western)
+							? TEXT("SCENE 02 // WESTERN — KATANA BEAT-SLASH")
+							: TEXT("SCENE 01 // ACTION — BEAT-SPLICE EMP")))));
 		SceneSluglineText->SetText(FText::FromString(SluglineMsg));
 	}
 	SceneSluglineTimer = SceneSluglineFlashDuration;
@@ -728,12 +739,34 @@ void UMegaJamCinemaHUD::HandleFilmSceneChanged(EMegaJamFilmScene NewScene)
 
 FString UMegaJamCinemaHUD::GetSceneSluglineText(EMegaJamFilmScene Scene)
 {
-	return TEXT("SCENE 01 // ACTION — BULLET-TIME OVERDRIVE");
+	switch (Scene)
+	{
+	case EMegaJamFilmScene::Soundstage:
+		return TEXT("SCENE 01 // ACTION — BEAT-SPLICE EMP");
+	case EMegaJamFilmScene::CuttingRoom:
+		return TEXT("SCENE 02 // WESTERN — KATANA BEAT-SLASH");
+	case EMegaJamFilmScene::OverpassNight:
+		return TEXT("SCENE 03 // NOIR — VERTIGO GRAZE CASH-IN");
+	case EMegaJamFilmScene::FinalCut:
+	default:
+		return TEXT("SCENE 04 // CHASE — COMET SMASH OVERDRIVE");
+	}
 }
 
 FString UMegaJamCinemaHUD::GetActProgressLabel(EMegaJamFilmScene Scene)
 {
-	return TEXT("SCENE 01 // ACTION");
+	switch (Scene)
+	{
+	case EMegaJamFilmScene::Soundstage:
+		return TEXT("SCENE 01 // ACTION");
+	case EMegaJamFilmScene::CuttingRoom:
+		return TEXT("SCENE 02 // WESTERN");
+	case EMegaJamFilmScene::OverpassNight:
+		return TEXT("SCENE 03 // NOIR");
+	case EMegaJamFilmScene::FinalCut:
+	default:
+		return TEXT("SCENE 04 // CHASE");
+	}
 }
 
 void UMegaJamCinemaHUD::ComputeCriticRating(int32 FinalScore, int32 MaxChain, int32 FramesSpliced, int32 TakesUsed, FString& OutStars, FString& OutQuote)
@@ -813,22 +846,69 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	const AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
 	const AMegaJamFlowPawn* FlowPawn = Cast<AMegaJamFlowPawn>(GetOwningPlayerPawn());
 	const UMegaJamFlowSubsystem* FlowSubsystem = World->GetSubsystem<UMegaJamFlowSubsystem>();
-	const EMegaJamSceneGenre ActiveGenre = FlowSubsystem
+	const float CurrentDistMeters = GameMode ? GameMode->GetDistanceMeters() : (FlowSubsystem ? FlowSubsystem->DistanceMeters : 0.0f);
+	const int32 CurrentSceneIndex = FMath::Clamp(FMath::FloorToInt(CurrentDistMeters / 1800.0f), 0, 4);
+	EMegaJamSceneGenre ActiveGenre = FlowSubsystem
 		? FlowSubsystem->ActiveGenre
 		: (GameMode ? GameMode->GetActiveSceneGenre() : EMegaJamSceneGenre::Action);
-	const EMegaJamSceneGenre EffectiveGenre = FlowPawn ? FlowPawn->GetEffectivePowerGenre() : ActiveGenre;
-	const bool bIsMontage = (ActiveGenre == EMegaJamSceneGenre::Montage);
+	// Ensure ActiveGenre matches CurrentSceneIndex (0..4) if DistanceMeters has crossed a scene boundary
+	if (CurrentSceneIndex == 0 && ActiveGenre != EMegaJamSceneGenre::Action)
+	{
+		ActiveGenre = EMegaJamSceneGenre::Action;
+	}
+	else if (CurrentSceneIndex == 1 && ActiveGenre == EMegaJamSceneGenre::Action)
+	{
+		ActiveGenre = EMegaJamSceneGenre::Western;
+	}
+	else if (CurrentSceneIndex == 2 && (ActiveGenre == EMegaJamSceneGenre::Action || ActiveGenre == EMegaJamSceneGenre::Western))
+	{
+		ActiveGenre = EMegaJamSceneGenre::Noir;
+	}
+	else if (CurrentSceneIndex == 3 && ActiveGenre != EMegaJamSceneGenre::Chase)
+	{
+		ActiveGenre = EMegaJamSceneGenre::Chase;
+	}
+	else if (CurrentSceneIndex == 4 && ActiveGenre != EMegaJamSceneGenre::Montage)
+	{
+		ActiveGenre = EMegaJamSceneGenre::Montage;
+	}
+
+	const bool bIsMontage = (ActiveGenre == EMegaJamSceneGenre::Montage || CurrentSceneIndex == 4);
+	// In Scenes 01-04 (CurrentSceneIndex 0..3), strictly use the scene's own genre; only use the cycled Montage sub-genre in Scene 05 (Montage)!
+	const EMegaJamSceneGenre EffectiveGenre = bIsMontage
+		? (FlowPawn ? FlowPawn->GetEffectivePowerGenre() : ActiveGenre)
+		: ActiveGenre;
 	const bool bIsWestern = (EffectiveGenre == EMegaJamSceneGenre::Western);
 	const bool bIsNoir = (EffectiveGenre == EMegaJamSceneGenre::Noir);
 	const bool bIsChase = (EffectiveGenre == EMegaJamSceneGenre::Chase);
 	const bool bIsAlpine = (EffectiveGenre == EMegaJamSceneGenre::Alpine);
 	const TCHAR* SceneTitleLabel = bIsMontage
 		? TEXT("SCENE 05 // MONTAGE")
-		: (bIsChase
+		: ((ActiveGenre == EMegaJamSceneGenre::Chase)
 			? TEXT("SCENE 04 // CHASE")
-			: (bIsNoir
+			: ((ActiveGenre == EMegaJamSceneGenre::Noir)
 				? TEXT("SCENE 03 // NOIR")
-				: (bIsAlpine ? TEXT("SCENE 03 // ALPINE") : (bIsWestern ? TEXT("SCENE 02 // WESTERN") : TEXT("SCENE 01 // ACTION")))));
+				: ((ActiveGenre == EMegaJamSceneGenre::Alpine)
+					? TEXT("SCENE 03 // ALPINE")
+					: ((ActiveGenre == EMegaJamSceneGenre::Western) ? TEXT("SCENE 02 // WESTERN") : TEXT("SCENE 01 // ACTION")))));
+
+	const TCHAR* ActiveSceneBannerText = bIsMontage
+		? (bIsWestern
+			? TEXT("SCENE 05 // MONTAGE — KATANA BEAT-SLASH")
+			: (bIsNoir
+				? TEXT("SCENE 05 // MONTAGE — VERTIGO GRAZE CASH-IN")
+				: (bIsChase
+					? TEXT("SCENE 05 // MONTAGE — COMET SMASH OVERDRIVE")
+					: TEXT("SCENE 05 // MONTAGE — BEAT-SPLICE EMP"))))
+		: ((ActiveGenre == EMegaJamSceneGenre::Chase)
+			? TEXT("SCENE 04 // CHASE — COMET SMASH OVERDRIVE")
+			: ((ActiveGenre == EMegaJamSceneGenre::Noir)
+				? TEXT("SCENE 03 // NOIR — VERTIGO GRAZE CASH-IN")
+				: ((ActiveGenre == EMegaJamSceneGenre::Alpine)
+					? TEXT("SCENE 03 // ALPINE — TRICK-OLLIE CRYO-SHATTER")
+					: ((ActiveGenre == EMegaJamSceneGenre::Western)
+						? TEXT("SCENE 02 // WESTERN — KATANA BEAT-SLASH")
+						: TEXT("SCENE 01 // ACTION — BEAT-SPLICE EMP")))));
 
 	const EMegaJamRunState RunState = GameMode ? GameMode->GetRunState() : EMegaJamRunState::Playing;
 	const bool bIsPlaying = GameMode ? GameMode->IsPlaying() : true;
@@ -845,13 +925,17 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		OverexposureWashoutOverlay->SetBrushColor(FLinearColor(1.0f, 0.94f, 0.82f, 0.0f));
 	}
 
-	if (BoundTrackGenerator)
+	if (CurrentSceneIndex != LastObservedSceneIndex)
 	{
-		const int32 CurrentSceneIdx = static_cast<int32>(BoundTrackGenerator->GetCurrentScene());
-		if (CurrentSceneIdx != LastObservedSceneIndex)
+		LastObservedSceneIndex = CurrentSceneIndex;
+		if (bIsPlaying)
 		{
-			HandleFilmSceneChanged(BoundTrackGenerator->GetCurrentScene());
+			SceneSluglineTimer = SceneSluglineFlashDuration;
 		}
+	}
+	if (SceneSluglineText)
+	{
+		SceneSluglineText->SetText(FText::FromString(ActiveSceneBannerText));
 	}
 
 	// Smoothly interpolate letterbox (21:9 or 2.76:1 Ultra-Panavision) vs pillarbox (4:3) matte bars
@@ -1405,14 +1489,32 @@ void UMegaJamCinemaHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		else if (bIsPlaying && DropCutBannerTimer > 0.0f)
 		{
 			CenterBannerBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
-			const TCHAR* DropCutLabel = (Aspect == EMegaJamAspectMode::UltraPanavision_276_1)
-				? TEXT("▶ 2.76:1 ULTRA-PANAVISION // [SPACE] QUICK-DRAW BEAT-SLASH!")
-				: (bIsAlpine ? TEXT("▶ 21:9 ALPINE RAIL-GRIND // [SPACE ON BEAT] TRICK-OLLIE CRYO-SHATTER!") : TEXT("▶ 21:9 DIRECTOR'S CUT // BULLET-TIME OVERDRIVE!"));
+			const TCHAR* DropCutLabel = bIsMontage
+				? (bIsWestern
+					? TEXT("▶ SCENE 05 // MONTAGE — [WESTERN: KATANA BEAT-SLASH]!")
+					: (bIsNoir
+						? TEXT("▶ SCENE 05 // MONTAGE — [NOIR: VERTIGO GRAZE CASH-IN]!")
+						: (bIsChase
+							? TEXT("▶ SCENE 05 // MONTAGE — [CHASE: COMET SMASH OVERDRIVE]!")
+							: TEXT("▶ SCENE 05 // MONTAGE — [ACTION: BEAT-SPLICE EMP]!"))))
+				: ((ActiveGenre == EMegaJamSceneGenre::Chase)
+					? TEXT("▶ SCENE 04 // CHASE — COMET SMASH OVERDRIVE!")
+					: ((ActiveGenre == EMegaJamSceneGenre::Noir)
+						? TEXT("▶ SCENE 03 // NOIR — VERTIGO GRAZE CASH-IN!")
+						: ((ActiveGenre == EMegaJamSceneGenre::Alpine)
+							? TEXT("▶ SCENE 03 // ALPINE — TRICK-OLLIE CRYO-SHATTER!")
+							: ((ActiveGenre == EMegaJamSceneGenre::Western || Aspect == EMegaJamAspectMode::UltraPanavision_276_1)
+								? TEXT("▶ SCENE 02 // WESTERN — KATANA BEAT-SLASH!")
+								: TEXT("▶ SCENE 01 // ACTION — BEAT-SPLICE EMP!")))));
 			CenterBannerText->SetText(FText::FromString(DropCutLabel));
 			CenterBannerText->SetColorAndOpacity(FSlateColor(
-				(Aspect == EMegaJamAspectMode::UltraPanavision_276_1)
+				(Aspect == EMegaJamAspectMode::UltraPanavision_276_1 || bIsWestern)
 					? FLinearColor(1.0f, 0.85f, 0.25f, 1.0f)
-					: (bIsAlpine ? FLinearColor(0.35f, 0.96f, 1.0f, 1.0f) : FLinearColor(0.15f, 0.95f, 1.0f, 1.0f))));
+					: (bIsChase
+						? FLinearColor(1.0f, 0.72f, 0.22f, 1.0f)
+						: (bIsNoir
+							? FLinearColor(0.92f, 0.95f, 1.0f, 1.0f)
+							: (bIsAlpine ? FLinearColor(0.35f, 0.96f, 1.0f, 1.0f) : FLinearColor(0.15f, 0.95f, 1.0f, 1.0f))))));
 		}
 		else
 		{
