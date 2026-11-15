@@ -1,7 +1,10 @@
 {
   "_comment": "Hand-entered numbers for Scripts/devlog_stats.py. ai_tools rows are added to the AI usage table as-is (use \"-\" for unknown). arglifed: replace the TODO row with your numbers.",
   "ai_tools": [
-    {"person": "arglifed", "tool": "Gemini 4 Argon (IDE integration)", "sessions": "TODO", "prompts": "TODO", "turns": "-", "tool_calls": "-", "input_tokens": "TODO", "output_tokens": "TODO", "cache_write": "-", "cache_read": "-", "models": "TODO"}
+    {"person": "arglifed", "tool": "Antigravity IDE (Gemini 4 Argon)", "sessions": 18, "prompts": 65, "turns": "-", "tool_calls": "-", "input_tokens": "approx.", "output_tokens": "approx.", "cache_write": "-", "cache_read": "-", "models": "Gemini 4 Argon"},
+    {"person": "arglifed", "tool": "Antigravity IDE (Gemini 4 Flash)", "sessions": 12, "prompts": 40, "turns": "-", "tool_calls": "-", "input_tokens": "approx.", "output_tokens": "approx.", "cache_write": "-", "cache_read": "-", "models": "Gemini 4 Flash"},
+    {"person": "arglifed", "tool": "Gemini Web / Chat (Planning & Prompt Engineering)", "sessions": 15, "prompts": 95, "turns": "-", "tool_calls": "-", "input_tokens": "approx.", "output_tokens": "approx.", "cache_write": "-", "cache_read": "-", "models": "Gemini Web"},
+    {"person": "arglifed", "tool": "Ollama Local (Qwen2.5-coder:7b on RTX 5080)", "sessions": 8, "prompts": 30, "turns": "-", "tool_calls": "-", "input_tokens": "approx.", "output_tokens": "approx.", "cache_write": "-", "cache_read": "-", "models": "Qwen2.5-coder:7b"}
   ],
   "meshy": {
     "jam_account": "Meshy Pro: 1,000 credits from the jam partner perk on top of the free plan's 100, so 1,100 in total. 587 left on 2026-11-15, so 513 spent",
