@@ -4,7 +4,7 @@ the C++ module is built, headless with the editor CLOSED (same command line as i
 
 Creates   /Game/MegaJam26/Blueprints/BP_TrackGenerator   (parent AMegaJamTrackGenerator, MegaJam|Art slots filled)
 Edits     /Game/MegaJam26/Blueprints/BP_FlowGameMode     Track Generator Class = BP_TrackGenerator
-Edits     /Game/MegaJam26/Blueprints/BP_FlowPawn         SceneVehicleMeshes + SceneSeatOffsets
+Edits     /Game/MegaJam26/Blueprints/BP_FlowPawn         SceneVehicleMeshes + SceneSeatOffsets + VisualMesh (#108 orb)
 (The two edited Blueprints are shared binary assets; the user approved editing them for this task. AGENTS.md section 5.)
 
 Edits     /Game/MegaJam26/Art/MI_Obstacle_Action_CyberBarrier, MI_Vehicle_SpyCar   BaseColorTint (issue #87)
@@ -12,6 +12,7 @@ Edits     /Game/MegaJam26/Art/MI_Obstacle_Action_CyberBarrier, MI_Vehicle_SpyCar
 Search the log for "[ArtWire]". Safe to re-run: it only sets the properties listed below.
 Set ART_ONLY=1 in the environment to leave the two shared Blueprints (BP_FlowGameMode, BP_FlowPawn) unsaved, for runs
 that only change BP_TrackGenerator or the art material instances.
+Set PAWN_ONLY=1 to save BP_FlowPawn alone (vehicles, seat offsets and the #108 orb on VisualMesh) and nothing else.
 """
 
 import os
@@ -182,32 +183,47 @@ def wire_game_mode(track_bp):
 
 def wire_pawn():
     G = unreal.MegaJamSceneGenre
-    # Vehicle pivots sit on the ground at the pawn origin; the offset is where the orb rides (seat / hover point), in cm.
+    # Vehicle pivots sit on the ground at the pawn origin; the offset is where the orb's centre rides, in cm.
+    # Issue #108: fitted to the 55 cm movie-magic orb (core 37 cm, film belts 52 cm across) from each mesh's top-surface
+    # profile, then checked in PIE captures: bike saddle top ~50 cm at x -45; horse saddle ~162 cm at x -15; car seat
+    # cushion ~45 cm behind the windscreen; board deck ~2 cm; glider wing ~72 cm with the control bar at x ~25.
     vehicles = {
-        G.ACTION: ("SM_Vehicle_Motorcycle", unreal.Vector(0, 0, 85)),
-        G.WESTERN: ("SM_Vehicle_Horse", unreal.Vector(0, 0, 165)),
-        G.NOIR: ("SM_Vehicle_SpyCar", unreal.Vector(-20, 0, 85)),
-        G.CHASE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 45)),
-        G.ALPINE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 45)),
-        G.MONTAGE: ("SM_Vehicle_HangGlider", unreal.Vector(0, 0, -60)),  # wing at the pawn origin, orb hangs below
+        G.ACTION: ("SM_Vehicle_Motorcycle", unreal.Vector(-42, 0, 72)),
+        G.WESTERN: ("SM_Vehicle_Horse", unreal.Vector(-15, 0, 181)),
+        G.NOIR: ("SM_Vehicle_SpyCar", unreal.Vector(-25, 0, 66)),
+        G.CHASE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 28)),
+        G.ALPINE: ("SM_Vehicle_Snowboard", unreal.Vector(0, 0, 28)),
+        G.MONTAGE: ("SM_Vehicle_HangGlider", unreal.Vector(0, 0, 42)),  # inside the A-frame, under the wing
     }
     bp = eal.load_asset(BPS + "/BP_FlowPawn")
     cdo = cdo_of(bp)
     cdo.set_editor_property("scene_vehicle_meshes", {g: mesh(n) for g, (n, _) in vehicles.items()})
     cdo.set_editor_property("scene_seat_offsets", {g: off for g, (_, off) in vehicles.items()})
+    # Issue #108: the player orb. Its material (M_MovieMagicOrb, slot 0 of the mesh) takes the pawn's BaseColor /
+    # EmissiveColor writes, so no material override is set here. Build it first with Scripts/build_issue108_orb.py.
+    orb = mesh("SM_MovieMagicOrb")
+    if orb:
+        visual = cdo.get_editor_property("visual_mesh")
+        visual.set_editor_property("static_mesh", orb)
+        visual.set_editor_property("override_materials", [])
     finish(bp)
-    log("BP_FlowPawn: %d vehicle meshes, %d seat offsets"
-        % (len(cdo.get_editor_property("scene_vehicle_meshes")), len(cdo.get_editor_property("scene_seat_offsets"))))
+    visual = cdo.get_editor_property("visual_mesh")
+    log("BP_FlowPawn: %d vehicle meshes, %d seat offsets, VisualMesh = %s"
+        % (len(cdo.get_editor_property("scene_vehicle_meshes")), len(cdo.get_editor_property("scene_seat_offsets")),
+           visual.get_editor_property("static_mesh").get_name() if visual.get_editor_property("static_mesh") else None))
 
 
 try:
-    track = wire_track_generator()
-    tint_materials()
-    if os.environ.get("ART_ONLY") == "1":
-        log("ART_ONLY=1: BP_FlowGameMode and BP_FlowPawn left untouched")
+    if os.environ.get("PAWN_ONLY") == "1":
+        wire_pawn()  # issue #108: saves BP_FlowPawn only (no track generator, materials or game mode)
     else:
-        wire_game_mode(track)
-        wire_pawn()
+        track = wire_track_generator()
+        tint_materials()
+        if os.environ.get("ART_ONLY") == "1":
+            log("ART_ONLY=1: BP_FlowGameMode and BP_FlowPawn left untouched")
+        else:
+            wire_game_mode(track)
+            wire_pawn()
 except Exception as exc:  # noqa: BLE001 - log everything, the run is headless
     err("%s\n%s" % (exc, traceback.format_exc()))
 log("DONE with %d error(s)" % len(errors))
