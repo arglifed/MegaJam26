@@ -15,6 +15,7 @@ instead of 5): the default worker count exhausted the page file on the first run
 Search the log for "[ArtImport]". Every asset is saved as soon as it is created, and a re-run SKIPS assets that already
 exist (so a crashed run resumes). To rebuild from scratch, delete /Game/MegaJam26/Art (or pass FORCE=1 in the env);
 FORCE_MESHES=1 re-imports only the meshes and their material instances.
+ONLY=HangGlider (comma-separated raw names) re-imports just those models with their textures and instances.
 Meshes are rebuilt from their scaled mesh description, so shading comes out faceted (flat), matching the art brief.
 
 Source layout:  RawAssets/Art/<Category>/<Name>/<Name>.fbx  (+ <Name>_<map>.png, 1K copies in RawAssets/Art/.import_1k)
@@ -26,7 +27,8 @@ plus the shared master material M_MeshyPBR (masked, lit): BaseColor * BaseColorT
 Emissive * EmissiveStrength, and the take contract the track generator drives:
     TakeIndex (0 = Take A, 1 = Take B), TakeColor (adds a glow; black by default), TakeGhosting (0 = always solid,
     1 = dither-fade to GhostOpacity while MPC_FlowState.ActiveTake is the other take), GhostGlow / TakeGlow.
-FORCE_MASTER=1 rebuilds that graph in place (instances keep their parent).
+FORCE_MASTER=1 rebuilds that graph in place (instances keep their parent). MASTER_ONLY=1 rebuilds just M_MeshyPBR and
+saves nothing else. RoughnessMin (default 0) floors the roughness map, for instances that read too mirror-like.
 Also creates the track surface: M_TrackSurface (world-aligned grid, so it survives any stretch), MI_FloorTile,
 MI_WallSegment and SM_FloorTile / SM_WallSegment (copies of the engine cube: 100^3, centred, box collision).
 
@@ -58,7 +60,9 @@ VEHICLE_BASIS = {
     "Horse": lambda x, y, z: (y, -x, z),         # head was at +Y: quarter turn
     "SpyCar": lambda x, y, z: (-x, -y, z),       # play-test showed the grille at -X: half turn
     "Snowboard": lambda x, y, z: (x, y, z),      # symmetric
-    "HangGlider": lambda x, y, z: (z, x, y),     # flat wing was standing upright: lay it down, nose to +X
+    # Regenerated 2026-11-14 (#87) as a real 3D delta wing: span along Y, nose at -X after import, so a half turn.
+    # (The old flat cutout, kept in RawAssets/Art/Vehicles/HangGlider/_old_flat_cutout, needed (z, x, y).)
+    "HangGlider": lambda x, y, z: (-x, -y, z),
     # Pickups are drawn pitched 90 degrees and squashed in Z (they were flat cylinders), so the frame's face goes in
     # the local XY plane with its long side along Y; POST_SCALE thickens it so it survives the squash.
     "Pickup_FilmFrame": lambda x, y, z: (z, x, y),
@@ -81,10 +85,14 @@ sme = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
 errors = []
 report = []
 FORCE = os.environ.get("FORCE") == "1"
+# ONLY=HangGlider,Horse re-imports just those raw names (mesh, textures and instance), whatever exists, and skips the
+# rest, so one regenerated model does not re-save every other asset.
+ONLY = {n.strip() for n in os.environ.get("ONLY", "").split(",") if n.strip()}
 
 
 def exists(path):
-    return (not FORCE) and eal.does_asset_exist(path)
+    # With ONLY, main() only visits the named entries, and those are always re-imported.
+    return (not FORCE) and (not ONLY) and eal.does_asset_exist(path)
 
 
 def save(asset):
@@ -181,7 +189,15 @@ def build_master(defaults):
     metal = tex_param("Metallic", defaults["metallic"], S.SAMPLERTYPE_MASKS, -100)
     mel.connect_material_property(metal, "R", unreal.MaterialProperty.MP_METALLIC)
     rough = tex_param("Roughness", defaults["roughness"], S.SAMPLERTYPE_MASKS, 150)
-    mel.connect_material_property(rough, "R", unreal.MaterialProperty.MP_ROUGHNESS)
+    # Issue #87: Meshy roughness maps sit near 0.4, so stretched obstacles mirror the sky and the cream backdrop
+    # flats. RoughnessMin (default 0 = unchanged) lets an instance floor it to read matte.
+    rough_min = mel.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -700, 300)
+    rough_min.set_editor_property("parameter_name", "RoughnessMin")
+    rough_min.set_editor_property("default_value", 0.0)
+    rough_max = mel.create_material_expression(mat, unreal.MaterialExpressionMax, -300, 200)
+    mel.connect_material_expressions(rough, "R", rough_max, "A")
+    mel.connect_material_expressions(rough_min, "", rough_max, "B")
+    mel.connect_material_property(rough_max, "", unreal.MaterialProperty.MP_ROUGHNESS)
     normal = tex_param("Normal", defaults["normal"], S.SAMPLERTYPE_NORMAL, 400)
     mel.connect_material_property(normal, "RGB", unreal.MaterialProperty.MP_NORMAL)
 
@@ -515,7 +531,22 @@ def import_mesh(category, name):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+def rebuild_master_only():
+    # MASTER_ONLY=1: rebuild the M_MeshyPBR graph in place (instances keep their parent and overrides) and touch
+    # nothing else. Defaults come from the instances that already exist, so no texture is re-imported.
+    master = eal.load_asset(ART + "/M_MeshyPBR")
+    if not master:
+        err("M_MeshyPBR not found; run a full import first")
+        return
+    defaults = {k: mel.get_material_default_texture_parameter_value(master, MAPS[k][1]) for k in MAPS}
+    os.environ["FORCE_MASTER"] = "1"
+    build_master(defaults)
+
+
 def main():
+    if os.environ.get("MASTER_ONLY") == "1":
+        rebuild_master_only()
+        return
     if not os.path.isdir(TEX_DIR):
         err("missing %s: run Scripts/downscale_art_textures.py first" % TEX_DIR)
         return
@@ -528,9 +559,9 @@ def main():
         if not os.path.isdir(cat_dir):
             continue
         for name in sorted(os.listdir(cat_dir)):
-            if os.path.isfile(os.path.join(cat_dir, name, name + ".fbx")):
+            if os.path.isfile(os.path.join(cat_dir, name, name + ".fbx")) and (not ONLY or name in ONLY):
                 entries.append((cat, name))
-    log("Found %d meshes" % len(entries))
+    log("Found %d meshes%s" % (len(entries), " (ONLY=%s)" % ",".join(sorted(ONLY)) if ONLY else ""))
 
     all_textures = {}
     for _, name in entries:
@@ -559,7 +590,8 @@ def main():
             err("%s: %s\n%s" % (name, exc, traceback.format_exc()))
 
     try:
-        build_track_surface()
+        if not ONLY:
+            build_track_surface()
     except Exception as exc:  # noqa: BLE001
         err("track surface: %s\n%s" % (exc, traceback.format_exc()))
     for line in report:

@@ -68,6 +68,14 @@ struct FMegaJamSetPieceSlot
 
 	UPROPERTY()
 	bool bActive = false;
+
+	/** Local axis the slot spins around when bRotates (Z = yaw, the original behaviour). */
+	UPROPERTY()
+	FVector SpinAxis = FVector::ZAxisVector;
+
+	/** EMegaJamFilmScene index of the chunk that placed it: picks the per-scene art component (SetPieceSceneISMs). */
+	UPROPERTY()
+	int32 SceneIdx = 0;
 };
 
 /** Runtime state for an outer-wing 21:9 Dolly Boost Strip instance. */
@@ -199,6 +207,15 @@ public:
 	/** Per-scene obstacle art for Take B. Same rules as SceneObstacleMeshesTakeA. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
 	TArray<TObjectPtr<UStaticMesh>> SceneObstacleMeshesTakeB;
+
+	/**
+	 * Issue #87: the real proportions of each obstacle art mesh before import squashed it into a 100 cm cube, as
+	 * X = depth along the track, Y = width, Z = height (any unit; only the ratios matter). When a mesh has an entry, a
+	 * stretched obstacle box is drawn as a small grid of copies (up to MaxObstacleSkinTiles) that each stay close to
+	 * these proportions, instead of one smeared copy. Visual only: collision is still the one box.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
+	TMap<TObjectPtr<UStaticMesh>, FVector> ObstacleArtNativeSize;
 
 	/** Optional one-piece finish arch. Placed once, uniformly scaled to span the corridor, instead of the 5 stretched ApertureRingMesh parts. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Art")
@@ -359,6 +376,8 @@ protected:
 private:
 	static constexpr int32 ObstaclesPerRow = 3;
 	static constexpr int32 SetPiecesPerChunk = 4;
+	/** Most copies one obstacle skin is split into (see ObstacleArtNativeSize). */
+	static constexpr int32 MaxObstacleSkinTiles = 8;
 	static constexpr int32 PickupsPerChunk = 10;
 	static constexpr int32 LaneRailsPerChunk = 5;
 	static constexpr int32 BurstPickupPoolSize = 30;
@@ -388,6 +407,10 @@ private:
 	FLinearColor GetSceneAccentColor(EMegaJamFilmScene Scene) const;
 	void CreateArtPools(int32 ObstacleSlots);
 	void SyncObstacleSkins();
+	/** Issue #87: places the per-scene set-piece art at its real proportions (uniform scale). Used when SetPieceSceneISMs exist. */
+	void PlaceSetPieceArtForChunk(int32 BaseSetIndex, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene);
+	UStaticMesh* GetSetPieceArtMesh(EMegaJamFilmScene Scene) const;
+	void MarkSetPiecesDirty();
 	UInstancedStaticMeshComponent* CreateVisualISM(UStaticMesh* Mesh);
 	UMaterialInstanceDynamic* MakeMeshMID(UInstancedStaticMeshComponent* ISM);
 
@@ -439,6 +462,17 @@ private:
 	UPROPERTY(Transient)
 	TArray<FMegaJamDollyBoostStrip> BoostStripSlots;
 
+	/**
+	 * Issue #87: visual-only set-piece components, one per EMegaJamFilmScene (truss, skyscraper, film reel, aperture ring),
+	 * each holding every set-piece slot. Each chunk draws its own scene's art, so nothing swaps or pops at scene changes.
+	 * Empty when no set-piece art is assigned (SetPieceISM and the stretched cube layout are used instead).
+	 */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> SetPieceSceneISMs;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> SetPieceSceneMIDs;
+
 	/** Visual-only obstacle skins, one per scene (see SceneObstacleMeshesTakeA). Empty when the feature is unused. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> ObstacleSkinISMsA;
@@ -455,6 +489,9 @@ private:
 
 	/** Which skin component currently shows each obstacle instance (-1 = none yet). */
 	TArray<int8> ObstacleSkinOwnerA;
+
+	/** Skin instances per obstacle slot: MaxObstacleSkinTiles when ObstacleArtNativeSize has entries, else 1. */
+	int32 ObstacleSkinStride = 1;
 	TArray<int8> ObstacleSkinOwnerB;
 
 	bool bPoolsCreated = false;

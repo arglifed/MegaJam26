@@ -671,7 +671,8 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 			TargetSetMesh = ApertureRingMesh ? ApertureRingMesh.Get() : BlockMesh.Get();
 			break;
 		}
-		if (TargetSetMesh && SetPieceISM->GetStaticMesh() != TargetSetMesh)
+		// With per-scene set-piece art (SetPieceSceneISMs), each chunk already draws its own scene's mesh: no global swap.
+		if (TargetSetMesh && SetPieceSceneISMs.Num() == 0 && SetPieceISM->GetStaticMesh() != TargetSetMesh)
 		{
 			SetPieceISM->SetStaticMesh(TargetSetMesh);
 			if (bUseMeshMaterials)
@@ -727,7 +728,7 @@ void AMegaJamTrackGenerator::Tick(float DeltaSeconds)
 		}
 		TakeA_ObstaclesISM->MarkRenderStateDirty();
 		TakeB_ObstaclesISM->MarkRenderStateDirty();
-		SetPieceISM->MarkRenderStateDirty();
+		MarkSetPiecesDirty();
 		PickupISM->MarkRenderStateDirty();
 		PickupTakeB_ISM->MarkRenderStateDirty();
 		BoostStripISM->MarkRenderStateDirty();
@@ -839,6 +840,14 @@ void AMegaJamTrackGenerator::UpdateSceneMaterials(float DeltaSeconds)
 	{
 		SetPieceMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
 		SetPieceMID->SetVectorParameterValue(TEXT("TakeColor"), CurrentSceneColor);
+	}
+	for (UMaterialInstanceDynamic* SceneMID : SetPieceSceneMIDs)
+	{
+		if (SceneMID)
+		{
+			SceneMID->SetScalarParameterValue(TEXT("TakeIndex"), ActiveTakeVal);
+			SceneMID->SetVectorParameterValue(TEXT("TakeColor"), CurrentSceneColor);
+		}
 	}
 
 	// Dynamic Chain & Emissive Pulse for PickupISM / PickupTakeB_ISM and BoostStripISM:
@@ -992,16 +1001,18 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 		const FMegaJamSetPieceSlot& Slot = SetPieceSlots[Index];
 		if (Slot.bActive && Slot.bRotates)
 		{
+			// Spin around the slot's local axis (Z = yaw, the original behaviour).
 			FTransform AnimatedTransform = Slot.BaseTransform;
-			const FRotator SpinRot(0.0f, ScaledTrackTime * Slot.RotationSpeedDeg, 0.0f);
-			AnimatedTransform.SetRotation((Slot.BaseTransform.GetRotation().Rotator() + SpinRot).Quaternion());
-			SetPieceISM->UpdateInstanceTransform(Index, AnimatedTransform, true, false, true);
+			const FQuat Spin(Slot.SpinAxis.GetSafeNormal(1e-4f, FVector::ZAxisVector), FMath::DegreesToRadians(ScaledTrackTime * Slot.RotationSpeedDeg));
+			AnimatedTransform.SetRotation(Slot.BaseTransform.GetRotation() * Spin);
+			UInstancedStaticMeshComponent* TargetISM = SetPieceSceneISMs.IsValidIndex(Slot.SceneIdx) ? SetPieceSceneISMs[Slot.SceneIdx].Get() : SetPieceISM.Get();
+			TargetISM->UpdateInstanceTransform(Index, AnimatedTransform, true, false, true);
 			bSetPiecesDirty = true;
 		}
 	}
 	if (bSetPiecesDirty)
 	{
-		SetPieceISM->MarkRenderStateDirty();
+		MarkSetPiecesDirty();
 	}
 
 	// 2. Rotate active Film Frame pickups and check pawn proximity for collection
@@ -1186,7 +1197,7 @@ void AMegaJamTrackGenerator::RebuildTrack()
 	}
 	TakeA_ObstaclesISM->MarkRenderStateDirty();
 	TakeB_ObstaclesISM->MarkRenderStateDirty();
-	SetPieceISM->MarkRenderStateDirty();
+	MarkSetPiecesDirty();
 	PickupISM->MarkRenderStateDirty();
 	PickupTakeB_ISM->MarkRenderStateDirty();
 	BoostStripISM->MarkRenderStateDirty();
@@ -1458,6 +1469,7 @@ void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
 
 	if (bAnySkin && ObstacleSkinISMsA.Num() == 0)
 	{
+		ObstacleSkinStride = (ObstacleArtNativeSize.Num() > 0) ? MaxObstacleSkinTiles : 1;
 		auto BuildSkins = [this, ObstacleSlots, NumSkinScenes](
 			const TArray<TObjectPtr<UStaticMesh>>& Meshes, UInstancedStaticMeshComponent* BaseISM, float TakeIndex, const FLinearColor& TakeColor,
 			TArray<TObjectPtr<UInstancedStaticMeshComponent>>& OutSkins, TArray<int8>& OutOwners)
@@ -1479,7 +1491,7 @@ void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
 					// No art for this scene: same look as before (the shared take MID on the fallback mesh).
 					Skin->SetMaterial(0, BaseMaterial);
 				}
-				for (int32 Index = 0; Index < ObstacleSlots; ++Index)
+				for (int32 Index = 0; Index < ObstacleSlots * ObstacleSkinStride; ++Index)
 				{
 					Skin->AddInstance(MakeHiddenInstanceTransform(), true);
 				}
@@ -1491,6 +1503,48 @@ void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
 
 		BuildSkins(SceneObstacleMeshesTakeA, TakeA_ObstaclesISM, 0.0f, TakeAColor, ObstacleSkinISMsA, ObstacleSkinOwnerA);
 		BuildSkins(SceneObstacleMeshesTakeB, TakeB_ObstaclesISM, 1.0f, TakeBColor, ObstacleSkinISMsB, ObstacleSkinOwnerB);
+	}
+
+	// ---- Issue #87: per-scene set-piece art (visual only), one component per EMegaJamFilmScene ----
+	constexpr int32 NumFilmScenes = 4;
+	bool bAnySetPieceArt = false;
+	for (int32 SceneIdx = 0; SceneIdx < NumFilmScenes; ++SceneIdx)
+	{
+		bAnySetPieceArt |= (GetSetPieceArtMesh(static_cast<EMegaJamFilmScene>(SceneIdx)) != nullptr);
+	}
+	if (bAnySetPieceArt)
+	{
+		if (SetPieceSceneISMs.Num() == 0)
+		{
+			for (int32 SceneIdx = 0; SceneIdx < NumFilmScenes; ++SceneIdx)
+			{
+				UStaticMesh* ArtMesh = GetSetPieceArtMesh(static_cast<EMegaJamFilmScene>(SceneIdx));
+				UInstancedStaticMeshComponent* SceneISM = CreateVisualISM(ArtMesh ? ArtMesh : BlockMesh.Get());
+				SceneISM->CastShadow = true;
+				UMaterialInstanceDynamic* SceneMID = nullptr;
+				if (ArtMesh && bUseMeshMaterials)
+				{
+					SceneMID = MakeMeshMID(SceneISM);
+				}
+				else if (ObstacleMaterial)
+				{
+					SceneMID = UMaterialInstanceDynamic::Create(ObstacleMaterial, this);
+					SceneISM->SetMaterial(0, SceneMID);
+				}
+				SetPieceSceneISMs.Add(SceneISM);
+				SetPieceSceneMIDs.Add(SceneMID);
+			}
+		}
+		// One hidden instance per set-piece slot in every scene component (re-done when the pools are rebuilt).
+		for (UInstancedStaticMeshComponent* SceneISM : SetPieceSceneISMs)
+		{
+			SceneISM->ClearInstances();
+			for (int32 Index = 0; Index < SetPieceSlots.Num(); ++Index)
+			{
+				SceneISM->AddInstance(MakeHiddenInstanceTransform(), true);
+			}
+		}
+		SetPieceISM->SetVisibility(false);
 	}
 
 	// ---- Outer-corridor dressing variety ----
@@ -1515,11 +1569,47 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 		return;
 	}
 
-	auto SyncTake = [](UInstancedStaticMeshComponent* BaseISM, TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Skins, TArray<int8>& Owners)
+	const int32 TileStride = FMath::Max(1, ObstacleSkinStride);
+
+	// Issue #87: splits one stretched obstacle box into an nX x nY grid of copies, each close to the art's native
+	// proportions (ObstacleArtNativeSize), so detailed models do not smear. Without an entry: one copy, as before.
+	auto MakeTiles = [this, TileStride](UStaticMesh* SkinMesh, const FTransform& Box, TArray<FTransform, TInlineAllocator<MaxObstacleSkinTiles>>& OutTiles)
+	{
+		OutTiles.Reset();
+		const FVector* Native = SkinMesh ? ObstacleArtNativeSize.Find(SkinMesh) : nullptr;
+		const FVector Scale = Box.GetScale3D();
+		if (!Native || TileStride <= 1 || Box.GetLocation().Z < -10000.0f || Scale.Z <= KINDA_SMALL_NUMBER || Native->Z <= KINDA_SMALL_NUMBER)
+		{
+			OutTiles.Add(Box);
+			return;
+		}
+		// How many native-shaped copies fit along X (depth) and Y (width) at the box's height.
+		const double WantX = (Scale.X / Scale.Z) / FMath::Max(0.05, Native->X / Native->Z);
+		const double WantY = (Scale.Y / Scale.Z) / FMath::Max(0.05, Native->Y / Native->Z);
+		int32 NumX = FMath::Max(1, FMath::RoundToInt(WantX));
+		int32 NumY = FMath::Max(1, FMath::RoundToInt(WantY));
+		while (NumX * NumY > TileStride)
+		{
+			(NumX > NumY ? NumX : NumY) -= 1;
+		}
+		const FVector TileScale(Scale.X / NumX, Scale.Y / NumY, Scale.Z);
+		for (int32 IX = 0; IX < NumX; ++IX)
+		{
+			for (int32 IY = 0; IY < NumY; ++IY)
+			{
+				// Tile centre in the box's unscaled local space (the obstacle art is a centred 100 cm cube).
+				const FVector LocalCentre(((IX + 0.5) / NumX - 0.5) * 100.0, ((IY + 0.5) / NumY - 0.5) * 100.0, 0.0);
+				OutTiles.Add(FTransform(Box.GetRotation(), Box.TransformPosition(LocalCentre), TileScale));
+			}
+		}
+	};
+
+	auto SyncTake = [&MakeTiles, TileStride](UInstancedStaticMeshComponent* BaseISM, TArray<TObjectPtr<UInstancedStaticMeshComponent>>& Skins, TArray<int8>& Owners)
 	{
 		const int32 Count = FMath::Min(BaseISM->GetInstanceCount(), Owners.Num());
 		const int32 Stride = BaseISM->NumCustomDataFloats;
 		uint32 DirtyMask = 0;
+		TArray<FTransform, TInlineAllocator<MaxObstacleSkinTiles>> Tiles;
 		for (int32 Index = 0; Index < Count; ++Index)
 		{
 			FTransform BaseTransform;
@@ -1534,7 +1624,10 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 			const int32 PrevIdx = Owners[Index];
 			if (PrevIdx >= 0 && PrevIdx != SceneIdx)
 			{
-				Skins[PrevIdx]->UpdateInstanceTransform(Index, MakeHiddenInstanceTransform(), true, false, true);
+				for (int32 Tile = 0; Tile < TileStride; ++Tile)
+				{
+					Skins[PrevIdx]->UpdateInstanceTransform(Index * TileStride + Tile, MakeHiddenInstanceTransform(), true, false, true);
+				}
 				DirtyMask |= (1u << PrevIdx);
 			}
 			Owners[Index] = static_cast<int8>(SceneIdx);
@@ -1563,12 +1656,17 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 				}
 			}
 
-			FTransform SkinTransform;
-			Skins[SceneIdx]->GetInstanceTransform(Index, SkinTransform, true);
-			if (!SkinTransform.Equals(DesiredSkinTransform, 0.01f))
+			MakeTiles(Skins[SceneIdx]->GetStaticMesh(), DesiredSkinTransform, Tiles);
+			for (int32 Tile = 0; Tile < TileStride; ++Tile)
 			{
-				Skins[SceneIdx]->UpdateInstanceTransform(Index, DesiredSkinTransform, true, false, true);
-				DirtyMask |= (1u << SceneIdx);
+				const FTransform Wanted = Tiles.IsValidIndex(Tile) ? Tiles[Tile] : MakeHiddenInstanceTransform();
+				FTransform SkinTransform;
+				Skins[SceneIdx]->GetInstanceTransform(Index * TileStride + Tile, SkinTransform, true);
+				if (!SkinTransform.Equals(Wanted, 0.01f))
+				{
+					Skins[SceneIdx]->UpdateInstanceTransform(Index * TileStride + Tile, Wanted, true, false, true);
+					DirtyMask |= (1u << SceneIdx);
+				}
 			}
 		}
 		for (int32 SkinIdx = 0; SkinIdx < Skins.Num(); ++SkinIdx)
@@ -1785,9 +1883,19 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 						const float UniformScale = FMath::Max(0.01f, Stream.FRandRange(MinS, MaxS));
 						const float RandYaw = Stream.FRandRange(0.0f, 360.0f);
 
+						// Issue #87: the art has a centred pivot, so lift the prop until its base rests on the floor
+						// plane, and keep its whole footprint outside the corridor wall whichever way it is turned.
+						const FBox PropBox = PropConfig.PropMesh->GetBoundingBox();
+						const float RestZ = FloorTopZ - static_cast<float>(PropBox.Min.Z) * UniformScale;
+						const float HalfFootprint = static_cast<float>(FMath::Max(
+							FMath::Max(FMath::Abs(PropBox.Min.X), FMath::Abs(PropBox.Max.X)),
+							FMath::Max(FMath::Abs(PropBox.Min.Y), FMath::Abs(PropBox.Max.Y)))) * UniformScale;
+						const float MinAbsY = MEGAJAM_CORRIDOR_HALF_WIDTH + HalfFootprint + 150.0f;
+						const float SafeY = (FMath::Abs(RandY) < MinAbsY) ? (bRightMargin ? MinAbsY : -MinAbsY) : RandY;
+
 						const FTransform ScatterTransform(
 							FRotator(0.0f, RandYaw, 0.0f),
-							FVector(RandX, RandY, FloorTopZ),
+							FVector(RandX, SafeY, RestZ),
 							FVector(UniformScale));
 						ScatterISM->AddInstance(ScatterTransform, true);
 					}
@@ -2241,7 +2349,13 @@ void AMegaJamTrackGenerator::PopulateSetPiecesForChunk(
 		const int32 PoolIdx = BaseSetIndex + SubIdx;
 		SetPieceSlots[PoolIdx].bActive = false;
 		SetPieceSlots[PoolIdx].bRotates = false;
+		SetPieceSlots[PoolIdx].SpinAxis = FVector::ZAxisVector;
+		SetPieceSlots[PoolIdx].SceneIdx = static_cast<int32>(ChunkScene);
 		SetPieceISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+		for (UInstancedStaticMeshComponent* SceneISM : SetPieceSceneISMs)
+		{
+			SceneISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+		}
 	}
 
 	auto PlaceSetPiece = [this, BaseSetIndex](int32 SubIdx, const FTransform& Transform, bool bRotates = false, float RotSpeed = 45.0f)
@@ -2254,7 +2368,14 @@ void AMegaJamTrackGenerator::PopulateSetPiecesForChunk(
 		SetPieceISM->UpdateInstanceTransform(PoolIdx, Transform, true, false, true);
 	};
 
+	// Exactly one draw from the shared stream either way, so the pickup / obstacle layouts that follow are unchanged.
 	const float Variation = Stream.FRandRange(0.85f, 1.25f);
+
+	if (SetPieceSceneISMs.Num() > 0)
+	{
+		PlaceSetPieceArtForChunk(BaseSetIndex, ChunkIndex, ChunkStartX, ChunkCenterX, ChunkScene);
+		return;
+	}
 
 	switch (ChunkScene)
 	{
@@ -2286,6 +2407,114 @@ void AMegaJamTrackGenerator::PopulateSetPiecesForChunk(
 		PlaceSetPiece(2, FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, 0.0f, 940.0f), FVector(2.0f, 19.5f, 1.4f)));
 		PlaceSetPiece(3, FTransform(FRotator(45.0f, 0.0f, 0.0f), FVector(ChunkStartX + ChunkLength * 0.9f, 0.0f, 900.0f), FVector(1.5f, 18.0f, 1.5f)));
 		break;
+	}
+}
+
+UStaticMesh* AMegaJamTrackGenerator::GetSetPieceArtMesh(EMegaJamFilmScene Scene) const
+{
+	switch (Scene)
+	{
+	case EMegaJamFilmScene::Soundstage:    return SoundstageTrussMesh.Get();
+	case EMegaJamFilmScene::OverpassNight: return SkyscraperMesh.Get();
+	case EMegaJamFilmScene::CuttingRoom:   return FilmReelMesh.Get();
+	case EMegaJamFilmScene::FinalCut:      return ApertureRingMesh.Get();
+	default:                               return nullptr;
+	}
+}
+
+void AMegaJamTrackGenerator::MarkSetPiecesDirty()
+{
+	SetPieceISM->MarkRenderStateDirty();
+	for (UInstancedStaticMeshComponent* SceneISM : SetPieceSceneISMs)
+	{
+		SceneISM->MarkRenderStateDirty();
+	}
+}
+
+void AMegaJamTrackGenerator::PlaceSetPieceArtForChunk(int32 BaseSetIndex, int32 ChunkIndex, float ChunkStartX, float ChunkCenterX, EMegaJamFilmScene ChunkScene)
+{
+	// Issue #87: the cube layout stretched each model up to 32x into rails and columns. Here every model keeps its real
+	// proportions (uniform scale) and gets a layout that suits its shape. Visual only: no collision, nothing in the lanes.
+	const int32 SceneIdx = static_cast<int32>(ChunkScene);
+	if (!SetPieceSceneISMs.IsValidIndex(SceneIdx) || !GetSetPieceArtMesh(ChunkScene))
+	{
+		return;
+	}
+	UInstancedStaticMeshComponent* SceneISM = SetPieceSceneISMs[SceneIdx];
+	const FBox MeshBox = GetSetPieceArtMesh(ChunkScene)->GetBoundingBox();
+
+	// Own stream: the shared one feeds the pickup / obstacle layout and must not be consumed here.
+	FRandomStream ArtStream(Seed * 31 + ChunkIndex * 104729);
+
+	auto Place = [&](int32 SubIdx, const FRotator& Rotation, const FVector& Location, float UniformScale, float SpinDegPerSec = 0.0f, const FVector& SpinAxis = FVector::ZAxisVector)
+	{
+		const int32 PoolIdx = BaseSetIndex + SubIdx;
+		const FTransform Transform(Rotation, Location, FVector(UniformScale));
+		FMegaJamSetPieceSlot& SlotData = SetPieceSlots[PoolIdx];
+		SlotData.BaseTransform = Transform;
+		SlotData.bRotates = !FMath::IsNearlyZero(SpinDegPerSec);
+		SlotData.RotationSpeedDeg = SpinDegPerSec;
+		SlotData.SpinAxis = SpinAxis;
+		SlotData.SceneIdx = SceneIdx;
+		SlotData.bActive = true;
+		SceneISM->UpdateInstanceTransform(PoolIdx, Transform, true, false, true);
+	};
+	// Z that rests the model's base on the floor top (Z = 0) at this scale.
+	auto RestZ = [&MeshBox](float UniformScale) { return -static_cast<float>(MeshBox.Min.Z) * UniformScale; };
+	const float HalfWidthX = static_cast<float>(FMath::Max(FMath::Abs(MeshBox.Min.X), FMath::Abs(MeshBox.Max.X)));
+	const float HalfWidthY = static_cast<float>(FMath::Max(FMath::Abs(MeshBox.Min.Y), FMath::Abs(MeshBox.Max.Y)));
+	constexpr float WallClearance = 250.0f;
+
+	switch (ChunkScene)
+	{
+	case EMegaJamFilmScene::Soundstage:
+	{
+		// The lighting truss is a goal-post gantry (beam on two legs). Turned 90 degrees it spans the track, legs
+		// outside the walls; one every other chunk (64 m) keeps the stage open.
+		if (ChunkIndex % 2 == 0)
+		{
+			const float Scale = (MEGAJAM_CORRIDOR_HALF_WIDTH + WallClearance) / FMath::Max(1.0f, HalfWidthX);
+			Place(0, FRotator(0.0f, 90.0f, 0.0f), FVector(ChunkCenterX, 0.0f, RestZ(Scale)), Scale);
+		}
+		break;
+	}
+	case EMegaJamFilmScene::OverpassNight:
+	{
+		// A skyline: towers 22-40 m tall in two rows well outside the walls, turned at random.
+		const float RowOffsets[4] = { 0.15f, 0.65f, 0.40f, 0.90f };
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			const float Scale = ArtStream.FRandRange(22.0f, 40.0f);
+			const float Side = (Index % 2 == 0) ? -1.0f : 1.0f;
+			const float Diagonal = FMath::Sqrt(HalfWidthX * HalfWidthX + HalfWidthY * HalfWidthY) * Scale;
+			const float Y = Side * (MEGAJAM_CORRIDOR_HALF_WIDTH + 1600.0f + Diagonal + ArtStream.FRandRange(0.0f, 1800.0f));
+			Place(Index, FRotator(0.0f, ArtStream.FRandRange(0.0f, 90.0f), 0.0f), FVector(ChunkStartX + ChunkLength * RowOffsets[Index], Y, RestZ(Scale)), Scale);
+		}
+		break;
+	}
+	case EMegaJamFilmScene::CuttingRoom:
+	{
+		// Giant 12 m film reels beside the track, turned to face down it and spinning on their axles (local Y).
+		// One per side per chunk, staggered (four per chunk read as a solid wall of reels).
+		constexpr float Scale = 12.0f;
+		const float Y = MEGAJAM_CORRIDOR_HALF_WIDTH + WallClearance + HalfWidthX * Scale;
+		Place(0, FRotator(0.0f, 90.0f, 0.0f), FVector(ChunkStartX + ChunkLength * 0.25f, -Y, RestZ(Scale)), Scale, 50.0f, FVector::YAxisVector);
+		Place(1, FRotator(0.0f, 90.0f, 0.0f), FVector(ChunkStartX + ChunkLength * 0.75f, Y, RestZ(Scale)), Scale, -65.0f, FVector::YAxisVector);
+		break;
+	}
+	case EMegaJamFilmScene::FinalCut:
+	default:
+	{
+		// A lens-barrel tunnel: one huge aperture ring every other chunk, turned to face down the track so the player
+		// passes through its opening (about half its diameter), slowly turning. The opening clears the lanes and walls.
+		if (ChunkIndex % 2 == 0)
+		{
+			constexpr float Scale = 52.0f;   // opening radius about 1,300 cm
+			constexpr float CentreZ = 600.0f;
+			Place(0, FRotator(0.0f, 90.0f, 0.0f), FVector(ChunkCenterX, 0.0f, CentreZ), Scale, 12.0f, FVector::YAxisVector);
+		}
+		break;
+	}
 	}
 }
 
