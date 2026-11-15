@@ -8,7 +8,7 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
   No emails, secrets or raw transcript text.
 -->
 
-**Team Four Swords Pictures:** Anthony (gameplay C++) and Hendrixsan (art and audio).
+**Team Four Swords Pictures:** arglifed (gameplay C++) and Hendrixsan (art and audio).
 **Built:** Nov 12–15, 2026, in Unreal Engine 5.8, for the Epic AI MegaJam.
 
 <!-- HERO IMAGE: Docs/devlog_images/playtest_captures/orb_review_povs.png (all five scenes, three camera views each).
@@ -28,9 +28,9 @@ Two people built it in four days. One worked in C++ and one on art and audio, ea
 ## How we worked
 
 ### Two lanes, one repo
-We split the work on day one, and the reason was hardware. Hendrixsan's machine is a gaming laptop almost ten years old; Anthony's is a desktop tower with modern components. In Unreal, iteration speed is how fast you can compile, load the editor and play-test, and Anthony could do all three much faster. So Anthony took the core gameplay, the work that needs the most build-and-play loops. Hendrixsan took art and sound and supported the build in every other way: generating assets, writing specs and contracts, running automated play-test captures, and doing the submission paperwork.
+We split the work on day one, and the reason was hardware. Hendrixsan's machine is a gaming laptop almost ten years old; arglifed's is a desktop tower with modern components. In Unreal, iteration speed is how fast you can compile, load the editor and play-test, and arglifed could do all three much faster. So arglifed took the core gameplay, the work that needs the most build-and-play loops. Hendrixsan took art and sound and supported the build in every other way: generating assets, writing specs and contracts, running automated play-test captures, and doing the submission paperwork.
 
-- **Gameplay lane (Anthony):** all game logic in modular C++. That covers the flow pawn, game mode, the track generator, the HUD drawn in C++ (`UMegaJamCinemaHUD`) and the MetaSound bridge. Blueprints stay thin: tuning values and asset references only.
+- **Gameplay lane (arglifed):** all game logic in modular C++. That covers the flow pawn, game mode, the track generator, the HUD drawn in C++ (`UMegaJamCinemaHUD`) and the MetaSound bridge. Blueprints stay thin: tuning values and asset references only.
 - **Art and audio lane (Hendrixsan):** Meshy-generated meshes, materials and textures, plus music and SFX wired through MetaSounds. Kept in `Content/MegaJam26/Art` and `/Audio`.
 - **The rule that made it work:** `AGENTS.md` told every AI agent never to overwrite, regenerate or rename a shared `.uasset`/`.umap` unless that file is named in the prompt. Binary assets can't be merged, so the two lanes never collided. Changes moved between lanes as C++ hooks and written contracts, for example the #55 art pipeline contract: genre table, seat offsets, obstacle skins.
 - **Issue-driven:** every task was a GitHub issue, every change a branch and PR named after it. The issue text was the spec the AI agents worked from.
@@ -40,13 +40,13 @@ We met in person on the first night to brainstorm the game. Ideas went on the ta
 
 ### Handing work across the lanes
 The hand-offs were smooth and easy, mostly because we were both using AI. Each of us could write a precise issue for the other side and have our own agent read the other's issue as a spec. A few patterns kept repeating:
-- **Gameplay asks for art.** Anthony opened "Art Integration" issues listing which meshes, VFX and UI the C++ side expected and where it would look for them (#40, #41, #46, #47). Hendrixsan answered with a written **art pipeline contract** (#55): the genre table, seat offsets for each vehicle, obstacle skins and canonical dimensions. Both agents then built against that contract.
-- **Art finds engine bugs.** Hendrixsan's play-test captures turned up problems in the C++ side: corridor walls tall enough to hide the studio dressing (#88), the beat clock drifting away from the MetaSound score (#74), matrix ensures still firing in PIE (#123). These were filed as issues for Anthony, with screenshots and repro steps.
-- **Gameplay builds for art.** When some generated props had nowhere to go, Anthony built a prop scatter system for each scene to place them (#90 for #87). When the orb got its new glow (#108), Anthony added a dynamic point light to match (#112) in parallel.
+- **Gameplay asks for art.** arglifed opened "Art Integration" issues listing which meshes, VFX and UI the C++ side expected and where it would look for them (#40, #41, #46, #47). Hendrixsan answered with a written **art pipeline contract** (#55): the genre table, seat offsets for each vehicle, obstacle skins and canonical dimensions. Both agents then built against that contract.
+- **Art finds engine bugs.** Hendrixsan's play-test captures turned up problems in the C++ side: corridor walls tall enough to hide the studio dressing (#88), the beat clock drifting away from the MetaSound score (#74), matrix ensures still firing in PIE (#123). These were filed as issues for arglifed, with screenshots and repro steps.
+- **Gameplay builds for art.** When some generated props had nowhere to go, arglifed built a prop scatter system for each scene to place them (#90 for #87). When the orb got its new glow (#108), arglifed added a dynamic point light to match (#112) in parallel.
 - **Holding a merge.** Big physics changes waited for the art merge (#80, "Held for Art Merge"). Neither lane ever had to resolve a conflict in a binary asset.
 
 ### The AI toolchain
-- **Anthony:** Gemini 4 Argon in the IDE for the C++ lane, run in plan mode first as `AGENTS.md` requires. <!-- TODO: Anthony to confirm tools and models -->
+- **arglifed:** Gemini 4 Argon in the IDE for the C++ lane, run in plan mode first as `AGENTS.md` requires. <!-- TODO: arglifed to confirm tools and models -->
 - **Hendrixsan:** Claude Code in a PowerShell terminal and in Unreal's built-in terminal for the art and audio lane:
   - import scripts and material wiring
   - Meshy generation through its MCP server
@@ -90,28 +90,71 @@ The hand-offs were smooth and easy, mostly because we were both using AI. Each o
 
 ## Case studies
 
-### 1. From a text prompt to a mesh in the game: the Meshy vehicle pipeline
-<!-- TODO: picture: before/after contact sheet (Docs/devlog_images/art_review_sheets/ or mesh_before_after_119/) -->
-- Every prompt was written to give game-ready props. Each one ended with "stylized low-poly, clean flat shading, bold simple shapes, game-ready, single object, centered, no background, no text".
-- Vehicles had to be **riderless**, because the player is the "star" and the orb rides on top. Getting Meshy to leave off the rider took several rewrites ("no rider, no jockey, no human, no figure on top").
-- Smart-topology meshes at a set triangle budget: 8k for vehicles, 3k for obstacles, 6k for props. Textures were downscaled from 2K to 1K on import by a script.
-- The Hang Glider's wing kept coming out with holes. The fix was a two-step redo: text → 2D design image → image-to-3D.
-<!-- TODO: a "what we learned" line -->
+### 1. From a text prompt to a mesh in the game: the Meshy pipeline
+<!-- PICTURE: Docs/devlog_images/art_review_sheets/meshes_textures/glider_old_views.png next to glider_new_views.png (the Hang Glider redo) -->
+All 31 meshes in the game came from Meshy AI. Thirty were generated by Claude Code through Meshy's API (MCP server); the Motorcycle was made by hand on a free account (text → 2D image → 3D). The pipeline settled into these steps:
+
+1. **Write a prompt for a game-ready prop.** Every prompt ended with the same style tail: *"stylized low-poly, clean flat shading, bold simple shapes, game-ready, single object, centered, no background, no text or labels"*. That kept 31 assets made over two days looking like one set.
+2. **Generate with a triangle budget.** Meshy's smart-topology model gave clean low-poly meshes at a fixed budget: 8,000 triangles for vehicles, 3,000 for obstacles, 6,000 for props and set pieces. Textures came as 2K PBR maps (base colour, normal, metallic, roughness).
+3. **Import with a script, never by hand.** A Python script imports every mesh and builds its material instance. A second script scales textures down from 2K to 1K. It can rebuild any one asset (`ONLY=<names>`), so a fix never means clicking through the editor again.
+4. **Check in game, then fix.** Each batch was checked with the automated play-test captures (case study 2).
+
+What fought back:
+- **Riderless vehicles.** The player is a glowing orb riding each vehicle, so the vehicles had to be empty. Meshy kept giving the horse a rider. The prompt grew from "riderless saddled horse" to *"a lone unmounted horse with nobody on it … no rider, no jockey, no human, no figure on top"*.
+- **The Hang Glider.** After several text-to-3D attempts, the one in the game was a 1.7 cm-thick flat cut-out. The fix was a two-step route: generate a 2D design image first, then turn that image into 3D. The wing came out with real thickness and camber.
+- **Shiny obstacles read as the wrong colour.** The Cyber Barrier looked cream and the Monolith beige. Low Meshy roughness was mirroring the sky and the cream backdrop flats. A `RoughnessMin` clamp on the shared material fixed both without touching the textures.
+- **Scale and facing.** The Spy Car was 4.5 m long and facing backwards, blocking the road; the first Hang Glider was 9 m wide. Each was fixed in the import script, so the next rebuild kept the fix.
+
+**Lesson:** Meshy is excellent at *what* an object is and unreliable on *how it's built*. Nail the style with a fixed prompt tail, give it a triangle budget, and plan for a scripted import and a visual check rather than trusting the first result.
 
 ### 2. Letting the AI play-test the game
-<!-- TODO: picture: one of the automated capture sheets (Docs/devlog_images/playtest_captures/sheet_s1..s5.png, arch_sheet.png) -->
-- Claude drove the full Unreal editor from Python. It started PIE, began a run, turned on God Mode, skipped scenes with the same call as F7, then slowed time and took high-res screenshots at set distances along the track.
-- This let art changes be checked in all five scenes and several camera views without anyone sitting at the keyboard. It's how placement bugs and material problems were found and fixed (#87, #108).
-<!-- TODO: one concrete bug this caught -->
+<!-- PICTURE: Docs/devlog_images/playtest_captures/sheet_s1..s5.png (one per scene) or arch_sheet.png (the finish arch) -->
+On a laptop almost ten years old, play-testing every art change by hand across a 9 km track and five scenes would have eaten the jam. Instead, Claude Code play-tested the game itself:
+
+- It launches the full Unreal editor on `L_FlowTest` with a Python script, starts Play-In-Editor and begins a run.
+- It turns on God Mode (the pawn doesn't steer itself and would keep crashing). Then it skips scenes with the same call as the F7 debug key.
+- It reads the run distance, slows time and takes high-res screenshots at set distances. For close-ups it puts its own camera in the level.
+- It closes the editor and stitches the shots into contact sheets: every scene, every camera view, side by side.
+
+With God Mode on, getting from the start of scene 5 to the finish arch at 8,940 m took about 40 seconds instead of 3 minutes. One full capture pass took a few minutes and needed nobody at the keyboard.
+
+**What it caught:**
+- The cream Cyber Barrier from case study 1. The script froze time (time dilation 0.0001), then changed one material parameter after another on the live obstacles between screenshots, and finally hid the mesh to prove which object was which. That traced the colour to roughness and reflections, not the texture.
+- Studio dressing poking through the walls into the play area.
+- Corridor walls tall enough to hide all the set dressing (#88).
+- After the #119 mesh fix, old-vs-new captures confirmed the rebuilt meshes looked identical.
+
+**Gotchas we hit along the way:**
+- Editor asset loading fails during play.
+- Some properties can only be set on the Blueprint's defaults before play starts.
+- Python can't spawn actors mid-play, so the camera goes in before play starts.
+- High-res shots sometimes arrive one frame late.
+- Two editors don't fit in 16 GB of RAM, so the user's own editor has to be closed first.
 
 ### 3. The movie magic orb (#108)
-<!-- TODO: picture: orb on each vehicle (Docs/devlog_images/playtest_captures/orb_review_seats.png, orb_shots/) -->
-- <!-- TODO: what the orb is, how its mesh and glow material were made, and how the seat offsets were fitted per vehicle using the automated captures -->
+<!-- PICTURE: Docs/devlog_images/playtest_captures/orb_review_seats.png (the orb on every vehicle) -->
+The player character is the orb: the star of the film, riding whatever vehicle the current genre hands it. Until the last evening it was the engine's default checker sphere.
+
+- **Built from code, not generated.** `SM_MovieMagicOrb` is a procedural mesh made by a Python script, so no Meshy credits were spent. It has three parts:
+  - a glowing core
+  - two crossing film-strip belts with frames running round them in opposite directions
+  - six twinkling glints
+
+  It is 100 cm across with a centred pivot. The pawn's existing 0.55 scale lands it at 55 cm, inside the 35 cm-radius collision sphere, with no C++ change.
+- **Driven by gameplay through the existing contract.** The material reads the colour values the pawn already writes every frame: chain tint, flow, burst flash and beat pulse. So the orb pulses on the beat and changes colour with your combo, with no new code. The three parts are told apart by texture coordinate, so one material drives all of them.
+- **Seat offsets fitted from the meshes.** Where the orb sits on each vehicle was first fitted from each mesh's top-surface profile, then checked in automated captures from every camera. Examples:
+  - Motorcycle: in the saddle at (-42, 0, 72) cm
+  - Horse: on the saddle at (-15, 0, 181)
+  - Spy Car: in the cockpit, showing over the doors
+  - Snowboard: on the deck with the board still readable under it
+  - Hang Glider: inside the A-frame
+- **Cross-lane in parallel.** While the orb was being built, arglifed added a dynamic point light that follows it (#112). The art PR only hooked the orb up to the pawn Blueprint in a time slot agreed with arglifed, so nothing was overwritten.
 
 ## What went wrong (and how we fixed it)
 - **NaN cascade (Sat).** Zero-length vectors, zero-scale instance transforms and bad camera matrices set off engine ensures and render glitches. We fixed them in a run of PRs (#95–#103) and then made safe transforms the rule (#123/#124).
 - **Beat sync drift.** The audio beat clock fell out of step with the MetaSound score after F7 warps and pitch changes. Fixed in #75 and #77.
 - **Riderless vehicles.** Meshy kept adding riders, as described in case study 1.
+- **NaN mesh bounds (#119).** Three meshes logged "NaN in Bounds" on every load. The import script used Unreal's fast mesh build, which in UE 5.8 writes the render data to the derived-data cache *before* the bounds are set, so garbage got cached. Re-importing didn't help, because the cache key comes from the mesh content. The fix was a full build plus a 0.1 mm offset to force a fresh cache key. A vertex-by-vertex check confirmed the meshes were otherwise identical (#122).
 <!-- TODO: anything else: build hangs (-NoUBA), RAM limits on a 16 GB PC, LFS quota -->
 
 ## By the numbers
@@ -125,7 +168,7 @@ _Generated 2026-11-15 14:29 Eastern Standard Time by `Scripts/devlog_stats.py` f
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | Hendrixsan | Claude Code (PowerShell) | 16 | 160 | 1,034 | 1,301 | 2,279 | 875,601 | 5,067,301 | 193,534,061 | claude-opus-5-5 (815), claude-fable-5-2 (219) |
 | Hendrixsan | Claude Code (UE Terminal) | 2 | 9 | 29 | 27 | 62 | 21,538 | 57,755 | 2,091,207 | claude-opus-5-5 (29) |
-| Anthony | Gemini 4 Argon (IDE integration) | TODO | TODO | - | - | TODO | TODO | - | - | TODO |
+| arglifed | Gemini 4 Argon (IDE integration) | TODO | TODO | - | - | TODO | TODO | - | - | TODO |
 
 _Cache read is the context re-sent to the model on each turn and billed at a discount. It is reported separately so it doesn't inflate the other numbers. "Model turns" counts unique assistant messages._
 
