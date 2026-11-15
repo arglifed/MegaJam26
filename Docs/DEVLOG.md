@@ -11,7 +11,7 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
 **Team Four Swords Pictures:** Anthony (gameplay C++) and Hendrixsan (art and audio).
 **Built:** Nov 12–15, 2026, in Unreal Engine 5.8, for the Epic AI MegaJam.
 
-<!-- TODO: one-paragraph pitch, plus a hero screenshot or GIF (capture fresh, or pick from %LOCALAPPDATA%/Temp/claude87) -->
+<!-- TODO: one-paragraph pitch, plus a hero screenshot or GIF (capture fresh, or pick from Docs/devlog_images/) -->
 *Director's Cut* is a high-speed, rhythm-infused arcade racer. You play the lead in a blockbuster that smash-cuts across five movie genres on one continuous, procedurally generated 9,000 m track. Each genre has its own vehicle, BPM, aspect ratio and special move.
 
 ## How we worked
@@ -64,7 +64,7 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
 ## Case studies
 
 ### 1. From a text prompt to a mesh in the game: the Meshy vehicle pipeline
-<!-- TODO: picture: before/after contact sheet (claude87/sheet_s1..s5.png) -->
+<!-- TODO: picture: before/after contact sheet (Docs/devlog_images/art_review_sheets/ or mesh_before_after_119/) -->
 - Every prompt was written to give game-ready props. Each one ended with "stylized low-poly, clean flat shading, bold simple shapes, game-ready, single object, centered, no background, no text".
 - Vehicles had to be **riderless**, because the player is the "star" and the orb rides on top. Getting Meshy to leave off the rider took several rewrites ("no rider, no jockey, no human, no figure on top").
 - Smart-topology meshes at a set triangle budget: 8k for vehicles, 3k for obstacles, 6k for props. Textures were downscaled from 2K to 1K on import by a script.
@@ -72,13 +72,13 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
 <!-- TODO: a "what we learned" line -->
 
 ### 2. Letting the AI play-test the game
-<!-- TODO: picture: one of the automated capture sheets (claude87/orb_review_povs.png or shots/arch_*.png) -->
+<!-- TODO: picture: one of the automated capture sheets (Docs/devlog_images/playtest_captures/sheet_s1..s5.png, arch_sheet.png) -->
 - Claude drove the full Unreal editor from Python. It started PIE, began a run, turned on God Mode, skipped scenes with the same call as F7, then slowed time and took high-res screenshots at set distances along the track.
 - This let art changes be checked in all five scenes and several camera views without anyone sitting at the keyboard. It's how placement bugs and material problems were found and fixed (#87, #108).
 <!-- TODO: one concrete bug this caught -->
 
 ### 3. The movie magic orb (#108)
-<!-- TODO: picture: orb on each vehicle (claude87/orb_review_seats.png) -->
+<!-- TODO: picture: orb on each vehicle (Docs/devlog_images/playtest_captures/orb_review_seats.png, orb_shots/) -->
 - <!-- TODO: what the orb is, how its mesh and glow material were made, and how the seat offsets were fitted per vehicle using the automated captures -->
 
 ## What went wrong (and how we fixed it)

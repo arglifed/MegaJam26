@@ -15,3 +15,6 @@ UpgradeLog.htm
 
 # Raw asset source files (DAW projects, master .wavs, source .blend/.fbx)
 RawAssets/
+
+# Devlog images (#121): local only, uploaded to itch directly (PNG is LFS-tracked)
+Docs/devlog_images/
