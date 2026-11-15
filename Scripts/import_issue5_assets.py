@@ -15,6 +15,7 @@ instead of 5): the default worker count exhausted the page file on the first run
 Search the log for "[ArtImport]". Every asset is saved as soon as it is created, and a re-run SKIPS assets that already
 exist (so a crashed run resumes). To rebuild from scratch, delete /Game/MegaJam26/Art (or pass FORCE=1 in the env);
 FORCE_MESHES=1 re-imports only the meshes and their material instances.
+ONLY=HangGlider (comma-separated raw names) re-imports just those models with their textures and instances.
 Meshes are rebuilt from their scaled mesh description, so shading comes out faceted (flat), matching the art brief.
 
 Source layout:  RawAssets/Art/<Category>/<Name>/<Name>.fbx  (+ <Name>_<map>.png, 1K copies in RawAssets/Art/.import_1k)
@@ -59,7 +60,9 @@ VEHICLE_BASIS = {
     "Horse": lambda x, y, z: (y, -x, z),         # head was at +Y: quarter turn
     "SpyCar": lambda x, y, z: (-x, -y, z),       # play-test showed the grille at -X: half turn
     "Snowboard": lambda x, y, z: (x, y, z),      # symmetric
-    "HangGlider": lambda x, y, z: (z, x, y),     # flat wing was standing upright: lay it down, nose to +X
+    # Regenerated 2026-11-14 (#87) as a real 3D delta wing: span along Y, nose at -X after import, so a half turn.
+    # (The old flat cutout, kept in RawAssets/Art/Vehicles/HangGlider/_old_flat_cutout, needed (z, x, y).)
+    "HangGlider": lambda x, y, z: (-x, -y, z),
     # Pickups are drawn pitched 90 degrees and squashed in Z (they were flat cylinders), so the frame's face goes in
     # the local XY plane with its long side along Y; POST_SCALE thickens it so it survives the squash.
     "Pickup_FilmFrame": lambda x, y, z: (z, x, y),
@@ -82,10 +85,14 @@ sme = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
 errors = []
 report = []
 FORCE = os.environ.get("FORCE") == "1"
+# ONLY=HangGlider,Horse re-imports just those raw names (mesh, textures and instance), whatever exists, and skips the
+# rest, so one regenerated model does not re-save every other asset.
+ONLY = {n.strip() for n in os.environ.get("ONLY", "").split(",") if n.strip()}
 
 
 def exists(path):
-    return (not FORCE) and eal.does_asset_exist(path)
+    # With ONLY, main() only visits the named entries, and those are always re-imported.
+    return (not FORCE) and (not ONLY) and eal.does_asset_exist(path)
 
 
 def save(asset):
@@ -552,9 +559,9 @@ def main():
         if not os.path.isdir(cat_dir):
             continue
         for name in sorted(os.listdir(cat_dir)):
-            if os.path.isfile(os.path.join(cat_dir, name, name + ".fbx")):
+            if os.path.isfile(os.path.join(cat_dir, name, name + ".fbx")) and (not ONLY or name in ONLY):
                 entries.append((cat, name))
-    log("Found %d meshes" % len(entries))
+    log("Found %d meshes%s" % (len(entries), " (ONLY=%s)" % ",".join(sorted(ONLY)) if ONLY else ""))
 
     all_textures = {}
     for _, name in entries:
@@ -583,7 +590,8 @@ def main():
             err("%s: %s\n%s" % (name, exc, traceback.format_exc()))
 
     try:
-        build_track_surface()
+        if not ONLY:
+            build_track_surface()
     except Exception as exc:  # noqa: BLE001
         err("track surface: %s\n%s" % (exc, traceback.format_exc()))
     for line in report:
