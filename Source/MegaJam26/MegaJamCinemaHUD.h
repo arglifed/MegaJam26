@@ -142,7 +142,7 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UProgressBar> ActProgressBar;
 
-	// ---- Bottom-Center Film Meter & 128 BPM Beat Indicator ----
+	// ---- Bottom-Center Film Meter & Dynamic BPM Beat Indicator ----
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> FilmMeterBorder;
 

@@ -55,6 +55,7 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PreRegisterAllComponents() override;
 	virtual void PostInitializeComponents() override;
 
 	// ---- Components ----
@@ -151,7 +152,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
 	TMap<EMegaJamSceneGenre, FSceneAudioConfig> SceneAudioConfigs;
 
-	/** Per-scene tempo overrides (BPM). Defaults to 128.0f for any genre not explicitly customized. */
+	/** Per-scene tempo overrides (BPM). Defaults to 120.0f for any genre not explicitly customized. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Audio")
 	TMap<EMegaJamSceneGenre, float> SceneBPMs;
 

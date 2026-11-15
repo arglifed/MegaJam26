@@ -7,10 +7,14 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/Level.h"
 #include "Engine/PointLight.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -19,10 +23,156 @@
 
 namespace
 {
-	/** Parking spot for unused instances. Far below the floor with a valid non-zero invertible scale so FMatrix::InverseFast never produces NaNs. */
+	FVector SanitizeScale3D(const FVector& InScale)
+	{
+		if (InScale.ContainsNaN())
+		{
+			return FVector::OneVector;
+		}
+		auto SafeAxis = [](double Val) -> double
+		{
+			if (!FMath::IsFinite(Val) || FMath::Abs(Val) < 0.01)
+			{
+				return (Val < 0.0) ? -0.01 : 0.01;
+			}
+			return Val;
+		};
+		return FVector(SafeAxis(InScale.X), SafeAxis(InScale.Y), SafeAxis(InScale.Z));
+	}
+
+	/** Parking spot for unused instances. Far below the floor with FVector::OneVector scale so TMatrix::InverseFast never produces NaNs. */
 	FTransform MakeHiddenInstanceTransform()
 	{
-		return FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, -10000.0), FVector(0.05, 0.05, 0.05));
+		return FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, -50000.0), FVector::OneVector);
+	}
+
+	FTransform SanitizeInstanceTransform(const FTransform& InTransform)
+	{
+		if (!InTransform.IsValid() || InTransform.ContainsNaN())
+		{
+			return MakeHiddenInstanceTransform();
+		}
+		FTransform Safe = InTransform;
+		Safe.SetScale3D(SanitizeScale3D(Safe.GetScale3D()));
+		Safe.NormalizeRotation();
+		return Safe;
+	}
+
+	int32 SafeAddInstance(UInstancedStaticMeshComponent* ISM, const FTransform& InTransform, bool bWorldSpace = true)
+	{
+		return ISM ? ISM->AddInstance(SanitizeInstanceTransform(InTransform), bWorldSpace) : INDEX_NONE;
+	}
+
+	bool SafeUpdateInstanceTransform(
+		UInstancedStaticMeshComponent* ISM,
+		int32 InstanceIndex,
+		const FTransform& InTransform,
+		bool bWorldSpace = true,
+		bool bMarkRenderStateDirty = false,
+		bool bTeleport = true)
+	{
+		return ISM ? ISM->UpdateInstanceTransform(InstanceIndex, SanitizeInstanceTransform(InTransform), bWorldSpace, bMarkRenderStateDirty, bTeleport) : false;
+	}
+
+	void SanitizeActorAndWorldComponents(AActor* SelfActor, bool bDisableAndHideLegacyLevelGeometry)
+	{
+		if (!SelfActor)
+		{
+			return;
+		}
+
+		auto SanitizeSingleActor = [](AActor* TargetActor)
+		{
+			if (!IsValid(TargetActor))
+			{
+				return;
+			}
+
+			TInlineComponentArray<USceneComponent*> SceneComps(TargetActor);
+			for (USceneComponent* Comp : SceneComps)
+			{
+				if (!Comp)
+				{
+					continue;
+				}
+
+				const FVector RelScale = Comp->GetRelativeScale3D();
+				if (RelScale.ContainsNaN() || FMath::Abs(RelScale.X) < 0.01 || FMath::Abs(RelScale.Y) < 0.01 || FMath::Abs(RelScale.Z) < 0.01)
+				{
+					Comp->SetRelativeScale3D(SanitizeScale3D(RelScale));
+				}
+				if (Comp->GetRelativeLocation().ContainsNaN())
+				{
+					Comp->SetRelativeLocation(FVector::ZeroVector);
+				}
+				if (Comp->GetRelativeRotation().ContainsNaN())
+				{
+					Comp->SetRelativeRotation(FRotator::ZeroRotator);
+				}
+
+				if (UInstancedStaticMeshComponent* ISM = Cast<UInstancedStaticMeshComponent>(Comp))
+				{
+					const FMatrix SafeHiddenMatrix = MakeHiddenInstanceTransform().ToMatrixWithScale();
+					for (FInstancedStaticMeshInstanceData& InstData : ISM->PerInstanceSMData)
+					{
+						if (InstData.Transform.ContainsNaN() || FMath::Abs(InstData.Transform.Determinant()) < 1e-4f)
+						{
+							InstData.Transform = SafeHiddenMatrix;
+						}
+					}
+				}
+			}
+		};
+
+		SanitizeSingleActor(SelfActor);
+
+		UWorld* World = SelfActor->GetWorld();
+		if (!World)
+		{
+			return;
+		}
+
+		if (World->PersistentLevel)
+		{
+			for (AActor* LevelActor : World->PersistentLevel->Actors)
+			{
+				SanitizeSingleActor(LevelActor);
+			}
+		}
+
+		if (bDisableAndHideLegacyLevelGeometry)
+		{
+			for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+			{
+				AStaticMeshActor* LegacyMeshActor = *It;
+				if (!IsValid(LegacyMeshActor))
+				{
+					continue;
+				}
+
+				// Disable blocking collision on all pre-placed StaticMeshActors in L_FlowTest so the grounded pawn never snags at 0m-190m
+				LegacyMeshActor->SetActorEnableCollision(false);
+				if (UStaticMeshComponent* MeshComp = LegacyMeshActor->GetStaticMeshComponent())
+				{
+					MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					MeshComp->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+				}
+
+				const FString ActorName = LegacyMeshActor->GetName();
+				const FVector Loc = LegacyMeshActor->GetActorLocation();
+				const bool bIsLegacyTrackActor =
+					ActorName.Contains(TEXT("Obstacle")) ||
+					ActorName.Contains(TEXT("Floor")) ||
+					ActorName.Contains(TEXT("Wall")) ||
+					ActorName.Contains(TEXT("Ceiling")) ||
+					(FMath::Abs(Loc.Y) <= 1250.0 && Loc.X >= -5000.0 && Loc.X <= 25000.0);
+
+				if (bIsLegacyTrackActor)
+				{
+					LegacyMeshActor->SetActorHiddenInGame(true);
+				}
+			}
+		}
 	}
 
 	void ConfigureISM(UInstancedStaticMeshComponent* ISM, USceneComponent* Parent, bool bBlockCollision, bool bGenerateOverlaps)
@@ -96,9 +246,51 @@ AMegaJamTrackGenerator::AMegaJamTrackGenerator()
 	}
 }
 
+void AMegaJamTrackGenerator::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	ChunkLength = FMath::Max(1000.0f, ChunkLength);
+	CorridorHalfWidth = FMath::Max(500.0f, CorridorHalfWidth);
+	ObstacleSize = FMath::Max(50.0f, ObstacleSize);
+	StudioDressingScale = FMath::Max(0.1f, StudioDressingScale);
+
+	SanitizeActorAndWorldComponents(this, false);
+}
+
+void AMegaJamTrackGenerator::PreRegisterAllComponents()
+{
+	Super::PreRegisterAllComponents();
+
+	ChunkLength = FMath::Max(1000.0f, ChunkLength);
+	CorridorHalfWidth = FMath::Max(500.0f, CorridorHalfWidth);
+	ObstacleSize = FMath::Max(50.0f, ObstacleSize);
+	StudioDressingScale = FMath::Max(0.1f, StudioDressingScale);
+
+	SanitizeActorAndWorldComponents(this, false);
+}
+
+void AMegaJamTrackGenerator::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	ChunkLength = FMath::Max(1000.0f, ChunkLength);
+	CorridorHalfWidth = FMath::Max(500.0f, CorridorHalfWidth);
+	ObstacleSize = FMath::Max(50.0f, ObstacleSize);
+	StudioDressingScale = FMath::Max(0.1f, StudioDressingScale);
+
+	if (TrackRoot)
+	{
+		TrackRoot->SetRelativeScale3D(FVector::OneVector);
+	}
+	SanitizeActorAndWorldComponents(this, false);
+}
+
 void AMegaJamTrackGenerator::BeginPlay()
 {
 	Super::BeginPlay();
+
+	SanitizeActorAndWorldComponents(this, true);
 
 	CreatePools();
 
@@ -386,26 +578,26 @@ void AMegaJamTrackGenerator::UpdateFinalCutWrapArch()
 		bWrapArchSpawned = true;
 		// Golden Wrap Arch at 8,940m (894,000 cm) framing the 9,000m finish line
 		const float ArchX = 894000.0f;
-		const float HalfW = MEGAJAM_CORRIDOR_HALF_WIDTH;
-		const float FullWidthScaleY = (HalfW * 2.0f) / 100.0f;
+		const float HalfW = FMath::Max(500.0f, static_cast<float>(MEGAJAM_CORRIDOR_HALF_WIDTH));
+		const float FullWidthScaleY = FMath::Max(0.1f, (HalfW * 2.0f) / 100.0f);
 
 		if (WrapArchMesh && WrapArchISM->GetStaticMesh() == WrapArchMesh)
 		{
 			// One-piece arch: turned so its width (mesh X) spans the corridor, scaled uniformly, base resting on the floor.
 			const FVector Extent = WrapArchMesh->GetBounds().BoxExtent;
-			const float ArchScale = HalfW / FMath::Max(1.0f, static_cast<float>(Extent.X));
-			WrapArchISM->UpdateInstanceTransform(0,
+			const float ArchScale = FMath::Max(0.1f, HalfW / FMath::Max(1.0f, static_cast<float>(Extent.X)));
+			SafeUpdateInstanceTransform(WrapArchISM, 0,
 				FTransform(FRotator(0.0f, 90.0f, 0.0f), FVector(ArchX, 0.0f, Extent.Z * ArchScale), FVector(ArchScale)),
 				true, false, true);
 			WrapArchISM->MarkRenderStateDirty();
 			return;
 		}
 
-		WrapArchISM->UpdateInstanceTransform(0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -(HalfW - 120.0f), 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(1, FTransform(FRotator::ZeroRotator, FVector(ArchX, HalfW - 120.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(2, FTransform(FRotator::ZeroRotator, FVector(ArchX, 0.0f, 960.0f), FVector(3.2f, FullWidthScaleY, 2.2f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(3, FTransform(FRotator(0.0f, 0.0f, 25.0f), FVector(ArchX - 250.0f, -(HalfW - 320.0f), 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
-		WrapArchISM->UpdateInstanceTransform(4, FTransform(FRotator(0.0f, 0.0f, -25.0f), FVector(ArchX - 250.0f, HalfW - 320.0f, 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
+		SafeUpdateInstanceTransform(WrapArchISM, 0, FTransform(FRotator::ZeroRotator, FVector(ArchX, -(HalfW - 120.0f), 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
+		SafeUpdateInstanceTransform(WrapArchISM, 1, FTransform(FRotator::ZeroRotator, FVector(ArchX, HalfW - 120.0f, 500.0f), FVector(2.8f, 2.4f, 10.0f)), true, false, true);
+		SafeUpdateInstanceTransform(WrapArchISM, 2, FTransform(FRotator::ZeroRotator, FVector(ArchX, 0.0f, 960.0f), FVector(3.2f, FullWidthScaleY, 2.2f)), true, false, true);
+		SafeUpdateInstanceTransform(WrapArchISM, 3, FTransform(FRotator(0.0f, 0.0f, 25.0f), FVector(ArchX - 250.0f, -(HalfW - 320.0f), 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
+		SafeUpdateInstanceTransform(WrapArchISM, 4, FTransform(FRotator(0.0f, 0.0f, -25.0f), FVector(ArchX - 250.0f, HalfW - 320.0f, 760.0f), FVector(2.0f, 1.8f, 5.5f)), true, false, true);
 		WrapArchISM->MarkRenderStateDirty();
 	}
 }
@@ -1150,34 +1342,36 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 
 	// Scene 05 The Cliff Drop (DistanceMeters >= 7200.0f): drop the canyon floor beneath the track down to Z = -900.0f
 	// while keeping the glowing holographic energy rails (LaneRailsISM at Z = 2.0f) suspended in mid-air!
+	const float SafeChunkLen = FMath::Max(1000.0f, ChunkLength);
+	const float SafeHalfWidth = FMath::Max(500.0f, CorridorHalfWidth);
 	const float FloorZ = (ChunkDistMeters >= 7200.0f) ? -900.0f : -50.0f;
-	FloorISM->UpdateInstanceTransform(Slot,
-		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, 0.0f, FloorZ), FVector(ChunkLength / 100.0f, CorridorHalfWidth * 2.0f / 100.0f, 1.0f)),
+	SafeUpdateInstanceTransform(FloorISM, Slot,
+		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, 0.0f, FloorZ), FVector(SafeChunkLen / 100.0f, SafeHalfWidth * 2.0f / 100.0f, 1.0f)),
 		true, false, true);
 
 	// Issue #88: Separate visible 2m guardrail walls (Z-scale 2.0f, flush at Z = 100.0f) from invisible 10m collision walls (Z-scale 10.0f, Z = 500.0f)
-	const FVector VisibleWallScale(ChunkLength / 100.0f, 1.0f, 2.0f);
-	const FVector CollisionWallScale(ChunkLength / 100.0f, 1.0f, 10.0f);
-	WallISM->UpdateInstanceTransform(Slot * 2,
-		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -CorridorHalfWidth, 100.0f), VisibleWallScale), true, false, true);
-	WallISM->UpdateInstanceTransform(Slot * 2 + 1,
-		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 100.0f), VisibleWallScale), true, false, true);
+	const FVector VisibleWallScale(SafeChunkLen / 100.0f, 1.0f, 2.0f);
+	const FVector CollisionWallScale(SafeChunkLen / 100.0f, 1.0f, 10.0f);
+	SafeUpdateInstanceTransform(WallISM, Slot * 2,
+		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -SafeHalfWidth, 100.0f), VisibleWallScale), true, false, true);
+	SafeUpdateInstanceTransform(WallISM, Slot * 2 + 1,
+		FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, SafeHalfWidth, 100.0f), VisibleWallScale), true, false, true);
 	if (CollisionWallISM)
 	{
-		CollisionWallISM->UpdateInstanceTransform(Slot * 2,
-			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -CorridorHalfWidth, 500.0f), CollisionWallScale), true, false, true);
-		CollisionWallISM->UpdateInstanceTransform(Slot * 2 + 1,
-			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, CorridorHalfWidth, 500.0f), CollisionWallScale), true, false, true);
+		SafeUpdateInstanceTransform(CollisionWallISM, Slot * 2,
+			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, -SafeHalfWidth, 500.0f), CollisionWallScale), true, false, true);
+		SafeUpdateInstanceTransform(CollisionWallISM, Slot * 2 + 1,
+			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, SafeHalfWidth, 500.0f), CollisionWallScale), true, false, true);
 	}
 
 	// 5 Visual Magnetic Floor Rails at exact lane Y-coordinates (-700, -350, 0, 350, 700)
 	// Issue #80: Recess lane guide rails in Scenes 01-04 so their top surfaces sit flush with the Z = 0.0f roadbed; keep Scene 05 suspended at Z = 2.0f
-	const FVector RailScale(ChunkLength / 100.0f, 0.14f, 0.04f);
-	const float RailZ = (ChunkDistMeters < 7200.0f) ? -1.5f : 2.0f;
+	const FVector RailScale(SafeChunkLen / 100.0f, 0.14f, 0.10f);
+	const float RailZ = (ChunkDistMeters < 7200.0f) ? -4.5f : 2.0f;
 	for (int32 LaneIdx = 0; LaneIdx < LaneRailsPerChunk; ++LaneIdx)
 	{
 		const float LaneY = static_cast<float>(LaneIdx - 2) * 350.0f;
-		LaneRailsISM->UpdateInstanceTransform(
+		SafeUpdateInstanceTransform(LaneRailsISM,
 			Slot * LaneRailsPerChunk + LaneIdx,
 			FTransform(FRotator::ZeroRotator, FVector(ChunkCenterX, LaneY, RailZ), RailScale),
 			true, false, true);
@@ -1605,25 +1799,26 @@ void AMegaJamTrackGenerator::GenerateTrackChunk(float StartX, float EndX)
 	{
 		if (StudioDressingExtraISMs.Num() == 0)
 		{
-			StudioDressingISM->AddInstance(Transform, true);
+			SafeAddInstance(StudioDressingISM, Transform, true);
 			return;
 		}
 		UInstancedStaticMeshComponent* DressingISM = StudioDressingExtraISMs[FMath::RandRange(0, StudioDressingExtraISMs.Num() - 1)];
 		const FVector Extent = DressingISM->GetStaticMesh() ? DressingISM->GetStaticMesh()->GetBounds().BoxExtent : FVector(50.0f);
+		const float SafeDressingScale = FMath::Max(0.1f, StudioDressingScale);
 		FTransform Scaled = Transform;
-		Scaled.SetScale3D(FVector(StudioDressingScale));
+		Scaled.SetScale3D(FVector(SafeDressingScale));
 
 		// Keep the whole scaled prop outside the corridor wall, whichever way it is turned.
-		const float HalfFootprint = static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * StudioDressingScale;
+		const float HalfFootprint = static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * SafeDressingScale;
 		const float MinAbsY = MEGAJAM_CORRIDOR_HALF_WIDTH + HalfFootprint + 150.0f;
 		FVector Location = Scaled.GetLocation();
 		if (FMath::Abs(Location.Y) < MinAbsY)
 		{
 			Location.Y = (Location.Y < 0.0f) ? -MinAbsY : MinAbsY;
 		}
-		Location.Z += static_cast<float>(Extent.Z) * StudioDressingScale;
+		Location.Z += static_cast<float>(Extent.Z) * SafeDressingScale;
 		Scaled.SetLocation(Location);
-		DressingISM->AddInstance(Scaled, true);
+		SafeAddInstance(DressingISM, Scaled, true);
 	};
 
 	for (float X = StartX; X < EndX; X += 800.0f)
@@ -2151,4 +2346,80 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 	}
 
 	return CleavedCount;
+}
+
+bool AMegaJamTrackGenerator::CheckObstacleCollisionAndGraze(
+	const FVector& PawnLocation,
+	float HurtboxRadius,
+	float GrazeRadius,
+	bool& bOutGrazed,
+	int32& OutGrazedInstanceIndex) const
+{
+	bOutGrazed = false;
+	OutGrazedInstanceIndex = INDEX_NONE;
+
+	if (!bPoolsCreated || !BoundPawn || (BoundGameMode && !BoundGameMode->IsPlaying()))
+	{
+		return false;
+	}
+
+	const EMegaJamTakeState CurrentPawnTake = BoundPawn->GetCurrentTake();
+	const UInstancedStaticMeshComponent* ActiveISM = (CurrentPawnTake == EMegaJamTakeState::StudioTake)
+		? TakeA_ObstaclesISM.Get()
+		: TakeB_ObstaclesISM.Get();
+	if (!ActiveISM)
+	{
+		return false;
+	}
+
+	const int32 InstanceCount = ActiveISM->GetInstanceCount();
+	const float SafeHurtboxRadius = FMath::Max(1.0f, HurtboxRadius);
+	const float SafeGrazeRadius = FMath::Max(SafeHurtboxRadius, GrazeRadius);
+	const float HurtboxRadiusSq = FMath::Square(SafeHurtboxRadius);
+	const float GrazeRadiusSq = FMath::Square(SafeGrazeRadius);
+
+	for (int32 InstanceIdx = 0; InstanceIdx < InstanceCount; ++InstanceIdx)
+	{
+		FTransform InstTransform;
+		if (!ActiveISM->GetInstanceTransform(InstanceIdx, InstTransform, true))
+		{
+			continue;
+		}
+
+		const FVector Loc = InstTransform.GetLocation();
+		if (Loc.Z < -1000.0f || Loc.ContainsNaN())
+		{
+			continue;
+		}
+
+		const FVector Scale = InstTransform.GetScale3D();
+		if (Scale.SizeSquared() < 0.02f || Scale.ContainsNaN())
+		{
+			continue;
+		}
+
+		// Broadphase X check
+		if (FMath::Abs(Loc.X - PawnLocation.X) > 1200.0f)
+		{
+			continue;
+		}
+
+		const FVector HalfExtent = Scale.GetAbs() * 50.0f;
+		const float ClosestX = FMath::Clamp(static_cast<float>(PawnLocation.X), static_cast<float>(Loc.X - HalfExtent.X), static_cast<float>(Loc.X + HalfExtent.X));
+		const float ClosestY = FMath::Clamp(static_cast<float>(PawnLocation.Y), static_cast<float>(Loc.Y - HalfExtent.Y), static_cast<float>(Loc.Y + HalfExtent.Y));
+		const float ClosestZ = FMath::Clamp(static_cast<float>(PawnLocation.Z), static_cast<float>(Loc.Z - HalfExtent.Z), static_cast<float>(Loc.Z + HalfExtent.Z));
+
+		const float DistSq = FVector::DistSquared(PawnLocation, FVector(ClosestX, ClosestY, ClosestZ));
+		if (DistSq <= HurtboxRadiusSq)
+		{
+			return true;
+		}
+		if (DistSq <= GrazeRadiusSq && !bOutGrazed)
+		{
+			bOutGrazed = true;
+			OutGrazedInstanceIndex = InstanceIdx;
+		}
+	}
+
+	return false;
 }

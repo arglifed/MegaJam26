@@ -9,11 +9,15 @@
 #include "MegaJamTrackGenerator.h"
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/PlatformTime.h"
@@ -28,6 +32,114 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogMegaJamPawn, Log, All);
 
+namespace
+{
+	FVector SanitizePawnScale3D(const FVector& InScale, const FVector& FallbackScale = FVector::OneVector)
+	{
+		if (InScale.ContainsNaN())
+		{
+			return FallbackScale;
+		}
+		FVector Safe = InScale;
+		if (!FMath::IsFinite(Safe.X) || FMath::Abs(Safe.X) < 0.05f)
+		{
+			Safe.X = (Safe.X < 0.0f) ? -0.05f : FMath::Max(0.05f, static_cast<float>(FallbackScale.X));
+		}
+		if (!FMath::IsFinite(Safe.Y) || FMath::Abs(Safe.Y) < 0.05f)
+		{
+			Safe.Y = (Safe.Y < 0.0f) ? -0.05f : FMath::Max(0.05f, static_cast<float>(FallbackScale.Y));
+		}
+		if (!FMath::IsFinite(Safe.Z) || FMath::Abs(Safe.Z) < 0.05f)
+		{
+			Safe.Z = (Safe.Z < 0.0f) ? -0.05f : FMath::Max(0.05f, static_cast<float>(FallbackScale.Z));
+		}
+		return Safe;
+	}
+
+	void SanitizeActorHierarchyScales(AActor* Actor)
+	{
+		if (!Actor)
+		{
+			return;
+		}
+
+		TInlineComponentArray<USceneComponent*> SceneComps(Actor);
+		for (USceneComponent* Comp : SceneComps)
+		{
+			if (!Comp)
+			{
+				continue;
+			}
+			const FVector RelScale = Comp->GetRelativeScale3D();
+			if (RelScale.ContainsNaN() || FMath::Abs(RelScale.X) < 0.01f || FMath::Abs(RelScale.Y) < 0.01f || FMath::Abs(RelScale.Z) < 0.01f)
+			{
+				Comp->SetRelativeScale3D(SanitizePawnScale3D(RelScale));
+			}
+
+			if (UInstancedStaticMeshComponent* ISM = Cast<UInstancedStaticMeshComponent>(Comp))
+			{
+				for (int32 Idx = 0; Idx < ISM->PerInstanceSMData.Num(); ++Idx)
+				{
+					FMatrix& Mat = ISM->PerInstanceSMData[Idx].Transform;
+					if (Mat.ContainsNaN() ||
+						Mat.GetScaleVector().GetMin() < 0.01f ||
+						FMath::Abs(Mat.Determinant()) < 1e-4f)
+					{
+						Mat = FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, -50000.0), FVector::OneVector).ToMatrixWithScale();
+					}
+				}
+			}
+		}
+	}
+
+	void SanitizeWorldAndLegacyActors(AActor* SelfActor, bool bDisableLegacyLevelObstacles)
+	{
+		SanitizeActorHierarchyScales(SelfActor);
+
+		UWorld* World = SelfActor ? SelfActor->GetWorld() : nullptr;
+		if (!World)
+		{
+			return;
+		}
+
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* Actor = *It;
+			if (!Actor)
+			{
+				continue;
+			}
+
+			SanitizeActorHierarchyScales(Actor);
+
+			if (bDisableLegacyLevelObstacles && Actor != SelfActor)
+			{
+				if (AStaticMeshActor* SMA = Cast<AStaticMeshActor>(Actor))
+				{
+					const FString ActorName = SMA->GetName();
+					const FVector Loc = SMA->GetActorLocation();
+					const bool bIsLegacyCorridorActor =
+						ActorName.Contains(TEXT("Obstacle"), ESearchCase::IgnoreCase) ||
+						ActorName.Contains(TEXT("Floor"), ESearchCase::IgnoreCase) ||
+						ActorName.Contains(TEXT("Wall"), ESearchCase::IgnoreCase) ||
+						(FMath::Abs(Loc.Y) < 1500.0 && Loc.X >= -2000.0 && Loc.X <= 25000.0);
+
+					if (bIsLegacyCorridorActor)
+					{
+						SMA->SetActorEnableCollision(false);
+						SMA->SetActorHiddenInGame(true);
+						if (UStaticMeshComponent* SMC = SMA->GetStaticMeshComponent())
+						{
+							SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+							SMC->SetVisibility(false);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 AMegaJamFlowPawn::AMegaJamFlowPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -37,18 +149,23 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	// Forgiving arcade hurtbox: 35 cm collision radius (~30% smaller than the 50 cm visual mesh radius).
+	// Forgiving arcade hurtbox: 35 cm radius. Physical sweep collision is disabled so the Pawn never snags
+	// on legacy hand-placed level geometry (0m-190m Floor/Obstacles in L_FlowTest); obstacle & wall math runs in StepPhysics().
 	CollisionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionSphere"));
 	CollisionSphere->InitSphereRadius(35.0f);
-	CollisionSphere->SetCollisionProfileName(TEXT("Pawn"));
+	CollisionSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CollisionSphere->SetSimulatePhysics(false);
+	CollisionSphere->SetRelativeScale3D(FVector::OneVector);
 	RootComponent = CollisionSphere;
 
 	GrazeSphere = CreateDefaultSubobject<USphereComponent>(TEXT("GrazeSphere"));
 	GrazeSphere->SetupAttachment(CollisionSphere);
 	GrazeSphere->InitSphereRadius(GrazeRadius);
-	GrazeSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
-	GrazeSphere->SetGenerateOverlapEvents(true);
+	GrazeSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	GrazeSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GrazeSphere->SetGenerateOverlapEvents(false);
+	GrazeSphere->SetRelativeScale3D(FVector::OneVector);
 
 	VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
 	VisualMesh->SetupAttachment(CollisionSphere);
@@ -58,6 +175,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VehicleStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VehicleStaticMesh"));
 	VehicleStaticMesh->SetupAttachment(CollisionSphere);
 	VehicleStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	VehicleStaticMesh->SetRelativeScale3D(FVector::OneVector);
 	VehicleStaticMesh->SetVisibility(false);
 
 	DroppedBoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DroppedBoardMesh"));
@@ -65,6 +183,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	DroppedBoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	DroppedBoardMesh->SetCastShadow(false);
 	DroppedBoardMesh->SetAbsolute(true, true, false);
+	DroppedBoardMesh->SetRelativeScale3D(FVector::OneVector);
 	DroppedBoardMesh->SetVisibility(false);
 
 	ProceduralSpliceRingMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProceduralSpliceRingMesh"));
@@ -194,12 +313,51 @@ void AMegaJamFlowPawn::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
-	GrazeSphere->SetSphereRadius(GrazeRadius);
+	SanitizeWorldAndLegacyActors(this, false);
+	if (CollisionSphere)
+	{
+		CollisionSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (GrazeSphere)
+	{
+		GrazeSphere->SetSphereRadius(FMath::Max(10.0f, GrazeRadius));
+		GrazeSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GrazeSphere->SetGenerateOverlapEvents(false);
+	}
+}
+
+void AMegaJamFlowPawn::PreRegisterAllComponents()
+{
+	// Sanitize all component and world ISM scales BEFORE UE5 GPUScene creates scene proxies and calls TMatrix::InverseFast()
+	SanitizeWorldAndLegacyActors(this, false);
+
+	if (CollisionSphere)
+	{
+		CollisionSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (GrazeSphere)
+	{
+		GrazeSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		GrazeSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GrazeSphere->SetGenerateOverlapEvents(false);
+	}
+	if (SpringArm)
+	{
+		SpringArm->bDoCollisionTest = false;
+		SpringArm->TargetOffset = FVector(0.0f, 0.0f, 120.0f);
+		SpringArm->TargetArmLength = 450.0f;
+	}
+
+	Super::PreRegisterAllComponents();
 }
 
 void AMegaJamFlowPawn::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
+
+	SanitizeWorldAndLegacyActors(this, false);
 
 	// Brutally override any Blueprint-saved defaults before Frame 1
 	WideZBounds = FVector2D(2.0, 2.0);
@@ -207,6 +365,18 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 
 	SetActorRotation(FRotator::ZeroRotator);
 	SetActorScale3D(FVector::OneVector);
+
+	if (CollisionSphere)
+	{
+		CollisionSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (GrazeSphere)
+	{
+		GrazeSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		GrazeSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GrazeSphere->SetGenerateOverlapEvents(false);
+	}
 
 	if (SpringArm)
 	{
@@ -218,11 +388,59 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 	{
 		Camera->SetFieldOfView(90.0f);
 	}
+
+	// Enforce canonical per-scene BPMs (Scene 01 Action = 120.0f) in PostInitializeComponents so stale Blueprint defaults cannot override them
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Action) = 120.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Western) = 136.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Alpine) = 125.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Noir) = 125.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Chase) = 110.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Montage) = 120.0f;
+
+	for (const TPair<EMegaJamSceneGenre, float>& BpmPair : SceneBPMs)
+	{
+		if (FSceneAudioConfig* AudioCfg = SceneAudioConfigs.Find(BpmPair.Key))
+		{
+			AudioCfg->TrackBPM = BpmPair.Value;
+		}
+	}
+	CurrentTrackBPM = 120.0f;
 }
 
 void AMegaJamFlowPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Sanitize all component scales and disable/hide legacy L_FlowTest Floor/Wall/Obstacle StaticMeshActors (0m-190m)
+	SanitizeWorldAndLegacyActors(this, true);
+
+	if (CollisionSphere)
+	{
+		CollisionSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		CollisionSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+	if (GrazeSphere)
+	{
+		GrazeSphere->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		GrazeSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GrazeSphere->SetGenerateOverlapEvents(false);
+	}
+
+	// Re-enforce canonical BPMs in BeginPlay before syncing audio
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Action) = 120.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Western) = 136.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Alpine) = 125.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Noir) = 125.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Chase) = 110.0f;
+	SceneBPMs.FindOrAdd(EMegaJamSceneGenre::Montage) = 120.0f;
+	for (const TPair<EMegaJamSceneGenre, float>& BpmPair : SceneBPMs)
+	{
+		if (FSceneAudioConfig* AudioCfg = SceneAudioConfigs.Find(BpmPair.Key))
+		{
+			AudioCfg->TrackBPM = BpmPair.Value;
+		}
+	}
+	CurrentTrackBPM = 120.0f;
 
 	// Issue #80 / #96 / #98: Enforce grounded contact with 2.0f Z-clearance and safe +X forward orientation
 	WideZBounds = FVector2D(2.0, 2.0);
@@ -706,6 +924,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			}
 			else
 			{
+				DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
 				DroppedBoardMesh->SetVisibility(false);
 			}
 		}
@@ -724,14 +943,15 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			if (SpliceRingTimer > 0.0f)
 			{
 				const float Alpha = FMath::Clamp(1.0f - (SpliceRingTimer / 0.18f), 0.0f, 1.0f);
-				const float RadialScale = FMath::Lerp(1.2f, 11.5f, Alpha);
-				const float ThicknessZ = FMath::Max(0.02f, FMath::Lerp(0.08f, 0.02f, Alpha));
+				const float RadialScale = FMath::Max(0.05f, FMath::Lerp(1.2f, 11.5f, Alpha));
+				const float ThicknessZ = FMath::Max(0.05f, FMath::Lerp(0.08f, 0.05f, Alpha));
 				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 				ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-				ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(RadialScale, RadialScale, ThicknessZ));
+				ProceduralSpliceRingMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(RadialScale, RadialScale, ThicknessZ)));
 			}
 			else
 			{
+				ProceduralSpliceRingMesh->SetRelativeScale3D(FVector::OneVector);
 				ProceduralSpliceRingMesh->SetVisibility(false);
 			}
 		}
@@ -747,14 +967,15 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			{
 				const float Alpha = FMath::Clamp(1.0f - (SlashArcTimer / 0.16f), 0.0f, 1.0f);
 				const float SweepYaw = FMath::Lerp(-70.0f, 70.0f, Alpha);
-				const float WidthY = bActiveSlashIsOnBeat ? 24.0f : 6.5f;
-				const float ThicknessZ = FMath::Max(0.02f, FMath::Lerp(0.08f, 0.02f, Alpha));
+				const float WidthY = FMath::Max(0.05f, bActiveSlashIsOnBeat ? 24.0f : 6.5f);
+				const float ThicknessZ = FMath::Max(0.05f, FMath::Lerp(0.08f, 0.05f, Alpha));
 				ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
 				ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, SweepYaw, -18.0f));
-				ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, WidthY, ThicknessZ));
+				ProceduralSlashArcMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(0.35f, WidthY, ThicknessZ)));
 			}
 			else
 			{
+				ProceduralSlashArcMesh->SetRelativeScale3D(FVector::OneVector);
 				ProceduralSlashArcMesh->SetVisibility(false);
 			}
 		}
@@ -1265,56 +1486,54 @@ void AMegaJamFlowPawn::StepPhysics(float DeltaSeconds)
 	const FVector SafeForward = (LookAheadTarget - CurrentPawnLoc).GetSafeNormal(1e-4f, FVector::ForwardVector);
 	SetActorRotation(SafeForward.Rotation());
 
-	// Swept move. A blocking hit is resolved deterministically.
-	FHitResult Hit;
-	AddActorWorldOffset(Velocity * DeltaSeconds, true, &Hit);
+	// Un-swept mathematical move (bSweep = false) so the Pawn never snags on L_FlowTest's legacy hand-placed Floor/Obstacle_00..17 actors.
+	AddActorWorldOffset(Velocity * DeltaSeconds, false);
+	ApplyAspectClamp(DeltaSeconds);
 
-	if (Hit.bBlockingHit)
+	// Mathematical obstacle collision & near-miss graze detection against AMegaJamTrackGenerator
+	if (UWorld* World = GetWorld())
 	{
-		const FVector SafeImpactNormal = Hit.ImpactNormal.GetSafeNormal(1e-4f, FVector::UpVector);
-		// While CometSmashTimer > 0.0f, Pawn is 100% invulnerable and plows through roadblocks
-		if (CometSmashTimer > 0.0f)
+		if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(World, AMegaJamTrackGenerator::StaticClass())))
 		{
-			if (AMegaJamTrackGenerator* TrackGen = Cast<AMegaJamTrackGenerator>(UGameplayStatics::GetActorOfClass(GetWorld(), AMegaJamTrackGenerator::StaticClass())))
+			const bool bNoirVertigo = (EffectiveGenre == EMegaJamSceneGenre::Noir && CurrentAspect == EMegaJamAspectMode::Wide_21_9);
+			const float BaseGraze = FMath::Max(GrazeRadius, AdrenalineGrazeRadius);
+			const float TargetGrazeRadius = bNoirVertigo ? (BaseGraze * 2.0f) : BaseGraze;
+			bool bGrazedObstacle = false;
+			int32 GrazedInstanceIndex = INDEX_NONE;
+			const FVector PostMoveLoc = GetActorLocation();
+
+			const bool bHitObstacle = TrackGen->CheckObstacleCollisionAndGraze(
+				PostMoveLoc,
+				35.0f,
+				TargetGrazeRadius,
+				bGrazedObstacle,
+				GrazedInstanceIndex);
+
+			if (bHitObstacle)
 			{
-				const FVector PawnLoc = GetActorLocation();
-				TrackGen->CleaveObstaclesInRange(
-					static_cast<float>(PawnLoc.X) - 120.0f,
-					static_cast<float>(PawnLoc.X) + 1125.0f,
-					420.0f,
-					static_cast<float>(PawnLoc.Y));
-			}
-			AddActorWorldOffset(FVector(240.0f, 0.0f, 0.0f), false);
-		}
-		else if (SafeImpactNormal.Z > 0.7f)
-		{
-			// Ground touchdown: resolve vertical velocity cleanly without crashing
-			Velocity.Z = FMath::Max(0.0, Velocity.Z);
-			bIsGrounded = true;
-		}
-		else
-		{
-			// Speed component driving into the surface.
-			const float ClosingSpeed = -FVector::DotProduct(Velocity, SafeImpactNormal);
-			if (ClosingSpeed >= CrashSpeedThreshold)
-			{
-				HandleCrash(Hit.GetActor());
-				if (bCrashed)
+				if (CometSmashTimer > 0.0f)
 				{
-					return;
+					TrackGen->CleaveObstaclesInRange(
+						static_cast<float>(PostMoveLoc.X) - 120.0f,
+						static_cast<float>(PostMoveLoc.X) + 1125.0f,
+						420.0f,
+						static_cast<float>(PostMoveLoc.Y));
 				}
-				// In God Mode (bCrashed remains false), phase past the obstacle so the pawn never snags.
-				AddActorWorldOffset(FVector(240.0f, 0.0f, 0.0f), false);
+				else
+				{
+					HandleCrash(TrackGen);
+					if (bCrashed)
+					{
+						return;
+					}
+				}
 			}
-			else
+			else if (bGrazedObstacle && GrazedInstanceIndex != INDEX_NONE)
 			{
-				// Slow contact: slide along the surface.
-				Velocity = FVector::VectorPlaneProject(Velocity, SafeImpactNormal);
+				OnGrazeBeginOverlap(GrazeSphere, TrackGen, GrazeSphere, GrazedInstanceIndex, false, FHitResult());
 			}
 		}
 	}
-
-	ApplyAspectClamp(DeltaSeconds);
 }
 
 void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
@@ -1376,7 +1595,7 @@ void AMegaJamFlowPawn::ApplyAspectClamp(float DeltaSeconds)
 	{
 		NewZ = FMath::FInterpTo(static_cast<float>(Location.Z), ClampedZ, DeltaSeconds, AspectClampInterpSpeed);
 	}
-	AddActorWorldOffset(FVector(0.0f, NewY - Location.Y, NewZ - Location.Z), true);
+	AddActorWorldOffset(FVector(0.0f, NewY - Location.Y, NewZ - Location.Z), false);
 }
 
 void AMegaJamFlowPawn::ExecuteEditorSplice()
@@ -1915,7 +2134,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 	}
 
 	AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>();
-	if (GameMode && !GameMode->IsPlaying())
+	if (GameMode && (!GameMode->IsPlaying() || GameMode->GetRunTime() < 0.05f))
 	{
 		return false;
 	}
@@ -2113,7 +2332,7 @@ void AMegaJamFlowPawn::ToggleAspect()
 			FlowSubsystem->SetDropCutBannerTimer(1.4f);
 		}
 
-		// Check 128 BPM On-Beat Cut window (±0.16s) + Match-Cut window
+		// Check dynamic BPM On-Beat Cut window (±0.16s) + Match-Cut window
 		if (!TryTriggerOnBeatCut())
 		{
 			TryTriggerMatchCut(false);
@@ -2271,12 +2490,12 @@ void AMegaJamFlowPawn::TriggerClapperboardTransition(EMegaJamSceneGenre NextGenr
 			if (BoardMesh)
 			{
 				DroppedBoardMesh->SetStaticMesh(BoardMesh);
-				DroppedBoardMesh->SetWorldScale3D(VehicleStaticMesh ? VehicleStaticMesh->GetComponentScale() : FVector(1.0f));
+				DroppedBoardMesh->SetWorldScale3D(SanitizePawnScale3D(VehicleStaticMesh ? VehicleStaticMesh->GetComponentScale() : FVector(1.0f)));
 			}
 			else if (ProceduralSlashArcMesh && ProceduralSlashArcMesh->GetStaticMesh())
 			{
 				DroppedBoardMesh->SetStaticMesh(ProceduralSlashArcMesh->GetStaticMesh());
-				DroppedBoardMesh->SetWorldScale3D(FVector(1.6f, 0.45f, 0.08f));
+				DroppedBoardMesh->SetWorldScale3D(SanitizePawnScale3D(FVector(1.6f, 0.45f, 0.08f)));
 			}
 
 			DroppedBoardWorldLocation = GetActorLocation() + FVector(0.0f, 0.0f, -20.0f);
@@ -2356,8 +2575,8 @@ void AMegaJamFlowPawn::ResetForRun()
 	bIsGrounded = true;
 	bHasProcessedJumpInput = false;
 	CustomTimeDilation = 1.0f;
-	Velocity = FVector::ZeroVector;
-	FlowRatio = 0.0f;
+	Velocity = FVector(FMath::Max(1200.0f, CruiseSpeed), 0.0f, 0.0f);
+	FlowRatio = 0.5f;
 	FilmMeter = 50.0f;
 	SteerInput = FVector2D::ZeroVector;
 	CurrentLane = 2;
@@ -2379,6 +2598,7 @@ void AMegaJamFlowPawn::ResetForRun()
 	DroppedBoardTimer = 0.0f;
 	if (DroppedBoardMesh)
 	{
+		DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
 		DroppedBoardMesh->SetVisibility(false);
 	}
 	CometSmashTimer = 0.0f;
@@ -2387,10 +2607,12 @@ void AMegaJamFlowPawn::ResetForRun()
 	SlashArcTimer = 0.0f;
 	if (ProceduralSpliceRingMesh)
 	{
+		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector::OneVector);
 		ProceduralSpliceRingMesh->SetVisibility(false);
 	}
 	if (ProceduralSlashArcMesh)
 	{
+		ProceduralSlashArcMesh->SetRelativeScale3D(FVector::OneVector);
 		ProceduralSlashArcMesh->SetVisibility(false);
 	}
 	SpliceChain = 1;
@@ -2587,7 +2809,7 @@ void AMegaJamFlowPawn::NotifyFilmFrameCollected()
 		? FMath::Clamp(Velocity.Size() / TerminalVelocity + FlowBonusOffset, 0.0f, 1.0f)
 		: 0.0f;
 
-	// Check 128 BPM On-Beat Cut window (±0.16s) when scooping a Film Frame
+	// Check dynamic BPM On-Beat Cut window (±0.16s) when scooping a Film Frame
 	const bool bTriggeredOnBeat = TryTriggerOnBeatCut();
 
 	if (AMegaJamGameMode* GameMode = World->GetAuthGameMode<AMegaJamGameMode>())
@@ -2759,8 +2981,8 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 	const EMegaJamSceneGenre NewGenre = TargetGenre;
 	ActiveMusicGenre = NewGenre;
 
-	// Fetch and set CurrentTrackBPM from SceneAudioConfigs or SceneBPMs (fallback 128.0f)
-	float ResolvedBPM = 128.0f;
+	// Fetch and set CurrentTrackBPM from SceneAudioConfigs or SceneBPMs (fallback 120.0f)
+	float ResolvedBPM = 120.0f;
 	if (const FSceneAudioConfig* FoundCfg = SceneAudioConfigs.Find(TargetGenre))
 	{
 		if (FoundCfg->TrackBPM > 1.0f)
@@ -2770,9 +2992,19 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 	}
 	if (const float* FoundBPM = SceneBPMs.Find(TargetGenre))
 	{
-		if (*FoundBPM > 1.0f && (!SceneAudioConfigs.Contains(TargetGenre) || FMath::IsNearlyEqual(ResolvedBPM, 128.0f)))
+		if (*FoundBPM > 1.0f && (!SceneAudioConfigs.Contains(TargetGenre) || FMath::IsNearlyEqual(ResolvedBPM, 120.0f)))
 		{
 			ResolvedBPM = *FoundBPM;
+		}
+	}
+	// Strictly enforce 120 BPM for Scene 01 (Action) / Scene 05 (Montage) or if a stale 128 BPM value is serialized in BP_FlowPawn
+	if (TargetGenre == EMegaJamSceneGenre::Action || TargetGenre == EMegaJamSceneGenre::Montage || FMath::IsNearlyEqual(ResolvedBPM, 128.0f, 0.5f))
+	{
+		ResolvedBPM = 120.0f;
+		SceneBPMs.FindOrAdd(TargetGenre) = 120.0f;
+		if (FSceneAudioConfig* AudioCfg = SceneAudioConfigs.Find(TargetGenre))
+		{
+			AudioCfg->TrackBPM = 120.0f;
 		}
 	}
 	CurrentTrackBPM = FMath::Max(1.0f, ResolvedBPM);
@@ -2803,11 +3035,13 @@ void AMegaJamFlowPawn::SyncSceneMusicTrack(EMegaJamSceneGenre TargetGenre)
 	{
 		const float BaseYawOffset = SceneVehicleYawOffsets.Contains(NewGenre) ? SceneVehicleYawOffsets[NewGenre] : 0.0f;
 		VehicleStaticMesh->SetStaticMesh(NewMesh);
+		VehicleStaticMesh->SetRelativeScale3D(SanitizePawnScale3D(VehicleStaticMesh->GetRelativeScale3D()));
 		VehicleStaticMesh->SetRelativeRotation(FRotator(0.0f, BaseYawOffset, 0.0f));
 		VehicleStaticMesh->SetVisibility(true);
 	}
 	else if (VehicleStaticMesh)
 	{
+		VehicleStaticMesh->SetRelativeScale3D(FVector::OneVector);
 		VehicleStaticMesh->SetVisibility(false);
 	}
 
@@ -3102,6 +3336,7 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	DroppedBoardTimer = 0.0f;
 	if (DroppedBoardMesh)
 	{
+		DroppedBoardMesh->SetWorldScale3D(FVector::OneVector);
 		DroppedBoardMesh->SetVisibility(false);
 	}
 	CometSmashTimer = 0.0f;
@@ -3110,10 +3345,12 @@ void AMegaJamFlowPawn::HandleCrash(AActor* HitActor)
 	SlashArcTimer = 0.0f;
 	if (ProceduralSpliceRingMesh)
 	{
+		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector::OneVector);
 		ProceduralSpliceRingMesh->SetVisibility(false);
 	}
 	if (ProceduralSlashArcMesh)
 	{
+		ProceduralSlashArcMesh->SetRelativeScale3D(FVector::OneVector);
 		ProceduralSlashArcMesh->SetVisibility(false);
 	}
 	StaleDecayAccum = 0.0f;
