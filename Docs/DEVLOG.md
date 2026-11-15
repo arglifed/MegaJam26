@@ -63,7 +63,7 @@ The hand-offs were smooth and easy, mostly because we were both using AI. Each o
   - Meshy generation through its MCP server
   - automated play-test captures
   - issue and PR write-ups
-  - Claude Desktop chat for brainstorming, drafting Meshy prompts and checking licence terms
+  - Claude Desktop chat, in a dedicated project. Almost all of it was one long working session on art and process: setting up the GitHub Issues workflow, writing Meshy prompts, the vehicle and obstacle art, and drafting issues for arglifed. A couple of short chats covered one-off Unreal setup and troubleshooting questions.
 - **Meshy AI:** text → 3D (and text → image → 3D) for all 31 meshes. See the Meshy case study below.
 - **Explore → plan → execute:** agents had to plan before touching code and wait for human approval. `AGENTS.md` bans "black-box generation".
 
