@@ -12,6 +12,7 @@ class UAudioComponent;
 class UCameraComponent;
 class UInputAction;
 class UMaterialInstanceDynamic;
+class UPointLightComponent;
 class USoundBase;
 class USpringArmComponent;
 class USphereComponent;
@@ -70,6 +71,10 @@ public:
 	/** Visual. No collision. Defaults to /Engine/BasicShapes/Sphere. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
+
+	/** Dynamic point light attached to VisualMesh to illuminate the active vehicle mesh and keep the orb bright in shadows. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MegaJam|Components")
+	TObjectPtr<UPointLightComponent> OrbLight;
 
 	/** Optional thematic static mesh component swapped dynamically per scene genre via SceneVehicleMeshes. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Art")

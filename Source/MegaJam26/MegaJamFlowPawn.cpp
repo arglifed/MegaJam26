@@ -10,6 +10,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -171,6 +172,13 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	VisualMesh->SetupAttachment(CollisionSphere);
 	VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	VisualMesh->SetRelativeScale3D(FVector(0.55f));
+
+	OrbLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("OrbLight"));
+	OrbLight->SetupAttachment(VisualMesh);
+	OrbLight->SetIntensity(2500.0f);
+	OrbLight->SetAttenuationRadius(450.0f);
+	OrbLight->SetCastShadows(false);
+	OrbLight->SetLightColor(FLinearColor(0.35f, 0.95f, 1.0f, 1.0f));
 
 	VehicleStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VehicleStaticMesh"));
 	VehicleStaticMesh->SetupAttachment(CollisionSphere);
@@ -433,7 +441,7 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 		{ EMegaJamSceneGenre::Noir,    TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar"),     TEXT("/Game/MegaJam26/Art/SM_Vehicle_SpyCar.SM_Vehicle_SpyCar"),         FVector(-20.0f, 0.0f, 85.0f) },
 		{ EMegaJamSceneGenre::Chase,   TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
 		{ EMegaJamSceneGenre::Alpine,  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard"),  TEXT("/Game/MegaJam26/Art/SM_Vehicle_Snowboard.SM_Vehicle_Snowboard"),   FVector(0.0f, 0.0f, 45.0f) },
-		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, -60.0f) },
+		{ EMegaJamSceneGenre::Montage, TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider"), TEXT("/Game/MegaJam26/Art/SM_Vehicle_HangGlider.SM_Vehicle_HangGlider"), FVector(0.0f, 0.0f, 50.0f) },
 	};
 	for (const FVehicleFallbackSpec& Spec : VehicleFallbacks)
 	{
@@ -450,6 +458,8 @@ void AMegaJamFlowPawn::PostInitializeComponents()
 			SceneSeatOffsets.Add(Spec.Genre, Spec.SeatOffset);
 		}
 	}
+	// Issue #108 / #112: Override Scene 05 Hang Glider seat offset to Z=50 so the orb sits inside the new 3D delta wing A-frame
+	SceneSeatOffsets.FindOrAdd(EMegaJamSceneGenre::Montage) = FVector(0.0f, 0.0f, 50.0f);
 }
 
 void AMegaJamFlowPawn::BeginPlay()
@@ -3339,7 +3349,7 @@ void AMegaJamFlowPawn::TriggerMicroHitstop(float RealDurationSeconds, float Dila
 
 void AMegaJamFlowPawn::UpdatePawnDynamicMaterial(float DeltaSeconds)
 {
-	if (!PawnVisualMID)
+	if (!PawnVisualMID && !OrbLight)
 	{
 		return;
 	}
@@ -3377,10 +3387,20 @@ void AMegaJamFlowPawn::UpdatePawnDynamicMaterial(float DeltaSeconds)
 	const float EmissiveMultiplier = FMath::Lerp(1.2f + FlowRatio * 2.2f, 6.0f, BurstAlpha) * BeatPulse;
 	const FLinearColor EmissiveVec = FinalTint * EmissiveMultiplier;
 
-	PawnVisualMID->SetVectorParameterValue(TEXT("Color"), FinalTint);
-	PawnVisualMID->SetVectorParameterValue(TEXT("BaseColor"), FinalTint);
-	PawnVisualMID->SetVectorParameterValue(TEXT("TakeColor"), EmissiveVec);
-	PawnVisualMID->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveVec);
+	if (PawnVisualMID)
+	{
+		PawnVisualMID->SetVectorParameterValue(TEXT("Color"), FinalTint);
+		PawnVisualMID->SetVectorParameterValue(TEXT("BaseColor"), FinalTint);
+		PawnVisualMID->SetVectorParameterValue(TEXT("TakeColor"), EmissiveVec);
+		PawnVisualMID->SetVectorParameterValue(TEXT("EmissiveColor"), EmissiveVec);
+	}
+
+	if (OrbLight)
+	{
+		const FLinearColor LightTint = FMath::Lerp(FLinearColor(0.85f, 0.96f, 1.0f, 1.0f), FinalTint, 0.75f);
+		OrbLight->SetLightColor(LightTint);
+		OrbLight->SetIntensity(FMath::Lerp(2500.0f, 3800.0f, BurstAlpha) * BeatPulse);
+	}
 }
 
 void AMegaJamFlowPawn::PushAudioParameters() const
