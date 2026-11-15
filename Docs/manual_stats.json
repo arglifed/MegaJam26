@@ -1,0 +1,11 @@
+{
+  "_comment": "Hand-entered numbers for Scripts/devlog_stats.py. ai_tools rows are added to the AI usage table as-is (use \"-\" for unknown). Anthony: replace the TODO row with your numbers.",
+  "ai_tools": [
+    {"person": "Anthony", "tool": "Gemini 4 Argon (IDE integration)", "sessions": "TODO", "prompts": "TODO", "turns": "-", "tool_calls": "-", "input_tokens": "TODO", "output_tokens": "TODO", "cache_write": "-", "cache_read": "-", "models": "TODO"}
+  ],
+  "meshy": {
+    "jam_account": "Meshy Pro (jam partner perk), 1,100 starting credits, 587 left on 2026-11-15, so 513 spent",
+    "tasks_on_jam_account": "68: 66 text-to-3d (preview + refine passes, including retries), 1 text-to-image and 1 image-to-3d (the Hang Glider redo)",
+    "models_in_game": "31 (30 on the jam account, plus the Motorcycle made on a free account)"
+  }
+}
