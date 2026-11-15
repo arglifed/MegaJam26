@@ -169,6 +169,10 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> CenterBannerText;
 
+	// Per-genre crash title card above the CUT! line (#59), visible only while Crashed
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> CenterCrashCardText;
+
 	// ---- Title Screen Card (RunState == TitleScreen) ----
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> TitleCardBorder;
