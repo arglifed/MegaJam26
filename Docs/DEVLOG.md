@@ -11,7 +11,8 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
 **Team Four Swords Pictures:** arglifed (gameplay C++) and Hendrixsan (art and audio).
 **Built:** Nov 12–15, 2026, in Unreal Engine 5.8, for the Epic AI MegaJam.
 
-<!-- HERO IMAGE: Docs/devlog_images/playtest_captures/orb_review_povs.png (all five scenes, three camera views each).
+<!-- HERO IMAGE: Docs/devlog_images/itch_cover_1260x1000.png (the itch cover: all five vehicles, one panel per genre;
+     rebuilt with python Scripts/make_itch_cover.py). Alternative: playtest_captures/orb_review_povs.png.
      Optional upgrade: a fresh in-game capture or GIF with the HUD visible. -->
 
 **Drop the clapperboard. Roll camera.** *Director's Cut* is a rhythm arcade racer where you're the star of a blockbuster that won't stop rolling. The whole film is one continuous 9,000-metre take that smash-cuts across five genres. Each genre swaps your vehicle, the music's tempo, the colour grade and even the aspect ratio of the screen:
@@ -20,6 +21,10 @@ Living draft for issue #121 (Glass Box award). Freeze: 5:00 PM PST, Nov 15.
 - a black-and-white **Noir** run in a spy car
 - a downhill **Chase** on a snowboard
 - a **Final Cut** hang-glider dive through a golden film-aperture tunnel
+
+<!-- SCREENSHOTS (gallery, in race order), all in Docs/devlog_images/screenshots/:
+     01_action_motorcycle.png, 02_western_horse.png, 03_noir_spycar.png,
+     04_chase_snowboard.png, 05_finish_arch.png (the Golden Wrap Arch at the end of the Final Cut) -->
 
 You steer, hop and graze obstacles on the beat to stay in flow. Each genre gives you its own special move: a barrier punch, a katana slash, an adrenaline cash-in or a comet smash. Your Director's Cut overdrive flips the set into its alternate take. Reach the Golden Wrap Arch and the Box-Office Scoreboard grades every scene from S to D.
 
