@@ -8,7 +8,15 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Sound/SoundBase.h"
+
+void UMegaJamFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	LoadBoxOfficeRecords();
+}
 
 bool UMegaJamFlowSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
@@ -282,6 +290,179 @@ void UMegaJamFlowSubsystem::FinalizeScenePerformance(EMegaJamSceneGenre Outgoing
 	{
 		Metrics.CalculatedGrade = TEXT("C");
 	}
+}
+
+void UMegaJamFlowSubsystem::LoadBoxOfficeRecords()
+{
+	TopBoxOfficeRuns.Empty();
+	const FString FilePath = FPaths::ProjectSavedDir() / TEXT("DirectorCutRecords.json");
+	FString JsonContent;
+	if (!FFileHelper::LoadFileToString(JsonContent, *FilePath) || JsonContent.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FString> Lines;
+	JsonContent.ParseIntoArrayLines(Lines, true);
+	for (const FString& RawLine : Lines)
+	{
+		const FString Line = RawLine.TrimStartAndEnd();
+		if (!Line.StartsWith(TEXT("{")) || !Line.Contains(TEXT("\"gross\"")))
+		{
+			continue;
+		}
+
+		auto ParseIntField = [&Line](const TCHAR* Key) -> int32
+		{
+			const int32 KeyPos = Line.Find(Key);
+			if (KeyPos == INDEX_NONE) { return 0; }
+			const int32 ColonPos = Line.Find(TEXT(":"), ESearchCase::IgnoreCase, ESearchDir::FromStart, KeyPos);
+			if (ColonPos == INDEX_NONE) { return 0; }
+			return FCString::Atoi(*Line.Mid(ColonPos + 1).TrimStartAndEnd());
+		};
+
+		auto ParseFloatField = [&Line](const TCHAR* Key) -> float
+		{
+			const int32 KeyPos = Line.Find(Key);
+			if (KeyPos == INDEX_NONE) { return 0.0f; }
+			const int32 ColonPos = Line.Find(TEXT(":"), ESearchCase::IgnoreCase, ESearchDir::FromStart, KeyPos);
+			if (ColonPos == INDEX_NONE) { return 0.0f; }
+			return FCString::Atof(*Line.Mid(ColonPos + 1).TrimStartAndEnd());
+		};
+
+		auto ParseStringField = [&Line](const TCHAR* Key) -> FString
+		{
+			const int32 KeyPos = Line.Find(Key);
+			if (KeyPos == INDEX_NONE) { return TEXT("C"); }
+			const int32 ColonPos = Line.Find(TEXT(":"), ESearchCase::IgnoreCase, ESearchDir::FromStart, KeyPos);
+			if (ColonPos == INDEX_NONE) { return TEXT("C"); }
+			const int32 QuoteStart = Line.Find(TEXT("\""), ESearchCase::IgnoreCase, ESearchDir::FromStart, ColonPos + 1);
+			if (QuoteStart == INDEX_NONE) { return TEXT("C"); }
+			const int32 QuoteEnd = Line.Find(TEXT("\""), ESearchCase::IgnoreCase, ESearchDir::FromStart, QuoteStart + 1);
+			if (QuoteEnd == INDEX_NONE || QuoteEnd <= QuoteStart + 1) { return TEXT("C"); }
+			return Line.Mid(QuoteStart + 1, QuoteEnd - QuoteStart - 1);
+		};
+
+		FBoxOfficeRecordEntry Entry;
+		Entry.BoxOfficeGross = ParseIntField(TEXT("\"gross\""));
+		Entry.FinalScore = ParseIntField(TEXT("\"score\""));
+		Entry.CompletionTimeSeconds = ParseFloatField(TEXT("\"time\""));
+		Entry.OverallGrade = ParseStringField(TEXT("\"grade\""));
+		if (Entry.BoxOfficeGross > 0)
+		{
+			TopBoxOfficeRuns.Add(Entry);
+		}
+	}
+
+	TopBoxOfficeRuns.Sort([](const FBoxOfficeRecordEntry& A, const FBoxOfficeRecordEntry& B)
+	{
+		if (A.BoxOfficeGross != B.BoxOfficeGross)
+		{
+			return A.BoxOfficeGross > B.BoxOfficeGross;
+		}
+		return A.FinalScore > B.FinalScore;
+	});
+	if (TopBoxOfficeRuns.Num() > 3)
+	{
+		TopBoxOfficeRuns.SetNum(3);
+	}
+
+	if (TopBoxOfficeRuns.Num() > 0)
+	{
+		BestBoxOfficeGross = TopBoxOfficeRuns[0].BoxOfficeGross;
+		BestOverallGrade = TopBoxOfficeRuns[0].OverallGrade;
+		BestScore = TopBoxOfficeRuns[0].FinalScore;
+		BestCompletionTimeSeconds = TopBoxOfficeRuns[0].CompletionTimeSeconds;
+	}
+}
+
+void UMegaJamFlowSubsystem::SaveBoxOfficeRecords() const
+{
+	const FString FilePath = FPaths::ProjectSavedDir() / TEXT("DirectorCutRecords.json");
+	FString OutJson = TEXT("{\n  \"topRuns\": [\n");
+	for (int32 Idx = 0; Idx < TopBoxOfficeRuns.Num(); ++Idx)
+	{
+		const FBoxOfficeRecordEntry& Entry = TopBoxOfficeRuns[Idx];
+		const FString SafeGrade = Entry.OverallGrade.IsEmpty() ? TEXT("C") : Entry.OverallGrade;
+		OutJson += FString::Printf(
+			TEXT("    { \"gross\": %d, \"score\": %d, \"time\": %.2f, \"grade\": \"%s\" }%s\n"),
+			Entry.BoxOfficeGross,
+			Entry.FinalScore,
+			Entry.CompletionTimeSeconds,
+			*SafeGrade,
+			(Idx + 1 < TopBoxOfficeRuns.Num()) ? TEXT(",") : TEXT(""));
+	}
+	OutJson += TEXT("  ]\n}\n");
+	FFileHelper::SaveStringToFile(OutJson, *FilePath);
+}
+
+bool UMegaJamFlowSubsystem::RecordCompletedCampaignRun(int32 Gross, int32 FinalScore, float CompletionTimeSeconds)
+{
+	if (TopBoxOfficeRuns.Num() == 0 && BestBoxOfficeGross == 0)
+	{
+		LoadBoxOfficeRecords();
+	}
+
+	// Compute overall campaign grade from the 5 scene grades (S=4, A=3, B=2, C=1, D=0)
+	int32 TotalGradePoints = 0;
+	int32 SceneCount = 0;
+	const EMegaJamSceneGenre CampaignGenres[] = {
+		EMegaJamSceneGenre::Action,
+		EMegaJamSceneGenre::Western,
+		EMegaJamSceneGenre::Noir,
+		EMegaJamSceneGenre::Chase,
+		EMegaJamSceneGenre::Montage
+	};
+	for (EMegaJamSceneGenre Genre : CampaignGenres)
+	{
+		if (const FScenePerformanceMetrics* M = SceneMetrics.Find(Genre))
+		{
+			++SceneCount;
+			if (M->CalculatedGrade == TEXT("S"))      { TotalGradePoints += 4; }
+			else if (M->CalculatedGrade == TEXT("A")) { TotalGradePoints += 3; }
+			else if (M->CalculatedGrade == TEXT("B")) { TotalGradePoints += 2; }
+			else if (M->CalculatedGrade == TEXT("C")) { TotalGradePoints += 1; }
+		}
+	}
+	const float AvgPoints = (SceneCount > 0) ? (static_cast<float>(TotalGradePoints) / static_cast<float>(SceneCount)) : 1.0f;
+	FString OverallGrade = TEXT("C");
+	if (AvgPoints >= 3.4f)      { OverallGrade = TEXT("S"); }
+	else if (AvgPoints >= 2.5f) { OverallGrade = TEXT("A"); }
+	else if (AvgPoints >= 1.6f) { OverallGrade = TEXT("B"); }
+	else if (AvgPoints < 0.7f)  { OverallGrade = TEXT("D"); }
+
+	bIsNewStudioRecord = (Gross > BestBoxOfficeGross);
+
+	FBoxOfficeRecordEntry NewRun;
+	NewRun.BoxOfficeGross = FMath::Max(0, Gross);
+	NewRun.FinalScore = FMath::Max(0, FinalScore);
+	NewRun.CompletionTimeSeconds = FMath::Max(0.0f, CompletionTimeSeconds);
+	NewRun.OverallGrade = OverallGrade;
+
+	TopBoxOfficeRuns.Add(NewRun);
+	TopBoxOfficeRuns.Sort([](const FBoxOfficeRecordEntry& A, const FBoxOfficeRecordEntry& B)
+	{
+		if (A.BoxOfficeGross != B.BoxOfficeGross)
+		{
+			return A.BoxOfficeGross > B.BoxOfficeGross;
+		}
+		return A.FinalScore > B.FinalScore;
+	});
+	if (TopBoxOfficeRuns.Num() > 3)
+	{
+		TopBoxOfficeRuns.SetNum(3);
+	}
+
+	if (TopBoxOfficeRuns.Num() > 0)
+	{
+		BestBoxOfficeGross = TopBoxOfficeRuns[0].BoxOfficeGross;
+		BestOverallGrade = TopBoxOfficeRuns[0].OverallGrade;
+		BestScore = FMath::Max(BestScore, TopBoxOfficeRuns[0].FinalScore);
+		BestCompletionTimeSeconds = TopBoxOfficeRuns[0].CompletionTimeSeconds;
+	}
+
+	SaveBoxOfficeRecords();
+	return bIsNewStudioRecord;
 }
 
 bool UMegaJamFlowSubsystem::IsWithinBeatWindow(float WindowSeconds) const

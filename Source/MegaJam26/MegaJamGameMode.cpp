@@ -683,6 +683,8 @@ void AMegaJamGameMode::TriggerWrapUpScoreboard()
 				Gross += FMath::Max(0, Metrics->FilmFramesCollected) * 10000;
 			}
 		}
+
+		FlowSubsystem->RecordCompletedCampaignRun(Gross, FMath::RoundToInt(Score), RunTime);
 	}
 	FinalBoxOfficeGross = Gross;
 
