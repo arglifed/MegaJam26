@@ -35,11 +35,11 @@ namespace
 		}
 		auto SafeAxis = [](double Val) -> double
 		{
-			if (!FMath::IsFinite(Val) || FMath::Abs(Val) < 0.01)
+			if (!FMath::IsFinite(Val) || FMath::Abs(Val) < 0.05)
 			{
-				return (Val < 0.0) ? -0.01 : 0.01;
+				return (Val < 0.0) ? -0.05 : 0.05;
 			}
-			return Val;
+			return FMath::Clamp(Val, -100000.0, 100000.0);
 		};
 		return FVector(SafeAxis(InScale.X), SafeAxis(InScale.Y), SafeAxis(InScale.Z));
 	}
@@ -101,7 +101,7 @@ namespace
 				}
 
 				const FVector RelScale = Comp->GetRelativeScale3D();
-				if (RelScale.ContainsNaN() || FMath::Abs(RelScale.X) < 0.01 || FMath::Abs(RelScale.Y) < 0.01 || FMath::Abs(RelScale.Z) < 0.01)
+				if (RelScale.ContainsNaN() || FMath::Abs(RelScale.X) < 0.05 || FMath::Abs(RelScale.Y) < 0.05 || FMath::Abs(RelScale.Z) < 0.05)
 				{
 					Comp->SetRelativeScale3D(SanitizeScale3D(RelScale));
 				}
@@ -174,6 +174,11 @@ namespace
 				if (bIsLegacyTrackActor)
 				{
 					LegacyMeshActor->SetActorHiddenInGame(true);
+					LegacyMeshActor->SetActorScale3D(FVector::OneVector);
+					if (UStaticMeshComponent* MeshComp = LegacyMeshActor->GetStaticMeshComponent())
+					{
+						MeshComp->SetRelativeScale3D(FVector::OneVector);
+					}
 				}
 			}
 		}
@@ -808,7 +813,7 @@ void AMegaJamTrackGenerator::HideFinalCutWrapArch()
 	}
 	for (int32 Idx = 0; Idx < WrapArchParts; ++Idx)
 	{
-		WrapArchISM->UpdateInstanceTransform(Idx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(WrapArchISM, Idx, MakeHiddenInstanceTransform(), true, false, true);
 	}
 	WrapArchISM->MarkRenderStateDirty();
 }
@@ -1002,11 +1007,11 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 		if (Slot.bActive && Slot.bRotates)
 		{
 			// Spin around the slot's local axis (Z = yaw, the original behaviour).
-			FTransform AnimatedTransform = Slot.BaseTransform;
+			FTransform AnimatedTransform = SanitizeInstanceTransform(Slot.BaseTransform);
 			const FQuat Spin(Slot.SpinAxis.GetSafeNormal(1e-4f, FVector::ZAxisVector), FMath::DegreesToRadians(ScaledTrackTime * Slot.RotationSpeedDeg));
-			AnimatedTransform.SetRotation(Slot.BaseTransform.GetRotation() * Spin);
+			AnimatedTransform.SetRotation(AnimatedTransform.GetRotation() * Spin);
 			UInstancedStaticMeshComponent* TargetISM = SetPieceSceneISMs.IsValidIndex(Slot.SceneIdx) ? SetPieceSceneISMs[Slot.SceneIdx].Get() : SetPieceISM.Get();
-			TargetISM->UpdateInstanceTransform(Index, AnimatedTransform, true, false, true);
+			SafeUpdateInstanceTransform(TargetISM, Index, AnimatedTransform, true, false, true);
 			bSetPiecesDirty = true;
 		}
 	}
@@ -1075,7 +1080,7 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 				if (PawnTake == Pickup.RequiredTake)
 				{
 					Pickup.bActive = false;
-					TargetISM->UpdateInstanceTransform(Pickup.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
+					SafeUpdateInstanceTransform(TargetISM, Pickup.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
 					BoundPawn->NotifyFilmFrameCollected();
 					bPickupsDirty = true;
 					continue;
@@ -1085,8 +1090,8 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 
 		const float BobZ = FMath::Sin(ScaledTrackTime * 4.0f + static_cast<float>(Index)) * 14.0f;
 		const FRotator RingRot(90.0f, ScaledTrackTime * 110.0f + static_cast<float>(Index * 45), 0.0f);
-		const FTransform RingTransform(RingRot, Pickup.Location + FVector(0.0f, 0.0f, BobZ), Pickup.Scale);
-		TargetISM->UpdateInstanceTransform(Pickup.PoolIndex, RingTransform, true, false, true);
+		const FTransform RingTransform(RingRot, Pickup.Location + FVector(0.0f, 0.0f, BobZ), SanitizeScale3D(Pickup.Scale));
+		SafeUpdateInstanceTransform(TargetISM, Pickup.PoolIndex, RingTransform, true, false, true);
 		bPickupsDirty = true;
 	}
 
@@ -1113,7 +1118,7 @@ void AMegaJamTrackGenerator::UpdateDynamicAnimationsAndPickups(float DeltaSecond
 				PawnLocation.Z <= 240.0f)
 			{
 				Strip.bActive = false;
-				BoostStripISM->UpdateInstanceTransform(Strip.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
+				SafeUpdateInstanceTransform(BoostStripISM, Strip.PoolIndex, MakeHiddenInstanceTransform(), true, false, true);
 				BoundPawn->NotifyDollyBoostStripCollected();
 				BoundPawn->TriggerDollyBoost();
 				bStripsDirty = true;
@@ -1184,8 +1189,8 @@ void AMegaJamTrackGenerator::RebuildTrack()
 		PickupSlots[BurstIdx].bHasBallisticVelocity = false;
 		PickupSlots[BurstIdx].MagnetImmunityTimer = 0.0f;
 		PickupSlots[BurstIdx].Velocity = FVector::ZeroVector;
-		PickupISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
-		PickupTakeB_ISM->UpdateInstanceTransform(BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(PickupISM, BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(PickupTakeB_ISM, BurstIdx, MakeHiddenInstanceTransform(), true, false, true);
 	}
 	NextBurstPickupCursor = 0;
 
@@ -1360,13 +1365,13 @@ void AMegaJamTrackGenerator::CreatePools()
 
 	for (int32 Index = 0; Index < Pool; ++Index)
 	{
-		FloorISM->AddInstance(MakeHiddenInstanceTransform(), true);
-		WallISM->AddInstance(MakeHiddenInstanceTransform(), true);
-		WallISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(FloorISM, MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(WallISM, MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(WallISM, MakeHiddenInstanceTransform(), true);
 		if (CollisionWallISM)
 		{
-			CollisionWallISM->AddInstance(MakeHiddenInstanceTransform(), true);
-			CollisionWallISM->AddInstance(MakeHiddenInstanceTransform(), true);
+			SafeAddInstance(CollisionWallISM, MakeHiddenInstanceTransform(), true);
+			SafeAddInstance(CollisionWallISM, MakeHiddenInstanceTransform(), true);
 		}
 	}
 
@@ -1375,24 +1380,24 @@ void AMegaJamTrackGenerator::CreatePools()
 
 	for (int32 Index = 0; Index < ObstacleSlots; ++Index)
 	{
-		const int32 InstIdxA = TakeA_ObstaclesISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		const int32 InstIdxA = SafeAddInstance(TakeA_ObstaclesISM, MakeHiddenInstanceTransform(), true);
 		TakeA_ObstaclesISM->SetCustomDataValue(InstIdxA, 0, 0.0f);
-		const int32 InstIdxB = TakeB_ObstaclesISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		const int32 InstIdxB = SafeAddInstance(TakeB_ObstaclesISM, MakeHiddenInstanceTransform(), true);
 		TakeB_ObstaclesISM->SetCustomDataValue(InstIdxB, 0, 0.0f);
 	}
 
 	SetPieceSlots.SetNum(TotalSetPieceSlots);
 	for (int32 Index = 0; Index < TotalSetPieceSlots; ++Index)
 	{
-		SetPieceISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(SetPieceISM, MakeHiddenInstanceTransform(), true);
 		SetPieceSlots[Index] = FMegaJamSetPieceSlot();
 	}
 
 	PickupSlots.SetNum(TotalPickupSlots);
 	for (int32 Index = 0; Index < TotalPickupSlots; ++Index)
 	{
-		PickupISM->AddInstance(MakeHiddenInstanceTransform(), true);
-		PickupTakeB_ISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(PickupISM, MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(PickupTakeB_ISM, MakeHiddenInstanceTransform(), true);
 		PickupSlots[Index] = FMegaJamFilmFramePickup();
 		PickupSlots[Index].PoolIndex = Index;
 	}
@@ -1400,27 +1405,27 @@ void AMegaJamTrackGenerator::CreatePools()
 	BoostStripSlots.SetNum(TotalBoostStripSlots);
 	for (int32 Index = 0; Index < TotalBoostStripSlots; ++Index)
 	{
-		BoostStripISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(BoostStripISM, MakeHiddenInstanceTransform(), true);
 		BoostStripSlots[Index] = FMegaJamDollyBoostStrip();
 		BoostStripSlots[Index].PoolIndex = Index;
 	}
 
 	for (int32 Index = 0; Index < Pool * LaneRailsPerChunk; ++Index)
 	{
-		LaneRailsISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(LaneRailsISM, MakeHiddenInstanceTransform(), true);
 	}
 
 	if (DistantSkyPillarsISM)
 	{
 		for (int32 Index = 0; Index < Pool * SkyPillarsPerChunk; ++Index)
 		{
-			DistantSkyPillarsISM->AddInstance(MakeHiddenInstanceTransform(), true);
+			SafeAddInstance(DistantSkyPillarsISM, MakeHiddenInstanceTransform(), true);
 		}
 	}
 
 	for (int32 Index = 0; Index < WrapArchParts; ++Index)
 	{
-		WrapArchISM->AddInstance(MakeHiddenInstanceTransform(), true);
+		SafeAddInstance(WrapArchISM, MakeHiddenInstanceTransform(), true);
 	}
 
 	CreateArtPools(ObstacleSlots);
@@ -1493,7 +1498,7 @@ void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
 				}
 				for (int32 Index = 0; Index < ObstacleSlots * ObstacleSkinStride; ++Index)
 				{
-					Skin->AddInstance(MakeHiddenInstanceTransform(), true);
+					SafeAddInstance(Skin, MakeHiddenInstanceTransform(), true);
 				}
 				OutSkins.Add(Skin);
 			}
@@ -1541,7 +1546,7 @@ void AMegaJamTrackGenerator::CreateArtPools(int32 ObstacleSlots)
 			SceneISM->ClearInstances();
 			for (int32 Index = 0; Index < SetPieceSlots.Num(); ++Index)
 			{
-				SceneISM->AddInstance(MakeHiddenInstanceTransform(), true);
+				SafeAddInstance(SceneISM, MakeHiddenInstanceTransform(), true);
 			}
 		}
 		SetPieceISM->SetVisibility(false);
@@ -1626,7 +1631,7 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 			{
 				for (int32 Tile = 0; Tile < TileStride; ++Tile)
 				{
-					Skins[PrevIdx]->UpdateInstanceTransform(Index * TileStride + Tile, MakeHiddenInstanceTransform(), true, false, true);
+					SafeUpdateInstanceTransform(Skins[PrevIdx], Index * TileStride + Tile, MakeHiddenInstanceTransform(), true, false, true);
 				}
 				DirtyMask |= (1u << PrevIdx);
 			}
@@ -1664,7 +1669,7 @@ void AMegaJamTrackGenerator::SyncObstacleSkins()
 				Skins[SceneIdx]->GetInstanceTransform(Index * TileStride + Tile, SkinTransform, true);
 				if (!SkinTransform.Equals(Wanted, 0.01f))
 				{
-					Skins[SceneIdx]->UpdateInstanceTransform(Index * TileStride + Tile, Wanted, true, false, true);
+					SafeUpdateInstanceTransform(Skins[SceneIdx], Index * TileStride + Tile, Wanted, true, false, true);
 					DirtyMask |= (1u << SceneIdx);
 				}
 			}
@@ -1880,7 +1885,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 							: Stream.FRandRange(-2500.0f, -1200.0f);
 						const float MinS = FMath::Min(PropConfig.MinScale, PropConfig.MaxScale);
 						const float MaxS = FMath::Max(PropConfig.MinScale, PropConfig.MaxScale);
-						const float UniformScale = FMath::Max(0.01f, Stream.FRandRange(MinS, MaxS));
+						const float UniformScale = FMath::Max(0.05f, Stream.FRandRange(MinS, MaxS));
 						const float RandYaw = Stream.FRandRange(0.0f, 360.0f);
 
 						// Issue #87: the art has a centred pivot, so lift the prop until its base rests on the floor
@@ -1897,7 +1902,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 							FRotator(0.0f, RandYaw, 0.0f),
 							FVector(RandX, SafeY, RestZ),
 							FVector(UniformScale));
-						ScatterISM->AddInstance(ScatterTransform, true);
+						SafeAddInstance(ScatterISM, ScatterTransform, true);
 					}
 				}
 			}
@@ -2006,9 +2011,9 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		for (int32 SubIdx = 0; SubIdx < ObstaclesPerRow; ++SubIdx)
 		{
 			const int32 InstIdx = BaseObstacleIndex + SubIdx;
-			TakeA_ObstaclesISM->UpdateInstanceTransform(InstIdx, MakeHiddenInstanceTransform(), true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, InstIdx, MakeHiddenInstanceTransform(), true, false, true);
 			TakeA_ObstaclesISM->SetCustomDataValue(InstIdx, 0, (float)ChunkGenreIdx);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(InstIdx, MakeHiddenInstanceTransform(), true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, InstIdx, MakeHiddenInstanceTransform(), true, false, true);
 			TakeB_ObstaclesISM->SetCustomDataValue(InstIdx, 0, (float)ChunkGenreIdx);
 		}
 	}
@@ -2023,7 +2028,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			const float SideY = (Row == 0) ? -640.0f : 640.0f;
 			const FTransform SideBlock(FRotator::ZeroRotator, FVector(RowCenterX, SideY, 60.0f), FVector(2.0f, 3.2f, 1.2f));
 			UInstancedStaticMeshComponent* Target = (Row == 0) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			Target->UpdateInstanceTransform(BaseObstacleIndex, SideBlock, true, false, true);
+			SafeUpdateInstanceTransform(Target, BaseObstacleIndex, SideBlock, true, false, true);
 		}
 		return;
 	}
@@ -2065,11 +2070,11 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 				FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 115.0f),
 				FVector(ObstacleSize / 100.0f, 15.5f, bGroundedScene ? GroundedScaleZ : 1.85f));
 
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, IceBoulderCluster, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, IceBoulderCluster, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, IceBoulderCluster, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, IceBoulderCluster, true, false, true);
 
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex + 1, LowAvalancheRidge, true, false, true);
 
 			if (!bGroundedScene)
 			{
@@ -2078,7 +2083,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 					FVector(HazardX, -CenterBoulderY, 320.0f),
 					FVector(ObstacleSize / 100.0f, 3.4f, 6.4f));
 				UInstancedStaticMeshComponent* SlalomTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-				SlalomTarget->UpdateInstanceTransform(BaseObstacleIndex + 2, OuterSlalomPillar, true, false, true);
+				SafeUpdateInstanceTransform(SlalomTarget, BaseObstacleIndex + 2, OuterSlalomPillar, true, false, true);
 			}
 		}
 		else
@@ -2097,12 +2102,12 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 				FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 165.0f),
 				FVector(ObstacleSize / 100.0f, 3.5f, bGroundedScene ? GroundedScaleZ : 3.1f));
 
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterIceMonolith, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterIceMonolith, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, CenterIceMonolith, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, CenterIceMonolith, true, false, true);
 
 			const bool bLeftIsTakeA = (TakeRoll < 0.5f);
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? LeftSlalomGate : RightSlalomGate, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? RightSlalomGate : LeftSlalomGate, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex + 1, bLeftIsTakeA ? LeftSlalomGate : RightSlalomGate, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex + 1, bLeftIsTakeA ? RightSlalomGate : LeftSlalomGate, true, false, true);
 		}
 		return;
 	}
@@ -2127,12 +2132,12 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 				FVector(HazardX, 700.0f, bGroundedScene ? GroundedCenterZ : 145.0f),
 				FVector(ObstacleSize / 100.0f, 3.4f, bGroundedScene ? GroundedScaleZ : 2.8f));
 
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeadEnemySedan, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, LeadEnemySedan, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, LeadEnemySedan, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, LeadEnemySedan, true, false, true);
 
 			const bool bLeftIsTakeA = (TakeRoll < 0.5f);
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? FlankingRoadblockLeft : FlankingRoadblockRight, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? FlankingRoadblockRight : FlankingRoadblockLeft, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex + 1, bLeftIsTakeA ? FlankingRoadblockLeft : FlankingRoadblockRight, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex + 1, bLeftIsTakeA ? FlankingRoadblockRight : FlankingRoadblockLeft, true, false, true);
 		}
 		else
 		{
@@ -2150,12 +2155,12 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 				FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 140.0f),
 				FVector(ObstacleSize / 100.0f, 3.3f, bGroundedScene ? GroundedScaleZ : 2.6f));
 
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterRoadblock, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CenterRoadblock, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, CenterRoadblock, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, CenterRoadblock, true, false, true);
 
 			const bool bLeftIsTakeA = (TakeRoll < 0.5f);
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? LeftSedanBlock : RightSedanBlock, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bLeftIsTakeA ? RightSedanBlock : LeftSedanBlock, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex + 1, bLeftIsTakeA ? LeftSedanBlock : RightSedanBlock, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex + 1, bLeftIsTakeA ? RightSedanBlock : LeftSedanBlock, true, false, true);
 		}
 		return;
 	}
@@ -2170,8 +2175,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			FVector(ObstacleSize / 100.0f, BarricadeScaleY, bGroundedScene ? GroundedScaleZ : 3.6f));
 
 		// Place the primary standoff barricade across both Take A and Take B (with zero upper crossbeam or tall posts in grounded Scene 02 so airspace above is 100% open!)
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, MainTimberBarricade, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, MainTimberBarricade, true, false, true);
+		SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, MainTimberBarricade, true, false, true);
+		SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, MainTimberBarricade, true, false, true);
 
 		if (!bGroundedScene)
 		{
@@ -2189,11 +2194,11 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 				FVector(ObstacleSize / 100.0f, 2.8f, 7.2f));
 
 			const bool bUpperIsTakeA = (TakeRoll < 0.5f);
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? UpperRailCrossbeam : FlankingPostLeft, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bUpperIsTakeA ? FlankingPostLeft : UpperRailCrossbeam, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex + 1, bUpperIsTakeA ? UpperRailCrossbeam : FlankingPostLeft, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex + 1, bUpperIsTakeA ? FlankingPostLeft : UpperRailCrossbeam, true, false, true);
 
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex + 2, FlankingPostRight, true, false, true);
 		}
 		return;
 	}
@@ -2214,8 +2219,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 260.0f),
 			FVector(ObstacleSize / 100.0f, 7.0f, bGroundedScene ? GroundedScaleZ : 5.2f));
 
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? LeftGateBlock : RightGateBlock, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLeftIsTakeA ? RightGateBlock : LeftGateBlock, true, false, true);
+		SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, bLeftIsTakeA ? LeftGateBlock : RightGateBlock, true, false, true);
+		SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, bLeftIsTakeA ? RightGateBlock : LeftGateBlock, true, false, true);
 		break;
 	}
 
@@ -2228,8 +2233,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			FRotator::ZeroRotator,
 			FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 430.0f),
 			FVector(ObstacleSize / 100.0f, 3.2f, bGroundedScene ? GroundedScaleZ : 8.6f));
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CentralPillar, true, false, true);
+		SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, CentralPillar, true, false, true);
+		SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, CentralPillar, true, false, true);
 
 		const bool bMidLeftIsTakeA = (TakeRoll < 0.5f);
 		const FTransform MidLeftPillar(
@@ -2240,8 +2245,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			FRotator::ZeroRotator,
 			FVector(HazardX, 350.0f, bGroundedScene ? GroundedCenterZ : 260.0f),
 			FVector(ObstacleSize / 100.0f, 3.2f, bGroundedScene ? GroundedScaleZ : 5.2f));
-		TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidLeftPillar : MidRightPillar, true, false, true);
-		TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidRightPillar : MidLeftPillar, true, false, true);
+		SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidLeftPillar : MidRightPillar, true, false, true);
+		SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex + 1, bMidLeftIsTakeA ? MidRightPillar : MidLeftPillar, true, false, true);
 		break;
 	}
 
@@ -2254,8 +2259,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 				FRotator::ZeroRotator,
 				FVector(HazardX, 0.0f, 620.0f),
 				FVector(ObstacleSize / 100.0f, 18.0f, 6.2f));
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, CeilingGateTransform, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, CeilingGateTransform, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, CeilingGateTransform, true, false, true);
 		}
 
 		const FTransform FloorLaserBar(
@@ -2263,7 +2268,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 			FVector(HazardX, 0.0f, bGroundedScene ? GroundedCenterZ : 90.0f),
 			FVector(ObstacleSize / 100.0f, 16.0f, bGroundedScene ? GroundedScaleZ : 1.8f));
 		UInstancedStaticMeshComponent* LaserTarget = (TakeRoll < 0.5f) ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-		LaserTarget->UpdateInstanceTransform(BaseObstacleIndex + 1, FloorLaserBar, true, false, true);
+		SafeUpdateInstanceTransform(LaserTarget, BaseObstacleIndex + 1, FloorLaserBar, true, false, true);
 		break;
 	}
 
@@ -2280,7 +2285,7 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 		if (bGroundedScene)
 		{
 			UInstancedStaticMeshComponent* LowTarget = bLowIsTakeA ? TakeA_ObstaclesISM.Get() : TakeB_ObstaclesISM.Get();
-			LowTarget->UpdateInstanceTransform(BaseObstacleIndex, LowBeam, true, false, true);
+			SafeUpdateInstanceTransform(LowTarget, BaseObstacleIndex, LowBeam, true, false, true);
 		}
 		else
 		{
@@ -2288,8 +2293,8 @@ void AMegaJamTrackGenerator::PopulateChunk(int32 ChunkIndex)
 				FRotator::ZeroRotator,
 				FVector(HazardX, 0.0f, 520.0f),
 				FVector(ObstacleSize / 100.0f, 16.5f, 3.6f));
-			TakeA_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? LowBeam : HighBeam, true, false, true);
-			TakeB_ObstaclesISM->UpdateInstanceTransform(BaseObstacleIndex, bLowIsTakeA ? HighBeam : LowBeam, true, false, true);
+			SafeUpdateInstanceTransform(TakeA_ObstaclesISM, BaseObstacleIndex, bLowIsTakeA ? LowBeam : HighBeam, true, false, true);
+			SafeUpdateInstanceTransform(TakeB_ObstaclesISM, BaseObstacleIndex, bLowIsTakeA ? HighBeam : LowBeam, true, false, true);
 		}
 		break;
 	}
@@ -2364,21 +2369,22 @@ void AMegaJamTrackGenerator::PopulateSetPiecesForChunk(
 		SetPieceSlots[PoolIdx].bRotates = false;
 		SetPieceSlots[PoolIdx].SpinAxis = FVector::ZAxisVector;
 		SetPieceSlots[PoolIdx].SceneIdx = static_cast<int32>(ChunkScene);
-		SetPieceISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(SetPieceISM, PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
 		for (UInstancedStaticMeshComponent* SceneISM : SetPieceSceneISMs)
 		{
-			SceneISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+			SafeUpdateInstanceTransform(SceneISM, PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
 		}
 	}
 
 	auto PlaceSetPiece = [this, BaseSetIndex](int32 SubIdx, const FTransform& Transform, bool bRotates = false, float RotSpeed = 45.0f)
 	{
 		const int32 PoolIdx = BaseSetIndex + SubIdx;
-		SetPieceSlots[PoolIdx].BaseTransform = Transform;
+		const FTransform SafeTransform = SanitizeInstanceTransform(Transform);
+		SetPieceSlots[PoolIdx].BaseTransform = SafeTransform;
 		SetPieceSlots[PoolIdx].bRotates = bRotates;
 		SetPieceSlots[PoolIdx].RotationSpeedDeg = RotSpeed;
 		SetPieceSlots[PoolIdx].bActive = true;
-		SetPieceISM->UpdateInstanceTransform(PoolIdx, Transform, true, false, true);
+		SafeUpdateInstanceTransform(SetPieceISM, PoolIdx, SafeTransform, true, false, true);
 	};
 
 	// Exactly one draw from the shared stream either way, so the pickup / obstacle layouts that follow are unchanged.
@@ -2462,15 +2468,15 @@ void AMegaJamTrackGenerator::PlaceSetPieceArtForChunk(int32 BaseSetIndex, int32 
 	auto Place = [&](int32 SubIdx, const FRotator& Rotation, const FVector& Location, float UniformScale, float SpinDegPerSec = 0.0f, const FVector& SpinAxis = FVector::ZAxisVector)
 	{
 		const int32 PoolIdx = BaseSetIndex + SubIdx;
-		const FTransform Transform(Rotation, Location, FVector(UniformScale));
+		const FTransform SafeTransform = SanitizeInstanceTransform(FTransform(Rotation, Location, FVector(FMath::Max(0.05f, UniformScale))));
 		FMegaJamSetPieceSlot& SlotData = SetPieceSlots[PoolIdx];
-		SlotData.BaseTransform = Transform;
+		SlotData.BaseTransform = SafeTransform;
 		SlotData.bRotates = !FMath::IsNearlyZero(SpinDegPerSec);
 		SlotData.RotationSpeedDeg = SpinDegPerSec;
 		SlotData.SpinAxis = SpinAxis;
 		SlotData.SceneIdx = SceneIdx;
 		SlotData.bActive = true;
-		SceneISM->UpdateInstanceTransform(PoolIdx, Transform, true, false, true);
+		SafeUpdateInstanceTransform(SceneISM, PoolIdx, SafeTransform, true, false, true);
 	};
 	// Z that rests the model's base on the floor top (Z = 0) at this scale.
 	auto RestZ = [&MeshBox](float UniformScale) { return -static_cast<float>(MeshBox.Min.Z) * UniformScale; };
@@ -2545,8 +2551,8 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 	{
 		const int32 PoolIdx = BasePickupIdx + SubIdx;
 		PickupSlots[PoolIdx].bActive = false;
-		PickupISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
-		PickupTakeB_ISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(PickupISM, PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(PickupTakeB_ISM, PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
 	}
 
 	if (ChunkIndex < SafeUntilChunkIndex || (BoundGameMode && !BoundGameMode->IsPlaying()))
@@ -2568,7 +2574,7 @@ void AMegaJamTrackGenerator::PopulatePickupsForChunk(
 		PickupSlots[PoolIdx].bActive = true;
 		PickupSlots[PoolIdx].bHasBallisticVelocity = false;
 		PickupSlots[PoolIdx].MagnetImmunityTimer = 0.0f;
-		TargetISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), Pos, RingScale), true, false, true);
+		SafeUpdateInstanceTransform(TargetISM, PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), Pos, RingScale), true, false, true);
 	};
 
 	if (!bIsHazardChunk)
@@ -2618,7 +2624,7 @@ void AMegaJamTrackGenerator::PopulateBoostStripsForChunk(
 	{
 		const int32 PoolIdx = BaseStripIdx + SubIdx;
 		BoostStripSlots[PoolIdx].bActive = false;
-		BoostStripISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(BoostStripISM, PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
 	}
 
 	if (ChunkIndex < SafeUntilChunkIndex || (BoundGameMode && !BoundGameMode->IsPlaying()))
@@ -2644,7 +2650,7 @@ void AMegaJamTrackGenerator::PopulateBoostStripsForChunk(
 		const FVector StripPos(StripX, -700.0f, StripZ);
 		BoostStripSlots[PoolIdx].Location = StripPos;
 		BoostStripSlots[PoolIdx].bActive = true;
-		BoostStripISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
+		SafeUpdateInstanceTransform(BoostStripISM, PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
 	}
 
 	// Right Outer Wing Dolly Boost Strip (Y = +700)
@@ -2653,7 +2659,7 @@ void AMegaJamTrackGenerator::PopulateBoostStripsForChunk(
 		const FVector StripPos(StripX, 700.0f, StripZ);
 		BoostStripSlots[PoolIdx].Location = StripPos;
 		BoostStripSlots[PoolIdx].bActive = true;
-		BoostStripISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
+		SafeUpdateInstanceTransform(BoostStripISM, PoolIdx, FTransform(FRotator::ZeroRotator, StripPos, StripScale), true, false, true);
 	}
 }
 
@@ -2720,7 +2726,7 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 			return false;
 		}
 
-		ISM->UpdateInstanceTransform(InstanceIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(ISM, InstanceIdx, MakeHiddenInstanceTransform(), true, false, true);
 		OutHitCenter = FVector(Loc.X, ClosestY, FMath::Clamp(ClosestZ, 130.0f, 760.0f));
 		return true;
 	};
@@ -2789,11 +2795,11 @@ int32 AMegaJamTrackGenerator::SpliceObstaclesInFront(const FVector& PawnLocation
 
 			if (OtherPickupISM)
 			{
-				OtherPickupISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+				SafeUpdateInstanceTransform(OtherPickupISM, PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
 			}
 			if (TargetPickupISM)
 			{
-				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), ImpactLocation, BurstRingScale), true, false, true);
+				SafeUpdateInstanceTransform(TargetPickupISM, PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), ImpactLocation, BurstRingScale), true, false, true);
 			}
 			bPickupsDirty = true;
 		}
@@ -2875,7 +2881,7 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 			return false;
 		}
 
-		ISM->UpdateInstanceTransform(InstanceIdx, MakeHiddenInstanceTransform(), true, false, true);
+		SafeUpdateInstanceTransform(ISM, InstanceIdx, MakeHiddenInstanceTransform(), true, false, true);
 		OutHitCenter = FVector(Loc.X, FMath::Clamp(static_cast<float>(Loc.Y), CenterY - HalfWidthY, CenterY + HalfWidthY), FMath::Clamp(static_cast<float>(Loc.Z), 140.0f, 760.0f));
 		return true;
 	};
@@ -2948,11 +2954,11 @@ int32 AMegaJamTrackGenerator::CleaveObstaclesInRange(float ForwardMinX, float Fo
 
 			if (OtherPickupISM)
 			{
-				OtherPickupISM->UpdateInstanceTransform(PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
+				SafeUpdateInstanceTransform(OtherPickupISM, PoolIdx, MakeHiddenInstanceTransform(), true, false, true);
 			}
 			if (TargetPickupISM)
 			{
-				TargetPickupISM->UpdateInstanceTransform(PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), SplitOrigin, BurstRingScale), true, false, true);
+				SafeUpdateInstanceTransform(TargetPickupISM, PoolIdx, FTransform(FRotator(90.0f, 0.0f, 0.0f), SplitOrigin, BurstRingScale), true, false, true);
 			}
 			bPickupsDirty = true;
 		}

@@ -74,7 +74,7 @@ namespace
 				continue;
 			}
 			const FVector RelScale = Comp->GetRelativeScale3D();
-			if (RelScale.ContainsNaN() || FMath::Abs(RelScale.X) < 0.01f || FMath::Abs(RelScale.Y) < 0.01f || FMath::Abs(RelScale.Z) < 0.01f)
+			if (RelScale.ContainsNaN() || FMath::Abs(RelScale.X) < 0.05f || FMath::Abs(RelScale.Y) < 0.05f || FMath::Abs(RelScale.Z) < 0.05f)
 			{
 				Comp->SetRelativeScale3D(SanitizePawnScale3D(RelScale));
 			}
@@ -85,7 +85,7 @@ namespace
 				{
 					FMatrix& Mat = ISM->PerInstanceSMData[Idx].Transform;
 					if (Mat.ContainsNaN() ||
-						Mat.GetScaleVector().GetMin() < 0.01f ||
+						Mat.GetScaleVector().GetMin() < 0.05f ||
 						FMath::Abs(Mat.Determinant()) < 1e-4f)
 					{
 						Mat = FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, -50000.0), FVector::OneVector).ToMatrixWithScale();
@@ -131,9 +131,11 @@ namespace
 					{
 						SMA->SetActorEnableCollision(false);
 						SMA->SetActorHiddenInGame(true);
+						SMA->SetActorScale3D(FVector::OneVector);
 						if (UStaticMeshComponent* SMC = SMA->GetStaticMeshComponent())
 						{
 							SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+							SMC->SetRelativeScale3D(FVector::OneVector);
 							SMC->SetVisibility(false);
 						}
 					}
@@ -202,7 +204,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	ProceduralSpliceRingMesh->SetCastShadow(false);
 	ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 	ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-	ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+	ProceduralSpliceRingMesh->SetRelativeScale3D(FVector::OneVector);
 	ProceduralSpliceRingMesh->SetVisibility(false);
 
 	ProceduralSlashArcMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ProceduralSlashArcMesh"));
@@ -211,7 +213,7 @@ AMegaJamFlowPawn::AMegaJamFlowPawn()
 	ProceduralSlashArcMesh->SetCastShadow(false);
 	ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
 	ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, -70.0f, -18.0f));
-	ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, 24.0f, 0.08f));
+	ProceduralSlashArcMesh->SetRelativeScale3D(FVector::OneVector);
 	ProceduralSlashArcMesh->SetVisibility(false);
 
 	// Default visual: SM_MovieMagicOrb (100 cm diameter, centered pivot -> 55 cm at 0.55 scale), fallback to /Engine/BasicShapes/Sphere.
@@ -1086,7 +1088,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 			{
 				const float Alpha = FMath::Clamp(1.0f - (SpliceRingTimer / 0.18f), 0.0f, 1.0f);
 				const float RadialScale = FMath::Max(0.05f, FMath::Lerp(1.2f, 11.5f, Alpha));
-				const float ThicknessZ = FMath::Max(0.05f, FMath::Lerp(0.08f, 0.05f, Alpha));
+				const float ThicknessZ = FMath::Max(0.15f, FMath::Lerp(0.20f, 0.15f, Alpha));
 				ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 				ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
 				ProceduralSpliceRingMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(RadialScale, RadialScale, ThicknessZ)));
@@ -1110,7 +1112,7 @@ void AMegaJamFlowPawn::Tick(float DeltaSeconds)
 				const float Alpha = FMath::Clamp(1.0f - (SlashArcTimer / 0.16f), 0.0f, 1.0f);
 				const float SweepYaw = FMath::Lerp(-70.0f, 70.0f, Alpha);
 				const float WidthY = FMath::Max(0.05f, bActiveSlashIsOnBeat ? 24.0f : 6.5f);
-				const float ThicknessZ = FMath::Max(0.05f, FMath::Lerp(0.08f, 0.05f, Alpha));
+				const float ThicknessZ = FMath::Max(0.15f, FMath::Lerp(0.20f, 0.15f, Alpha));
 				ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
 				ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, SweepYaw, -18.0f));
 				ProceduralSlashArcMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(0.35f, WidthY, ThicknessZ)));
@@ -1912,7 +1914,7 @@ void AMegaJamFlowPawn::ExecuteNoirVertigoPulse()
 	{
 		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 		ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+		ProceduralSpliceRingMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(1.2f, 1.2f, 0.20f)));
 		ProceduralSpliceRingMesh->SetVisibility(true);
 	}
 
@@ -2030,7 +2032,7 @@ void AMegaJamFlowPawn::ExecuteChaseCometSmash()
 	{
 		ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 		ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+		ProceduralSpliceRingMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(1.2f, 1.2f, 0.20f)));
 		ProceduralSpliceRingMesh->SetVisibility(true);
 	}
 
@@ -2161,7 +2163,7 @@ void AMegaJamFlowPawn::ExecuteAlpineTrickOllie()
 		{
 			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+			ProceduralSpliceRingMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(1.2f, 1.2f, 0.20f)));
 			ProceduralSpliceRingMesh->SetVisibility(true);
 		}
 		if (AMegaJamPlayerController* PC = Cast<AMegaJamPlayerController>(GetController()))
@@ -2278,7 +2280,7 @@ void AMegaJamFlowPawn::ExecuteWesternBeatSlash()
 	{
 		ProceduralSlashArcMesh->SetRelativeLocation(FVector(420.0f, 0.0f, 40.0f));
 		ProceduralSlashArcMesh->SetRelativeRotation(FRotator(0.0f, -70.0f, -18.0f));
-		ProceduralSlashArcMesh->SetRelativeScale3D(FVector(0.35f, bOnBeat ? 24.0f : 6.5f, 0.08f));
+		ProceduralSlashArcMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(0.35f, bOnBeat ? 24.0f : 6.5f, 0.20f)));
 		ProceduralSlashArcMesh->SetVisibility(true);
 	}
 	if (AMegaJamPlayerController* PC = Cast<AMegaJamPlayerController>(GetController()))
@@ -2453,7 +2455,7 @@ bool AMegaJamFlowPawn::TriggerHardCut()
 		{
 			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+			ProceduralSpliceRingMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(1.2f, 1.2f, 0.20f)));
 			ProceduralSpliceRingMesh->SetVisibility(true);
 		}
 		if (AMegaJamPlayerController* PC = Cast<AMegaJamPlayerController>(GetController()))
@@ -3917,7 +3919,7 @@ void AMegaJamFlowPawn::OnGrazeBeginOverlap(UPrimitiveComponent* OverlappedCompon
 		{
 			ProceduralSpliceRingMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 6.0f));
 			ProceduralSpliceRingMesh->SetRelativeRotation(FRotator::ZeroRotator);
-			ProceduralSpliceRingMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 0.08f));
+			ProceduralSpliceRingMesh->SetRelativeScale3D(SanitizePawnScale3D(FVector(1.2f, 1.2f, 0.20f)));
 			ProceduralSpliceRingMesh->SetVisibility(true);
 		}
 	}
