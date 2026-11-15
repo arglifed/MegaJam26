@@ -12,12 +12,12 @@ Section 3.2 sets the rights by plan:
 - **Free plan:** Meshy owns the output and licenses it to the user under
   [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/), on the
   condition that Meshy is credited. This covers the **Motorcycle**, made on a standard free account.
-- **Paid plan:** the user owns the output. The other 30 Meshy models were made on the Meshy account provided for the
-  2026 Epic AI MegaJam (1,100 monthly credits), created 2026-11-13. The terms don't say whether a jam account counts
-  as a paid plan. If it doesn't, the free-plan terms above apply to these models too.
+- **Paid plan:** the user owns the output. The other 30 Meshy models were made on the account created 2026-11-13
+  through the 2026 Epic AI MegaJam partner perk, "one free month of Meshy Pro with 1,000 credits" (per the jam's
+  itch.io page). Meshy Pro is a paid plan, so we own these 30.
 
-We credit Meshy for every model, which meets the CC BY 4.0 condition whichever plan applies. CC BY 4.0 allows
-redistribution and modification, so committing these assets to the repo is allowed. Per section 2.4 of the terms we
+We credit Meshy for every model anyway. That meets the CC BY 4.0 condition on the Motorcycle, and CC BY 4.0 allows
+redistribution and modification, so committing all of these assets to the repo is allowed. Per section 2.4 of the terms we
 have not removed any AI identifiers Meshy may embed in the outputs.
 
 **How they were made.** All 31 were generated 2026-11-13 and 2026-11-14 from our own text prompts. No third-party
@@ -45,6 +45,10 @@ shows no badges). Meshy delivered 2K PBR textures (base colour, normal, metallic
   `SM_Dressing_BoomMic`, `SM_Dressing_Western_Cactus`, `SM_Dressing_Western_Tumbleweed`, `SM_Dressing_Noir_StreetLamp`,
   `SM_Dressing_Noir_Skyscraper`, `SM_Dressing_Chase_PineTree`, `SM_Dressing_Chase_SnowRock`,
   `SM_Dressing_Final_FloatingCrystal`
+
+**Jam rules.** The 2026 Epic AI MegaJam allows any AI tools, including asset generation, and needs no separate AI
+disclosure. The submission's optional "Tools you used" field lists Meshy. No other 3D or texture generator (Tripo,
+Hyper3D Rodin, PBRgen) was used for shipped art.
 
 ### Made for this project (not Meshy)
 
