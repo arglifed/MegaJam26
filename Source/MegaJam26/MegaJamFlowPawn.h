@@ -44,6 +44,7 @@ enum class ETutorialState : uint8
 	SteerCheck,
 	JumpCheck,
 	CutCheck,
+	DirectorCutCheck,
 	Completed
 };
 
@@ -426,9 +427,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="MegaJam|Tutorial")
 	bool bIsRehearsalMode = true;
 
-	/** Active Rehearsal gate step (SteerCheck -> JumpCheck -> CutCheck -> Completed). */
+	/** Active Rehearsal gate step (SteerCheck -> JumpCheck -> CutCheck -> DirectorCutCheck -> Completed). */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="MegaJam|Tutorial")
 	ETutorialState TutorialState = ETutorialState::SteerCheck;
+
+	/** True once the player has passed the 4th Rehearsal gate (Director's Cut / Aspect Ratio check). */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="MegaJam|Tutorial")
+	bool bPassedDirectorCutCheck = false;
 
 	/** Seconds [Tab] or [Esc] has been continuously held to skip Rehearsal (skips at 1.5s). */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="MegaJam|Tutorial")
